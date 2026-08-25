@@ -1,4 +1,4 @@
-package com.example.company.client;
+package com.silporestockai.client;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;

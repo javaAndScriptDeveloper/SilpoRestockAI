@@ -37,8 +37,8 @@ up: ## Build & run the full stack (app + db) with $(ENV_FILE)
 down: ## Stop the full stack
 	docker compose --profile full down
 
-image: ## Build the OCI image (tag: spring-template)
-	docker build -t spring-template .
+image: ## Build the OCI image (tag: silpo-restock-ai)
+	docker build -t silpo-restock-ai .
 
 clean: ## Remove build artifacts
 	./gradlew clean

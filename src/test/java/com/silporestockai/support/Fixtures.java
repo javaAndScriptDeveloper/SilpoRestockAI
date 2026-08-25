@@ -1,4 +1,4 @@
-package com.example.company.support;
+package com.silporestockai.support;
 
 import java.util.List;
 import org.instancio.Instancio;

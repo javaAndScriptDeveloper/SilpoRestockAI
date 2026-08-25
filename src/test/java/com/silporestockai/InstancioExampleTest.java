@@ -1,9 +1,9 @@
-package com.example.company;
+package com.silporestockai;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.instancio.Select.field;
 
-import com.example.company.support.Fixtures;
+import com.silporestockai.support.Fixtures;
 import java.util.List;
 import org.instancio.Instancio;
 import org.instancio.junit.InstancioExtension;

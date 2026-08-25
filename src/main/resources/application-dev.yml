@@ -10,6 +10,6 @@ spring:
 logging:
   level:
     root: INFO
-    com.example.company: DEBUG
+    com.silporestockai: DEBUG
     # Uncomment to inspect the SQL parameter bindings:
     # org.hibernate.orm.jdbc.bind: TRACE

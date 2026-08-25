@@ -25,3 +25,6 @@ Thumbs.db
 *.log
 
 CLAUDE.md
+
+# Local OAuth spike artifacts (contains PKCE verifiers / auth codes)
+.spike/

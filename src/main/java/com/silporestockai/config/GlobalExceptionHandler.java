@@ -1,6 +1,6 @@
-package com.example.company.config;
+package com.silporestockai.config;
 
-import com.example.company.exception.ApplicationException;
+import com.silporestockai.exception.ApplicationException;
 import java.util.HashMap;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;

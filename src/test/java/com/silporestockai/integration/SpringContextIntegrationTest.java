@@ -1,4 +1,4 @@
-package com.example.company.integration;
+package com.silporestockai.integration;
 
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;

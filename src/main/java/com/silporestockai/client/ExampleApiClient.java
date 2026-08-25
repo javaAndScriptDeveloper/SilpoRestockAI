@@ -1,4 +1,4 @@
-package com.example.company.client;
+package com.silporestockai.client;
 
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;

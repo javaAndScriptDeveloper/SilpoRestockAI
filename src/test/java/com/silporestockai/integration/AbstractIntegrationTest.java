@@ -1,6 +1,6 @@
-package com.example.company.integration;
+package com.silporestockai.integration;
 
-import com.example.company.TestcontainersConfiguration;
+import com.silporestockai.TestcontainersConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;

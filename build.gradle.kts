@@ -6,7 +6,7 @@ plugins {
     id("com.diffplug.spotless") version "7.2.1"
 }
 
-group = "com.example.company"
+group = "com.silporestockai"
 version = "0.0.1-SNAPSHOT"
 
 java {
@@ -52,6 +52,13 @@ dependencies {
     // API Documentation (OpenAPI 3 / Swagger UI)
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.3")
 
+    // Claude — meal planning, shopping-list derivation, check-in parsing (structured outputs)
+    implementation("com.anthropic:anthropic-java:2.57.0")
+
+    // MCP client for mcp.silpo.ua. Streamable HTTP needs SSE + the Mcp-Session-Id handshake,
+    // which Feign cannot express — this is the one deliberate exception to the Feign convention.
+    implementation("io.modelcontextprotocol.sdk:mcp")
+
     // Database Migration
     implementation("org.liquibase:liquibase-core")
 
@@ -84,6 +91,7 @@ dependencyManagement {
         mavenBom("org.springframework.cloud:spring-cloud-dependencies:${property("springCloudVersion")}")
         // Boot 4.1 no longer manages Testcontainers versions; pin them via the Testcontainers BOM.
         mavenBom("org.testcontainers:testcontainers-bom:1.21.4")
+        mavenBom("io.modelcontextprotocol.sdk:mcp-bom:2.0.1")
     }
 }
 
@@ -105,7 +113,7 @@ tasks.withType<Test> {
 }
 
 // Classes with no meaningful branches to cover — excluded from the coverage report and gate.
-val coverageExclusions = listOf("com/example/company/Application.class", "com/example/company/config/**")
+val coverageExclusions = listOf("com/silporestockai/Application.class", "com/silporestockai/config/**")
 
 tasks.jacocoTestReport {
     dependsOn(tasks.test)
@@ -143,7 +151,9 @@ tasks.check {
 spotless {
     java {
         target("src/*/java/**/*.java")
-        palantirJavaFormat()
+        // Pinned: the version Spotless 7.2.1 bundles by default crashes on JDK 25 javac internals
+        // (NoSuchMethodError Log$DeferredDiagnosticHandler.getDiagnostics).
+        palantirJavaFormat("2.97.0")
         importOrder()
         removeUnusedImports()
         trimTrailingWhitespace()

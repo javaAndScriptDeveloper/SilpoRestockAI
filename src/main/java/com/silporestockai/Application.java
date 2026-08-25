@@ -1,4 +1,4 @@
-package com.example.company;
+package com.silporestockai;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;

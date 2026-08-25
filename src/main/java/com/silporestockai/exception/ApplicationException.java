@@ -1,11 +1,11 @@
-package com.example.company.exception;
+package com.silporestockai.exception;
 
 import lombok.Getter;
 import org.springframework.http.HttpStatus;
 
 /**
  * Base exception for application-level errors. Carries the HTTP status that
- * {@link com.example.company.config.GlobalExceptionHandler} translates into an RFC 9457 problem detail.
+ * {@link com.silporestockai.config.GlobalExceptionHandler} translates into an RFC 9457 problem detail.
  */
 @Getter
 public class ApplicationException extends RuntimeException {
