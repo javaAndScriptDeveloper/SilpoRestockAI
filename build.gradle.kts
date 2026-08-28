@@ -59,6 +59,10 @@ dependencies {
     // which Feign cannot express — this is the one deliberate exception to the Feign convention.
     implementation("io.modelcontextprotocol.sdk:mcp")
 
+    // Telegram Bot API. Webhook mode only — the springboot starters assume long-polling or want to own
+    // the endpoint, and we need a plain POST /telegram/webhook controller.
+    implementation("org.telegram:telegrambots-client:9.0.0")
+
     // Database Migration. Boot 4 moved LiquibaseAutoConfiguration out of spring-boot-autoconfigure
     // into its own module, so liquibase-core alone leaves the changelog silently unapplied.
     implementation("org.springframework.boot:spring-boot-liquibase")

@@ -121,3 +121,12 @@ logging:
   level:
     root: INFO
     com.silporestockai: DEBUG
+
+telegram:
+  bot-token: ${TELEGRAM_BOT_TOKEN:}
+  # Public HTTPS URL of POST /telegram/webhook. Blank skips webhook registration at startup entirely.
+  webhook-url: ${TELEGRAM_WEBHOOK_URL:}
+  # Sent by Telegram as X-Telegram-Bot-Api-Secret-Token. Blank disables the check — local use only.
+  webhook-secret: ${TELEGRAM_WEBHOOK_SECRET:}
+  # Overridden by tests to point the SDK at a local stub. Not a production knob.
+  api-url: ${TELEGRAM_API_URL:https://api.telegram.org}
