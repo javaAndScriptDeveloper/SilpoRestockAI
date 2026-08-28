@@ -21,6 +21,8 @@ import com.silporestockai.exception.ClaudeApiException;
 import com.silporestockai.exception.ClaudeRateLimitedException;
 import com.silporestockai.exception.ClaudeStructuredOutputException;
 import com.silporestockai.exception.ClaudeUnavailableException;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.github.resilience4j.retry.annotation.Retry;
 import java.util.Optional;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -62,6 +64,8 @@ public class ClaudeApiClientImpl implements ClaudeApiClient {
     }
 
     @Override
+    @CircuitBreaker(name = "claude")
+    @Retry(name = "claude")
     public String complete(String systemPrompt, String userPrompt) {
         MessageCreateParams params =
                 baseParams(systemPrompt).addUserMessage(userPrompt).build();
@@ -69,6 +73,8 @@ public class ClaudeApiClientImpl implements ClaudeApiClient {
     }
 
     @Override
+    @CircuitBreaker(name = "claude")
+    @Retry(name = "claude")
     public <T> T completeStructured(String systemPrompt, String userPrompt, Class<T> responseType) {
         StructuredMessageCreateParams<T> params = baseParams(systemPrompt)
                 .addUserMessage(userPrompt)
@@ -95,6 +101,8 @@ public class ClaudeApiClientImpl implements ClaudeApiClient {
     }
 
     @Override
+    @CircuitBreaker(name = "claude")
+    @Retry(name = "claude")
     public String image(String systemPrompt, String userPrompt, byte[] imageBytes, String mediaType) {
         throw new UnsupportedOperationException("image input arrives in task 4 of the plan");
     }

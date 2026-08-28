@@ -77,6 +77,14 @@ resilience4j:
         failure-rate-threshold: 50
         wait-duration-in-open-state: 10s
         permitted-number-of-calls-in-half-open-state: 5
+    instances:
+      # Only genuine upstream trouble counts towards opening the breaker. A malformed prompt earning a 400
+      # is our bug, not Claude's, and must not cut everyone else off.
+      claude:
+        base-config: default
+        record-exceptions:
+          - com.silporestockai.exception.ClaudeRateLimitedException
+          - com.silporestockai.exception.ClaudeUnavailableException
   retry:
     configs:
       default:
@@ -93,6 +101,17 @@ resilience4j:
         exponential-backoff-multiplier: 2
         retry-exceptions:
           - com.silporestockai.exception.SilpoMcpRateLimitedException
+      # Claude answers 429 under load and 5xx during incidents; both are worth waiting out. A malformed
+      # request or a bad key must fail on the first attempt, so they are not listed here.
+      claude:
+        base-config: default
+        max-attempts: 3
+        wait-duration: 2s
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+        retry-exceptions:
+          - com.silporestockai.exception.ClaudeRateLimitedException
+          - com.silporestockai.exception.ClaudeUnavailableException
 
 # Official Silpo MCP server. Endpoints below match what the server advertises at
 # /.well-known/oauth-authorization-server and /.well-known/oauth-protected-resource/mcp.

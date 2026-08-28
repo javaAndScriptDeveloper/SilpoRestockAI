@@ -105,4 +105,15 @@ class ClaudeApiClientIntegrationTest extends AbstractIntegrationTest {
 
         assertThat(STUB.callCount()).isEqualTo(1);
     }
+
+    @Test
+    void backsOffAndRetriesWhenClaudeRateLimitsTheRequest() {
+        STUB.injectStatus(429);
+        STUB.respondWithText("після паузи");
+
+        String answer = claudeApiClient.complete("system", "user");
+
+        assertThat(answer).isEqualTo("після паузи");
+        assertThat(STUB.callCount()).isEqualTo(2);
+    }
 }
