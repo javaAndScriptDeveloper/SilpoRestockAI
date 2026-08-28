@@ -2,9 +2,20 @@ package com.silporestockai.integration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.silporestockai.entity.MealPlan;
+import com.silporestockai.entity.ShoppingListItem;
 import com.silporestockai.entity.User;
+import com.silporestockai.entity.UserProfile;
+import com.silporestockai.model.SpecialMode;
+import com.silporestockai.repository.MealPlanRepository;
+import com.silporestockai.repository.ShoppingListItemRepository;
+import com.silporestockai.repository.UserProfileRepository;
 import com.silporestockai.repository.UserRepository;
+import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -22,8 +33,20 @@ class SchemaRoundTripIntegrationTest extends AbstractIntegrationTest {
     @Autowired
     private UserRepository userRepository;
 
+    @Autowired
+    private UserProfileRepository userProfileRepository;
+
+    @Autowired
+    private MealPlanRepository mealPlanRepository;
+
+    @Autowired
+    private ShoppingListItemRepository shoppingListItemRepository;
+
     @BeforeEach
     void clean() {
+        shoppingListItemRepository.deleteAll();
+        mealPlanRepository.deleteAll();
+        userProfileRepository.deleteAll();
         userRepository.deleteAll();
     }
 
@@ -48,5 +71,93 @@ class SchemaRoundTripIntegrationTest extends AbstractIntegrationTest {
         assertThat(byChat.get().getCreatedAt()).isNotNull();
         assertThat(byGuest).isPresent();
         assertThat(userRepository.findByTelegramChatId(9999L)).isEmpty();
+    }
+
+    @Test
+    void userProfilesRoundTripIncludingTheirJsonColumns() {
+        User user = persistedUser(5002L);
+
+        userProfileRepository.save(UserProfile.builder()
+                .id(UUID.randomUUID())
+                .userId(user.getId())
+                .householdSize(4)
+                .hasKids(true)
+                .kidsAges(List.of(3, 7))
+                .dietaryRestrictions(List.of("без горіхів"))
+                .weeklyBudget(new BigDecimal("2500.00"))
+                .dislikedFoods(List.of("броколі"))
+                .onlyUaProducer(true)
+                .specialMode(SpecialMode.MEDICAL_DIET_TABLE_5)
+                .specialModeStartedAt(Instant.now())
+                .build());
+
+        UserProfile reloaded = userProfileRepository.findByUserId(user.getId()).orElseThrow();
+        assertThat(reloaded.getHouseholdSize()).isEqualTo(4);
+        assertThat(reloaded.getKidsAges()).containsExactly(3, 7);
+        assertThat(reloaded.getDietaryRestrictions()).containsExactly("без горіхів");
+        assertThat(reloaded.getDislikedFoods()).containsExactly("броколі");
+        assertThat(reloaded.getWeeklyBudget()).isEqualByComparingTo("2500.00");
+        assertThat(reloaded.getOnlyUaProducer()).isTrue();
+        assertThat(reloaded.getSpecialMode()).isEqualTo(SpecialMode.MEDICAL_DIET_TABLE_5);
+    }
+
+    @Test
+    void mealPlansRoundTripAndTheLatestOneIsFoundFirst() {
+        User user = persistedUser(5003L);
+        mealPlanRepository.save(MealPlan.builder()
+                .id(UUID.randomUUID())
+                .userId(user.getId())
+                .weekStartDate(LocalDate.of(2026, 8, 17))
+                .plan(Map.of("monday", "борщ"))
+                .createdAt(Instant.now())
+                .build());
+        mealPlanRepository.save(MealPlan.builder()
+                .id(UUID.randomUUID())
+                .userId(user.getId())
+                .weekStartDate(LocalDate.of(2026, 8, 24))
+                .plan(Map.of("monday", "плов"))
+                .createdAt(Instant.now())
+                .build());
+
+        MealPlan latest = mealPlanRepository
+                .findFirstByUserIdOrderByWeekStartDateDesc(user.getId())
+                .orElseThrow();
+
+        assertThat(latest.getWeekStartDate()).isEqualTo(LocalDate.of(2026, 8, 24));
+        assertThat(latest.getPlan()).containsEntry("monday", "плов");
+        assertThat(mealPlanRepository.findByUserIdAndWeekStartDate(user.getId(), LocalDate.of(2026, 8, 17)))
+                .isPresent();
+    }
+
+    @Test
+    void shoppingListItemsAttachToAPlanAndCanExistWithoutOne() {
+        User user = persistedUser(5004L);
+        MealPlan plan = mealPlanRepository.save(MealPlan.builder()
+                .id(UUID.randomUUID())
+                .userId(user.getId())
+                .weekStartDate(LocalDate.of(2026, 8, 31))
+                .plan(Map.of())
+                .createdAt(Instant.now())
+                .build());
+
+        shoppingListItemRepository.save(ShoppingListItem.builder()
+                .id(UUID.randomUUID())
+                .mealPlanId(plan.getId())
+                .name("молоко")
+                .quantity(new BigDecimal("2.000"))
+                .unit("шт")
+                .category("молочні")
+                .build());
+        // An ad-hoc list belongs to no weekly plan, which is why meal_plan_id is nullable.
+        shoppingListItemRepository.save(ShoppingListItem.builder()
+                .id(UUID.randomUUID())
+                .name("попкорн")
+                .quantity(new BigDecimal("1.000"))
+                .unit("шт")
+                .category("снеки")
+                .build());
+
+        assertThat(shoppingListItemRepository.findByMealPlanId(plan.getId())).hasSize(1);
+        assertThat(shoppingListItemRepository.count()).isEqualTo(2);
     }
 }

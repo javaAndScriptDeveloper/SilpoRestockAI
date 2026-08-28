@@ -1,0 +1,15 @@
+package com.silporestockai.repository;
+
+import com.silporestockai.entity.ShoppingListItem;
+import java.util.List;
+import java.util.UUID;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+/** Shopping list lines, either attached to a weekly plan or standing alone. */
+public interface ShoppingListItemRepository extends JpaRepository<ShoppingListItem, UUID> {
+
+    List<ShoppingListItem> findByMealPlanId(UUID mealPlanId);
+
+    /** Regenerating a plan replaces its list wholesale rather than diffing it. */
+    void deleteByMealPlanId(UUID mealPlanId);
+}

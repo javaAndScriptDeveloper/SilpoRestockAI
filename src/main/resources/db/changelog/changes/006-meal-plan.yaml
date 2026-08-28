@@ -1,0 +1,49 @@
+databaseChangeLog:
+  - changeSet:
+      id: 006-meal-plan
+      author: komora
+      comment: >-
+        One generated weekly menu. plan_json stays untyped here: task 07 owns that structure and has not
+        defined it yet, so typing it now would be invention.
+      changes:
+        - createTable:
+            tableName: meal_plan
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_meal_plan
+                    nullable: false
+              - column:
+                  name: user_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_meal_plan_user
+                    references: users(id)
+                    deleteCascade: true
+              - column:
+                  name: week_start_date
+                  type: DATE
+                  constraints:
+                    nullable: false
+              - column:
+                  name: plan_json
+                  type: JSONB
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  constraints:
+                    nullable: false
+        - createIndex:
+            indexName: ix_meal_plan_user_week
+            tableName: meal_plan
+            columns:
+              - column:
+                  name: user_id
+              - column:
+                  name: week_start_date

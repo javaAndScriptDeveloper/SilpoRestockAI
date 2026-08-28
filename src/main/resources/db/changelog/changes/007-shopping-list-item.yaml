@@ -1,0 +1,45 @@
+databaseChangeLog:
+  - changeSet:
+      id: 007-shopping-list-item
+      author: komora
+      comment: >-
+        A line of a shopping list. meal_plan_id is nullable on purpose: the same table carries ad-hoc lists
+        that belong to no weekly plan, such as a one-off snack order.
+      changes:
+        - createTable:
+            tableName: shopping_list_item
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_shopping_list_item
+                    nullable: false
+              - column:
+                  name: meal_plan_id
+                  type: UUID
+                  constraints:
+                    foreignKeyName: fk_shopping_list_item_meal_plan
+                    references: meal_plan(id)
+                    deleteCascade: true
+              - column:
+                  name: name
+                  type: VARCHAR(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: quantity
+                  type: NUMERIC(10, 3)
+              - column:
+                  name: unit
+                  type: VARCHAR(32)
+              - column:
+                  name: category
+                  type: VARCHAR(64)
+        - createIndex:
+            indexName: ix_shopping_list_item_meal_plan
+            tableName: shopping_list_item
+            columns:
+              - column:
+                  name: meal_plan_id
