@@ -1,0 +1,46 @@
+databaseChangeLog:
+  - changeSet:
+      id: 009-checkin
+      author: komora
+      comment: >-
+        One recorded check-in. The raw input is kept alongside the parsed delta so a bad parse can be
+        diagnosed later and so preference learning has the original wording to work from.
+      changes:
+        - createTable:
+            tableName: checkin
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_checkin
+                    nullable: false
+              - column:
+                  name: user_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_checkin_user
+                    references: users(id)
+                    deleteCascade: true
+              - column:
+                  name: raw_input_text
+                  type: TEXT
+              - column:
+                  name: parsed_delta_json
+                  type: JSONB
+              - column:
+                  name: received_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  constraints:
+                    nullable: false
+        - createIndex:
+            indexName: ix_checkin_user_received
+            tableName: checkin
+            columns:
+              - column:
+                  name: user_id
+              - column:
+                  name: received_at
+                  descending: true

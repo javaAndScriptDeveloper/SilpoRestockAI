@@ -2,11 +2,19 @@ package com.silporestockai.integration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.silporestockai.entity.BaselineBasket;
+import com.silporestockai.entity.Checkin;
+import com.silporestockai.entity.InventoryTrend;
 import com.silporestockai.entity.MealPlan;
 import com.silporestockai.entity.ShoppingListItem;
 import com.silporestockai.entity.User;
 import com.silporestockai.entity.UserProfile;
+import com.silporestockai.model.BasketItem;
+import com.silporestockai.model.CheckinDelta;
 import com.silporestockai.model.SpecialMode;
+import com.silporestockai.repository.BaselineBasketRepository;
+import com.silporestockai.repository.CheckinRepository;
+import com.silporestockai.repository.InventoryTrendRepository;
 import com.silporestockai.repository.MealPlanRepository;
 import com.silporestockai.repository.ShoppingListItemRepository;
 import com.silporestockai.repository.UserProfileRepository;
@@ -42,8 +50,20 @@ class SchemaRoundTripIntegrationTest extends AbstractIntegrationTest {
     @Autowired
     private ShoppingListItemRepository shoppingListItemRepository;
 
+    @Autowired
+    private BaselineBasketRepository baselineBasketRepository;
+
+    @Autowired
+    private CheckinRepository checkinRepository;
+
+    @Autowired
+    private InventoryTrendRepository inventoryTrendRepository;
+
     @BeforeEach
     void clean() {
+        baselineBasketRepository.deleteAll();
+        checkinRepository.deleteAll();
+        inventoryTrendRepository.deleteAll();
         shoppingListItemRepository.deleteAll();
         mealPlanRepository.deleteAll();
         userProfileRepository.deleteAll();
@@ -159,5 +179,80 @@ class SchemaRoundTripIntegrationTest extends AbstractIntegrationTest {
 
         assertThat(shoppingListItemRepository.findByMealPlanId(plan.getId())).hasSize(1);
         assertThat(shoppingListItemRepository.count()).isEqualTo(2);
+    }
+
+    @Test
+    void baselineBasketsRoundTripTheirTypedItemList() {
+        User user = persistedUser(5005L);
+
+        baselineBasketRepository.save(BaselineBasket.builder()
+                .id(UUID.randomUUID())
+                .userId(user.getId())
+                .items(List.of(
+                        new BasketItem("silpo-1", "молоко 2.5%", "шт", new BigDecimal("2"), new BigDecimal("41.90"))))
+                .confirmedAt(Instant.now())
+                .isCurrent(true)
+                .build());
+
+        BaselineBasket current = baselineBasketRepository
+                .findByUserIdAndIsCurrentTrue(user.getId())
+                .orElseThrow();
+
+        assertThat(current.getItems()).hasSize(1);
+        assertThat(current.getItems().getFirst().name()).isEqualTo("молоко 2.5%");
+        assertThat(current.getItems().getFirst().price()).isEqualByComparingTo("41.90");
+    }
+
+    @Test
+    void theTwoMostRecentCheckinsComeBackNewestFirst() {
+        User user = persistedUser(5006L);
+        Instant now = Instant.now();
+        for (int i = 0; i < 3; i++) {
+            checkinRepository.save(Checkin.builder()
+                    .id(UUID.randomUUID())
+                    .userId(user.getId())
+                    .rawInputText("чек-ін " + i)
+                    .parsedDelta(new CheckinDelta(List.of("молоко"), List.of(), List.of("хліб")))
+                    .receivedAt(now.plusSeconds(i))
+                    .build());
+        }
+
+        List<Checkin> lastTwo = checkinRepository.findTop2ByUserIdOrderByReceivedAtDesc(user.getId());
+
+        assertThat(lastTwo).hasSize(2);
+        assertThat(lastTwo.get(0).getRawInputText()).isEqualTo("чек-ін 2");
+        assertThat(lastTwo.get(1).getRawInputText()).isEqualTo("чек-ін 1");
+        assertThat(lastTwo.get(0).getParsedDelta().goneCompletely()).containsExactly("хліб");
+        assertThat(checkinRepository
+                        .findFirstByUserIdOrderByReceivedAtDesc(user.getId())
+                        .orElseThrow()
+                        .getRawInputText())
+                .isEqualTo("чек-ін 2");
+    }
+
+    @Test
+    void removalCandidatesAreThoseAtOrAboveTheThreshold() {
+        User user = persistedUser(5007L);
+        saveTrend(user.getId(), "гречка", 3);
+        saveTrend(user.getId(), "молоко", 0);
+        saveTrend(user.getId(), "квасоля", 5);
+
+        List<InventoryTrend> candidates =
+                inventoryTrendRepository.findByUserIdAndConsecutiveUntouchedCyclesGreaterThanEqual(user.getId(), 3);
+
+        assertThat(candidates).extracting(InventoryTrend::getItemName).containsExactlyInAnyOrder("гречка", "квасоля");
+        assertThat(inventoryTrendRepository.findByUserIdAndItemName(user.getId(), "молоко"))
+                .isPresent();
+        assertThat(inventoryTrendRepository.findByUserId(user.getId())).hasSize(3);
+    }
+
+    private void saveTrend(UUID userId, String itemName, int cycles) {
+        inventoryTrendRepository.save(InventoryTrend.builder()
+                .id(UUID.randomUUID())
+                .userId(userId)
+                .itemName(itemName)
+                .consecutiveUntouchedCycles(cycles)
+                .lastUpdated(Instant.now())
+                .build());
     }
 }
