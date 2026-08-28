@@ -35,6 +35,9 @@ fits; do not invent a parallel structure.
   name files `001-...yaml`, `002-...yaml`) or *every* `@SpringBootTest` fails. Boot 4 moved
   `LiquibaseAutoConfiguration` into its own `org.springframework.boot:spring-boot-liquibase` module —
   without it `liquibase-core` sits on the classpath and changesets are silently never applied.
+- **The orders table is `customer_order`, never `order`** — `ORDER` is reserved in PostgreSQL. The entity
+  is `CustomerOrder`. Task 05's draft used `order`; renaming it was cheaper than a quoted identifier in
+  every future query.
 - **ArchUnit is enforced** (`src/test/java/.../architecture/ArchitectureTest.java`): constructor
   injection only (`@RequiredArgsConstructor`, no `@Autowired` fields); `Controller` / `Service` /
   `Repository` / `Scheduler` name suffixes; `Service` reachable only from `Controller` and `Job`.

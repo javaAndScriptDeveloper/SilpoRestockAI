@@ -1,0 +1,39 @@
+databaseChangeLog:
+  - changeSet:
+      id: 012-trust-level
+      author: komora
+      comment: >-
+        How much confirmation ceremony a user still needs, one row per user. The tier enum deliberately has
+        no auto-confirm value: the product brief says leave room for it, not build it.
+      changes:
+        - createTable:
+            tableName: trust_level
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_trust_level
+                    nullable: false
+              - column:
+                  name: user_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+                    unique: true
+                    uniqueConstraintName: ux_trust_level_user_id
+                    foreignKeyName: fk_trust_level_user
+                    references: users(id)
+                    deleteCascade: true
+              - column:
+                  name: consecutive_unedited_confirmations
+                  type: INT
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: current_trust_tier
+                  type: VARCHAR(32)
+                  constraints:
+                    nullable: false

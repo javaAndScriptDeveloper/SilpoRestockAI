@@ -4,19 +4,26 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.silporestockai.entity.BaselineBasket;
 import com.silporestockai.entity.Checkin;
+import com.silporestockai.entity.CustomerOrder;
 import com.silporestockai.entity.InventoryTrend;
 import com.silporestockai.entity.MealPlan;
 import com.silporestockai.entity.ShoppingListItem;
+import com.silporestockai.entity.TrustLevel;
 import com.silporestockai.entity.User;
 import com.silporestockai.entity.UserProfile;
 import com.silporestockai.model.BasketItem;
 import com.silporestockai.model.CheckinDelta;
+import com.silporestockai.model.OrderStatus;
+import com.silporestockai.model.OrderType;
 import com.silporestockai.model.SpecialMode;
+import com.silporestockai.model.TrustTier;
 import com.silporestockai.repository.BaselineBasketRepository;
 import com.silporestockai.repository.CheckinRepository;
+import com.silporestockai.repository.CustomerOrderRepository;
 import com.silporestockai.repository.InventoryTrendRepository;
 import com.silporestockai.repository.MealPlanRepository;
 import com.silporestockai.repository.ShoppingListItemRepository;
+import com.silporestockai.repository.TrustLevelRepository;
 import com.silporestockai.repository.UserProfileRepository;
 import com.silporestockai.repository.UserRepository;
 import java.math.BigDecimal;
@@ -59,8 +66,16 @@ class SchemaRoundTripIntegrationTest extends AbstractIntegrationTest {
     @Autowired
     private InventoryTrendRepository inventoryTrendRepository;
 
+    @Autowired
+    private CustomerOrderRepository customerOrderRepository;
+
+    @Autowired
+    private TrustLevelRepository trustLevelRepository;
+
     @BeforeEach
     void clean() {
+        customerOrderRepository.deleteAll();
+        trustLevelRepository.deleteAll();
         baselineBasketRepository.deleteAll();
         checkinRepository.deleteAll();
         inventoryTrendRepository.deleteAll();
@@ -254,5 +269,56 @@ class SchemaRoundTripIntegrationTest extends AbstractIntegrationTest {
                 .consecutiveUntouchedCycles(cycles)
                 .lastUpdated(Instant.now())
                 .build());
+    }
+
+    @Test
+    void ordersRoundTripAndAreFilteredByStatusAndCartId() {
+        User user = persistedUser(5008L);
+        customerOrderRepository.save(CustomerOrder.builder()
+                .id(UUID.randomUUID())
+                .userId(user.getId())
+                .type(OrderType.INITIAL)
+                .items(List.of(new BasketItem("silpo-9", "хліб", "шт", new BigDecimal("1"), new BigDecimal("24.50"))))
+                .deliverySlot("2026-08-30 18:00-20:00")
+                .status(OrderStatus.CONFIRMED)
+                .silpoCartId("cart-abc")
+                .createdAt(Instant.now())
+                .confirmedAt(Instant.now())
+                .build());
+        customerOrderRepository.save(CustomerOrder.builder()
+                .id(UUID.randomUUID())
+                .userId(user.getId())
+                .type(OrderType.AD_HOC)
+                .items(List.of())
+                .status(OrderStatus.DRAFT)
+                .createdAt(Instant.now())
+                .build());
+
+        assertThat(customerOrderRepository.findByUserIdOrderByCreatedAtDesc(user.getId()))
+                .hasSize(2);
+        assertThat(customerOrderRepository.findByUserIdAndStatus(user.getId(), OrderStatus.CONFIRMED))
+                .singleElement()
+                .satisfies(order -> {
+                    assertThat(order.getType()).isEqualTo(OrderType.INITIAL);
+                    assertThat(order.getItems().getFirst().name()).isEqualTo("хліб");
+                    assertThat(order.getDeliverySlot()).isEqualTo("2026-08-30 18:00-20:00");
+                });
+        assertThat(customerOrderRepository.findBySilpoCartId("cart-abc")).isPresent();
+    }
+
+    @Test
+    void trustLevelsRoundTrip() {
+        User user = persistedUser(5009L);
+        trustLevelRepository.save(TrustLevel.builder()
+                .id(UUID.randomUUID())
+                .userId(user.getId())
+                .consecutiveUneditedConfirmations(2)
+                .currentTrustTier(TrustTier.FAST_CONFIRM)
+                .build());
+
+        TrustLevel reloaded = trustLevelRepository.findByUserId(user.getId()).orElseThrow();
+
+        assertThat(reloaded.getConsecutiveUneditedConfirmations()).isEqualTo(2);
+        assertThat(reloaded.getCurrentTrustTier()).isEqualTo(TrustTier.FAST_CONFIRM);
     }
 }
