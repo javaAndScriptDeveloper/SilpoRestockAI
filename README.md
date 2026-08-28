@@ -1,7 +1,16 @@
-# Spring Boot Service Template
+# Комора
 
-A modern, batteries-included starting point for Java Spring Boot services. Clone it, rename the base
-package, and start building — the tedious infrastructure is already wired up.
+**Комора** is an AI agent that automates a household's weekly food supply. It onboards a household,
+generates a weekly meal plan, builds a real Silpo cart through the official Silpo MCP server
+(`https://mcp.silpo.ua/mcp`, OAuth 2.1 + PKCE), then runs a repeating check-in → diff → delta-reorder
+loop with state persisted across turns. Built for the [Silpo AI Factory](https://ai-factory.silpo.ua)
+hackathon.
+
+Read [`docs/PRODUCT_BRIEF.md`](docs/PRODUCT_BRIEF.md) for the product context — problem, value, feature
+order, and all ten user flows — before implementing anything. `CLAUDE.md` covers the conventions this
+codebase enforces.
+
+The service is bootstrapped from a Spring Boot template, so the infrastructure below is already wired up.
 
 ## Stack
 
@@ -53,7 +62,7 @@ sensible local defaults:
 
 | Variable      | Default                                    | Purpose            |
 |---------------|--------------------------------------------|--------------------|
-| `APP_NAME`    | `spring-template`                          | Application name   |
+| `APP_NAME`    | `silpo-restock-ai`                         | Application name   |
 | `SERVER_PORT` | `8080`                                     | HTTP port          |
 | `DB_URL`      | `jdbc:postgresql://localhost:5432/app`     | JDBC URL           |
 | `DB_USERNAME` | `app`                                      | DB user            |
@@ -80,14 +89,15 @@ and retry defaults live under `resilience4j.*` in `application.yml`.
 ## Project layout
 
 ```
-src/main/java/com/example/company
+src/main/java/com/silporestockai
 ├── Application.java          # entry point
-├── client/                   # Feign / HTTP clients
+├── client/                   # outbound integrations — mcp/, llm/, stt/, telegram/
 ├── config/                   # @Configuration, OpenAPI, global error handling, aspects
 ├── controller/               # REST controllers
 ├── dto/                      # request/response models
 ├── entity/                   # JPA entities
 ├── exception/                # ApplicationException + domain errors
+├── job/                      # @Scheduled agent stages (check-in prompts, reorder triggers)
 ├── mapper/                   # MapStruct mappers
 ├── model/                    # domain models
 ├── repository/               # Spring Data repositories
@@ -113,8 +123,8 @@ running.
 Build a single image:
 
 ```bash
-make image                       # docker build -t spring-template .
-docker run --rm -p 8080:8080 spring-template
+make image                       # docker build -t silpo-restock-ai .
+docker run --rm -p 8080:8080 silpo-restock-ai
 ```
 
 Or run the whole stack (app + PostgreSQL) with Compose:
@@ -136,11 +146,11 @@ The multi-stage `Dockerfile` produces a layered, non-root image on a slim JRE.
   PR, and uploads the test and coverage reports.
 - **Renovate** (`renovate.json`) opens grouped dependency-update PRs and auto-merges safe minor/patch bumps.
 
-## Making it yours
+## Where the work is planned
 
-1. Rename the base package `com.example.company` and update `group` in `build.gradle.kts`.
-2. Set `rootProject.name` in `settings.gradle.kts` and `APP_NAME`.
-3. Add your first Liquibase changeset and JPA entities.
+- [`docs/PRODUCT_BRIEF.md`](docs/PRODUCT_BRIEF.md) — product context and user flows (mirrored from Notion).
+- `CLAUDE.md` — package conventions and the invariants that break the build.
+- Notion database *Комора — Development Plan* — the task breakdown; work one task at a time, in order.
 
 ## License
 

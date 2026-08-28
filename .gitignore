@@ -24,7 +24,10 @@ Thumbs.db
 .env.local
 *.log
 
+# Per-package CLAUDE.md files ship with the template as local guidance; only the
+# root one is ours and belongs in git.
 CLAUDE.md
+!/CLAUDE.md
 
 # Local OAuth spike artifacts (contains PKCE verifiers / auth codes)
 .spike/
