@@ -117,6 +117,31 @@ The URL changes every time the tunnel restarts, so step 3 repeats each session. 
 `TELEGRAM_WEBHOOK_URL` the app boots normally and never contacts Telegram. A failed registration is logged
 and does not stop the app.
 
+### Anthropic Claude
+
+Used for meal plan generation, check-in parsing and (stretch) fridge-photo parsing:
+
+| Variable               | Default           | Purpose                                                                          |
+|------------------------|-------------------|----------------------------------------------------------------------------------|
+| `ANTHROPIC_API_KEY`    | *(empty)*         | API key; blank makes Claude calls fail with a clear message, the app still boots   |
+| `ANTHROPIC_MODEL`      | `claude-sonnet-5` | Model id                                                                          |
+| `ANTHROPIC_MAX_TOKENS` | `4096`            | Output token ceiling per call                                                     |
+| `ANTHROPIC_TIMEOUT`    | `120s`            | Per-request timeout; meal plan generation is slow                                  |
+
+Retry and circuit-breaker behaviour lives under `resilience4j.retry.instances.claude` and
+`resilience4j.circuitbreaker.instances.claude` in `application.yml`. Only rate limits and upstream outages
+are retried; a malformed request fails on the first attempt and does not count towards opening the breaker.
+
+Structured output uses the SDK's native output config: `completeStructured(system, user, MyRecord.class)`
+sends a schema derived from the record and returns a populated instance, so malformed model output surfaces
+as `ClaudeStructuredOutputException` rather than a parse crash.
+
+To smoke-test against the real API, export a key and point the client at production:
+
+```bash
+ANTHROPIC_API_KEY=sk-ant-... ANTHROPIC_BASE_URL=https://api.anthropic.com make run
+```
+
 The schema is owned by **Liquibase** (`src/main/resources/db/changelog`). Hibernate is set to `validate`
 only — add your changesets under `db/changelog/changes/`.
 

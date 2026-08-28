@@ -3,6 +3,9 @@ package com.silporestockai.integration;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.silporestockai.client.claude.ClaudeApiClient;
 import com.silporestockai.exception.ClaudeApiException;
 import com.silporestockai.exception.ClaudeStructuredOutputException;
@@ -12,6 +15,7 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -115,5 +119,43 @@ class ClaudeApiClientIntegrationTest extends AbstractIntegrationTest {
 
         assertThat(answer).isEqualTo("після паузи");
         assertThat(STUB.callCount()).isEqualTo(2);
+    }
+
+    @Test
+    void sendsAnImageAsABase64BlockAlongsideTheTextPrompt() {
+        STUB.respondWithText("бачу молоко і сир");
+        byte[] png = {(byte) 0x89, 'P', 'N', 'G'};
+
+        String answer = claudeApiClient.image("system", "Що в холодильнику?", png, "image/png");
+
+        assertThat(answer).isEqualTo("бачу молоко і сир");
+        var content = STUB.requests().getFirst().path("messages").get(0).path("content");
+        assertThat(content.get(0).path("type").asText()).isEqualTo("image");
+        assertThat(content.get(0).path("source").path("media_type").asText()).isEqualTo("image/png");
+        assertThat(content.get(0).path("source").path("data").asText())
+                .isEqualTo(java.util.Base64.getEncoder().encodeToString(png));
+        assertThat(content.get(1).path("text").asText()).isEqualTo("Що в холодильнику?");
+    }
+
+    @Test
+    void neverLogsTheApiKey() {
+        Logger root = (Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        root.addAppender(appender);
+        try {
+            STUB.respondWithText("ok");
+            claudeApiClient.complete("system", "user");
+            STUB.injectStatus(401);
+            try {
+                claudeApiClient.complete("system", "user");
+            } catch (ClaudeApiException expected) {
+                // The failure path is exactly where a key is most likely to be logged, so exercise it.
+            }
+        } finally {
+            root.detachAppender(appender);
+        }
+
+        assertThat(appender.list).noneMatch(event -> event.getFormattedMessage().contains(API_KEY));
     }
 }

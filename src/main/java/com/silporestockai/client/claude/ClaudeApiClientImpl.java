@@ -8,7 +8,10 @@ import com.anthropic.errors.AnthropicIoException;
 import com.anthropic.errors.AnthropicRetryableException;
 import com.anthropic.errors.InternalServerException;
 import com.anthropic.errors.RateLimitException;
+import com.anthropic.models.messages.Base64ImageSource;
 import com.anthropic.models.messages.ContentBlock;
+import com.anthropic.models.messages.ContentBlockParam;
+import com.anthropic.models.messages.ImageBlockParam;
 import com.anthropic.models.messages.Message;
 import com.anthropic.models.messages.MessageCreateParams;
 import com.anthropic.models.messages.Model;
@@ -23,6 +26,8 @@ import com.silporestockai.exception.ClaudeStructuredOutputException;
 import com.silporestockai.exception.ClaudeUnavailableException;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
+import java.util.Base64;
+import java.util.List;
 import java.util.Optional;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -104,7 +109,17 @@ public class ClaudeApiClientImpl implements ClaudeApiClient {
     @CircuitBreaker(name = "claude")
     @Retry(name = "claude")
     public String image(String systemPrompt, String userPrompt, byte[] imageBytes, String mediaType) {
-        throw new UnsupportedOperationException("image input arrives in task 4 of the plan");
+        Base64ImageSource source = Base64ImageSource.builder()
+                .data(Base64.getEncoder().encodeToString(imageBytes))
+                .mediaType(Base64ImageSource.MediaType.of(mediaType))
+                .build();
+        MessageCreateParams params = baseParams(systemPrompt)
+                .addUserMessageOfBlockParams(List.of(
+                        ContentBlockParam.ofImage(
+                                ImageBlockParam.builder().source(source).build()),
+                        ContentBlockParam.ofText(userPrompt)))
+                .build();
+        return textOf(call(() -> client().messages().create(params)));
     }
 
     private MessageCreateParams.Builder baseParams(String systemPrompt) {
