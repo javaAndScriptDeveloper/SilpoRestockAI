@@ -130,3 +130,12 @@ telegram:
   webhook-secret: ${TELEGRAM_WEBHOOK_SECRET:}
   # Overridden by tests to point the SDK at a local stub. Not a production knob.
   api-url: ${TELEGRAM_API_URL:https://api.telegram.org}
+
+claude:
+  api-key: ${ANTHROPIC_API_KEY:}
+  model: ${ANTHROPIC_MODEL:claude-sonnet-5}
+  max-tokens: ${ANTHROPIC_MAX_TOKENS:4096}
+  # Meal plan generation is a long call; keep this well above a normal HTTP timeout.
+  timeout: ${ANTHROPIC_TIMEOUT:120s}
+  # Overridden by tests to point the SDK at a local stub. Not a production knob.
+  base-url: ${ANTHROPIC_BASE_URL:https://api.anthropic.com}
