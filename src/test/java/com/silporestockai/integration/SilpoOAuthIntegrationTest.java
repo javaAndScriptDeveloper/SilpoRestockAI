@@ -4,7 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 
 import com.silporestockai.entity.SilpoOAuthToken;
+import com.silporestockai.entity.User;
 import com.silporestockai.repository.SilpoOAuthTokenRepository;
+import com.silporestockai.repository.UserRepository;
 import com.silporestockai.support.StubOAuthServer;
 import com.silporestockai.utils.TokenCipher;
 import java.io.IOException;
@@ -39,6 +41,9 @@ class SilpoOAuthIntegrationTest extends AbstractIntegrationTest {
     @Autowired
     private TokenCipher tokenCipher;
 
+    @Autowired
+    private UserRepository userRepository;
+
     @DynamicPropertySource
     static void oauthIssuer(DynamicPropertyRegistry registry) {
         registry.add("silpo.mcp.issuer", STUB::issuer);
@@ -72,7 +77,8 @@ class SilpoOAuthIntegrationTest extends AbstractIntegrationTest {
 
     @Test
     void callbackExchangesTheCodeAndStoresBothTokensEncrypted() throws Exception {
-        UUID userId = UUID.randomUUID();
+        // mcp_oauth_token.user_id is a foreign key to users since task 05, so the owner has to exist first.
+        UUID userId = persistedUser();
         String state = queryOf(mockMvc.perform(get("/auth/silpo/start").param("userId", userId.toString()))
                         .andReturn()
                         .getResponse()
@@ -123,5 +129,15 @@ class SilpoOAuthIntegrationTest extends AbstractIntegrationTest {
                     URLDecoder.decode(pair.substring(separator + 1), StandardCharsets.UTF_8));
         }
         return query;
+    }
+
+    private UUID persistedUser() {
+        return userRepository
+                .save(User.builder()
+                        .id(UUID.randomUUID())
+                        .telegramChatId(System.nanoTime())
+                        .createdAt(java.time.Instant.now())
+                        .build())
+                .getId();
     }
 }

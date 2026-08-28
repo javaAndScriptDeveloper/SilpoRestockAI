@@ -1,0 +1,33 @@
+databaseChangeLog:
+  - changeSet:
+      id: 003-users
+      author: komora
+      comment: >-
+        One row per person using the bot. telegram_chat_id is the identity we actually receive on every
+        webhook call; silpo_guest_id is filled in once the guest connects their Silpo account.
+      changes:
+        - createTable:
+            tableName: users
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_users
+                    nullable: false
+              - column:
+                  name: telegram_chat_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+                    unique: true
+                    uniqueConstraintName: ux_users_telegram_chat_id
+              - column:
+                  name: silpo_guest_id
+                  type: VARCHAR(255)
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  constraints:
+                    nullable: false

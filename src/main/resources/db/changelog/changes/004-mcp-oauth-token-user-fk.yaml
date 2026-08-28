@@ -1,0 +1,15 @@
+databaseChangeLog:
+  - changeSet:
+      id: 004-mcp-oauth-token-user-fk
+      author: komora
+      comment: >-
+        Task 02 shipped mcp_oauth_token before the users table existed, leaving user_id a plain unique
+        column. Now that users exists, make it a real foreign key. Deleting a user drops their tokens.
+      changes:
+        - addForeignKeyConstraint:
+            constraintName: fk_mcp_oauth_token_user
+            baseTableName: mcp_oauth_token
+            baseColumnNames: user_id
+            referencedTableName: users
+            referencedColumnNames: id
+            onDelete: CASCADE
