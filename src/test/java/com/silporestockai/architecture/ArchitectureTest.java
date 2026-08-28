@@ -2,6 +2,7 @@ package com.silporestockai.architecture;
 
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.fields;
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
@@ -57,6 +58,20 @@ class ArchitectureTest {
     @ArchTest
     static final ArchRule repositoriesAreNamedProperly =
             classes().that().resideInAPackage("..repository..").should().haveSimpleNameEndingWith("Repository");
+
+    /**
+     * The Telegram SDK is an implementation detail of the two packages that own the channel. Domain services depend on
+     * {@code TelegramOutboundService} and the records in {@code model}, never on {@code Update}, {@code Message} or any
+     * other SDK type.
+     */
+    @ArchTest
+    static final ArchRule telegramSdkStaysBehindTheTelegramPackages = noClasses()
+            .that()
+            .resideOutsideOfPackages("..controller.telegram..", "..service.telegram..")
+            .should()
+            .dependOnClassesThat()
+            .resideInAnyPackage("org.telegram..")
+            .as("Telegram SDK types must not leak outside controller.telegram and service.telegram");
 
     @ArchTest
     static final ArchRule jobsAreNamedProperly =

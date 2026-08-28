@@ -15,7 +15,7 @@ fits; do not invent a parallel structure.
 
 | Package | Holds |
 |---|---|
-| `client` | outbound integrations (`mcp`, `llm`, `stt`, `telegram` subpackages) |
+| `client` | outbound integrations (`mcp`, `llm`, `stt` subpackages) |
 | `config` | `@Configuration`, OpenAPI, global error handling, aspects |
 | `controller` | REST controllers |
 | `dto` | `request` / `response` models |
@@ -48,6 +48,10 @@ fits; do not invent a parallel structure.
   `HttpRequest` it already built — stale `Authorization` header included — so a refreshed token would never
   reach the server. `SilpoMcpClientImpl` refreshes in the handler, declines the SDK replay, and retries once
   on a fresh session. `SilpoMcpClientIntegrationTest` locks that behaviour in.
+- **Telegram SDK types stay in `controller.telegram` and `service.telegram`** — enforced by
+  `telegramSdkStaysBehindTheTelegramPackages` in `ArchitectureTest`. Everything else talks to
+  `TelegramOutboundService` and the records in `model`. There is deliberately no `client/telegram`: the
+  SDK is the HTTP client, so a wrapper would only be a pass-through needing its own exemption.
 - **Config idiom** is `${ENV_VAR:default}` inline in `application.yml`. Secrets never hardcoded;
   `.env` is gitignored, `.env.example` is committed. OAuth tokens stay server-side — never render
   them into anything a client sees.

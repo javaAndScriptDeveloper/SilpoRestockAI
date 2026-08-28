@@ -2,6 +2,7 @@ package com.silporestockai.support;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
@@ -12,6 +13,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * A minimal Telegram Bot API over plain HTTP, enough to drive {@code TelegramOutboundService} in tests:
@@ -26,6 +29,10 @@ public final class StubTelegramServer implements AutoCloseable {
     public static final byte[] VOICE_BYTES = "stub-ogg-voice-payload".getBytes(StandardCharsets.UTF_8);
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    /** One {@code multipart/form-data} part: its {@code name} and the body up to the next boundary. */
+    private static final Pattern MULTIPART_PART =
+            Pattern.compile("name=\"([^\"]+)\"(?:\r?\n[^\r\n]+)*\r?\n\r?\n(.*?)\r?\n--", Pattern.DOTALL);
 
     private final HttpServer server;
     private final String botToken;
@@ -83,12 +90,33 @@ public final class StubTelegramServer implements AutoCloseable {
             // The SDK lowercases Bot API method names in the URL; Telegram accepts either casing.
             String method = path.substring(path.lastIndexOf('/') + 1).toLowerCase(Locale.ROOT);
             byte[] rawBody = exchange.getRequestBody().readAllBytes();
-            JsonNode body = rawBody.length == 0 ? MAPPER.createObjectNode() : MAPPER.readTree(rawBody);
+            String contentType = exchange.getRequestHeaders().getFirst("Content-Type");
+            JsonNode body = parseBody(rawBody, contentType);
             record(method, body);
             respond(exchange, resultFor(method, body));
         } finally {
             exchange.close();
         }
+    }
+
+    /**
+     * Most Bot API methods are sent as JSON, but the ones that can carry a file — {@code setWebhook} with its optional
+     * certificate — are always sent as {@code multipart/form-data}. Both shapes are flattened to one JSON object so
+     * assertions do not have to care which the SDK chose.
+     */
+    private static JsonNode parseBody(byte[] rawBody, String contentType) throws IOException {
+        if (rawBody.length == 0) {
+            return MAPPER.createObjectNode();
+        }
+        if (contentType == null || !contentType.startsWith("multipart/form-data")) {
+            return MAPPER.readTree(rawBody);
+        }
+        ObjectNode parsed = MAPPER.createObjectNode();
+        Matcher matcher = MULTIPART_PART.matcher(new String(rawBody, StandardCharsets.UTF_8));
+        while (matcher.find()) {
+            parsed.put(matcher.group(1), matcher.group(2));
+        }
+        return parsed;
     }
 
     private synchronized void record(String method, JsonNode body) {

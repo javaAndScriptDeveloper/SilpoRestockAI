@@ -86,6 +86,37 @@ Tokens are stored **AES-256-GCM encrypted** in `mcp_oauth_token`, never logged, 
 endpoint. With `SILPO_TOKEN_ENCRYPTION_KEY` unset the app generates an ephemeral key and warns at startup —
 stored tokens will not survive a restart, which is fine for local work only.
 
+### Telegram
+
+| Variable                  | Default   | Purpose                                                                                                 |
+|---------------------------|-----------|---------------------------------------------------------------------------------------------------------|
+| `TELEGRAM_BOT_TOKEN`      | *(empty)* | Bot token from [@BotFather](https://t.me/BotFather)                                                       |
+| `TELEGRAM_WEBHOOK_URL`    | *(empty)* | Public HTTPS URL of `POST /telegram/webhook`; blank skips registration at startup                          |
+| `TELEGRAM_WEBHOOK_SECRET` | *(empty)* | Shared secret Telegram echoes in `X-Telegram-Bot-Api-Secret-Token`; generate with `openssl rand -hex 32`   |
+
+#### Running the webhook locally
+
+Telegram only delivers to a public HTTPS URL, so a local run needs a tunnel:
+
+1. Start the tunnel: `ngrok http 8080` (any equivalent works — Cloudflare Tunnel, localtunnel).
+2. Copy the `https://` forwarding URL ngrok prints.
+3. Put it in `.env` together with a secret:
+
+   ```bash
+   TELEGRAM_BOT_TOKEN=<token from @BotFather>
+   TELEGRAM_WEBHOOK_URL=https://<subdomain>.ngrok-free.app/telegram/webhook
+   TELEGRAM_WEBHOOK_SECRET=$(openssl rand -hex 32)
+   ```
+
+4. `make run`. The app calls `setWebhook` on startup and logs `registered the Telegram webhook at …`.
+5. Message the bot. It echoes back, which proves webhook → router → conversation state → outbound.
+6. Check what Telegram thinks it is delivering to with
+   `curl https://api.telegram.org/bot<token>/getWebhookInfo`.
+
+The URL changes every time the tunnel restarts, so step 3 repeats each session. Without
+`TELEGRAM_WEBHOOK_URL` the app boots normally and never contacts Telegram. A failed registration is logged
+and does not stop the app.
+
 The schema is owned by **Liquibase** (`src/main/resources/db/changelog`). Hibernate is set to `validate`
 only — add your changesets under `db/changelog/changes/`.
 
