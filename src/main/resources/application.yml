@@ -82,6 +82,36 @@ resilience4j:
       default:
         max-attempts: 3
         wait-duration: 500ms
+    instances:
+      # Silpo rate-limits per guest and answers 429; back off exponentially rather than hammering it.
+      # Only SilpoMcpRateLimitedException is retried — a 403 or a bad argument must fail on the first attempt.
+      silpoMcp:
+        base-config: default
+        max-attempts: 4
+        wait-duration: 1s
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+        retry-exceptions:
+          - com.silporestockai.exception.SilpoMcpRateLimitedException
+
+# Official Silpo MCP server. Endpoints below match what the server advertises at
+# /.well-known/oauth-authorization-server and /.well-known/oauth-protected-resource/mcp.
+silpo:
+  mcp:
+    endpoint: ${SILPO_MCP_ENDPOINT:https://mcp.silpo.ua/mcp}
+    issuer: ${SILPO_MCP_ISSUER:https://mcp.silpo.ua}
+    # RFC 8707 resource indicator — the MCP endpoint URL itself, not the bare host.
+    resource: ${SILPO_MCP_RESOURCE:https://mcp.silpo.ua/mcp}
+    # Public OAuth client (token_endpoint_auth_method: none), so this is an identifier, not a secret.
+    # Leave blank to self-register via RFC 7591 Dynamic Client Registration on first use.
+    client-id: ${SILPO_MCP_CLIENT_ID:}
+    client-name: ${SILPO_MCP_CLIENT_NAME:Komora}
+    redirect-uri: ${SILPO_MCP_REDIRECT_URI:http://localhost:8080/auth/silpo/callback}
+    request-timeout: ${SILPO_MCP_REQUEST_TIMEOUT:30s}
+    login-state-ttl: ${SILPO_MCP_LOGIN_STATE_TTL:10m}
+    # Base64-encoded 32-byte AES key encrypting stored tokens. Unset generates an ephemeral key at
+    # startup, which means stored tokens do not survive a restart. Never commit a real key.
+    token-encryption-key: ${SILPO_TOKEN_ENCRYPTION_KEY:}
 
 springdoc:
   swagger-ui:

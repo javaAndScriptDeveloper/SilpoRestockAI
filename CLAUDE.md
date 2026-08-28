@@ -32,7 +32,9 @@ fits; do not invent a parallel structure.
 
 - **Liquibase owns the schema.** `spring.jpa.hibernate.ddl-auto: validate` — every new `@Entity`
   needs a changeset under `src/main/resources/db/changelog/changes/` (master uses `includeAll`, so
-  name files `001-...yaml`, `002-...yaml`) or *every* `@SpringBootTest` fails.
+  name files `001-...yaml`, `002-...yaml`) or *every* `@SpringBootTest` fails. Boot 4 moved
+  `LiquibaseAutoConfiguration` into its own `org.springframework.boot:spring-boot-liquibase` module —
+  without it `liquibase-core` sits on the classpath and changesets are silently never applied.
 - **ArchUnit is enforced** (`src/test/java/.../architecture/ArchitectureTest.java`): constructor
   injection only (`@RequiredArgsConstructor`, no `@Autowired` fields); `Controller` / `Service` /
   `Repository` / `Scheduler` name suffixes; `Service` reachable only from `Controller` and `Job`.
@@ -42,6 +44,10 @@ fits; do not invent a parallel structure.
 - **Feign + Resilience4j is the outbound-HTTP convention** (see `client/ExampleApiClient`). The one
   deliberate exception is the MCP transport: Streamable HTTP needs SSE and the `Mcp-Session-Id`
   handshake, which Feign cannot express.
+- **MCP 401 handling is ours, not the SDK's.** The SDK's `authorizationErrorHandler` replay re-sends the
+  `HttpRequest` it already built — stale `Authorization` header included — so a refreshed token would never
+  reach the server. `SilpoMcpClientImpl` refreshes in the handler, declines the SDK replay, and retries once
+  on a fresh session. `SilpoMcpClientIntegrationTest` locks that behaviour in.
 - **Config idiom** is `${ENV_VAR:default}` inline in `application.yml`. Secrets never hardcoded;
   `.env` is gitignored, `.env.example` is committed. OAuth tokens stay server-side — never render
   them into anything a client sees.

@@ -68,6 +68,24 @@ sensible local defaults:
 | `DB_USERNAME` | `app`                                      | DB user            |
 | `DB_PASSWORD` | `app`                                      | DB password        |
 
+### Silpo MCP
+
+Every product feature goes through the official Silpo MCP server, which is OAuth 2.1 + PKCE protected:
+
+| Variable                      | Default                                   | Purpose                                        |
+|-------------------------------|-------------------------------------------|------------------------------------------------|
+| `SILPO_MCP_ENDPOINT`          | `https://mcp.silpo.ua/mcp`                | Streamable HTTP MCP endpoint                   |
+| `SILPO_MCP_ISSUER`            | `https://mcp.silpo.ua`                    | OAuth issuer (`/authorize`, `/token`, `/register`) |
+| `SILPO_MCP_RESOURCE`          | `https://mcp.silpo.ua/mcp`                | RFC 8707 `resource` indicator                  |
+| `SILPO_MCP_CLIENT_ID`         | *(empty)*                                 | Registered client id; empty triggers Dynamic Client Registration on first use |
+| `SILPO_MCP_REDIRECT_URI`      | `http://localhost:8080/auth/silpo/callback` | OAuth callback                               |
+| `SILPO_TOKEN_ENCRYPTION_KEY`  | *(empty)*                                 | Base64 AES-256 key for tokens at rest; generate with `openssl rand -base64 32` |
+
+Connect an account by opening `/auth/silpo/start?userId=<uuid>` and logging in with a Silpo phone + OTP.
+Tokens are stored **AES-256-GCM encrypted** in `mcp_oauth_token`, never logged, and never returned by an
+endpoint. With `SILPO_TOKEN_ENCRYPTION_KEY` unset the app generates an ephemeral key and warns at startup —
+stored tokens will not survive a restart, which is fine for local work only.
+
 The schema is owned by **Liquibase** (`src/main/resources/db/changelog`). Hibernate is set to `validate`
 only — add your changesets under `db/changelog/changes/`.
 

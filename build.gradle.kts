@@ -59,7 +59,9 @@ dependencies {
     // which Feign cannot express — this is the one deliberate exception to the Feign convention.
     implementation("io.modelcontextprotocol.sdk:mcp")
 
-    // Database Migration
+    // Database Migration. Boot 4 moved LiquibaseAutoConfiguration out of spring-boot-autoconfigure
+    // into its own module, so liquibase-core alone leaves the changelog silently unapplied.
+    implementation("org.springframework.boot:spring-boot-liquibase")
     implementation("org.liquibase:liquibase-core")
 
     // PostgreSQL Driver
