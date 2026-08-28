@@ -2,6 +2,7 @@ package com.silporestockai.client.claude;
 
 import com.anthropic.client.AnthropicClient;
 import com.anthropic.client.okhttp.AnthropicOkHttpClient;
+import com.anthropic.core.JsonSchemaLocalValidation;
 import com.anthropic.errors.AnthropicException;
 import com.anthropic.errors.AnthropicIoException;
 import com.anthropic.errors.AnthropicRetryableException;
@@ -11,10 +12,16 @@ import com.anthropic.models.messages.ContentBlock;
 import com.anthropic.models.messages.Message;
 import com.anthropic.models.messages.MessageCreateParams;
 import com.anthropic.models.messages.Model;
+import com.anthropic.models.messages.StructuredContentBlock;
+import com.anthropic.models.messages.StructuredMessage;
+import com.anthropic.models.messages.StructuredMessageCreateParams;
+import com.anthropic.models.messages.StructuredTextBlock;
 import com.silporestockai.config.ClaudeProperties;
 import com.silporestockai.exception.ClaudeApiException;
 import com.silporestockai.exception.ClaudeRateLimitedException;
+import com.silporestockai.exception.ClaudeStructuredOutputException;
 import com.silporestockai.exception.ClaudeUnavailableException;
+import java.util.Optional;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
@@ -63,7 +70,28 @@ public class ClaudeApiClientImpl implements ClaudeApiClient {
 
     @Override
     public <T> T completeStructured(String systemPrompt, String userPrompt, Class<T> responseType) {
-        throw new UnsupportedOperationException("structured output arrives in task 2 of the plan");
+        StructuredMessageCreateParams<T> params = baseParams(systemPrompt)
+                .addUserMessage(userPrompt)
+                .outputConfig(responseType, JsonSchemaLocalValidation.YES)
+                .build();
+        StructuredMessage<T> message = call(() -> client().messages().create(params));
+        try {
+            return message.content().stream()
+                    .map(StructuredContentBlock::text)
+                    .flatMap(Optional::stream)
+                    .findFirst()
+                    .map(StructuredTextBlock::text)
+                    .orElseThrow(() -> new ClaudeStructuredOutputException(
+                            "Claude returned no output matching " + responseType.getSimpleName()));
+        } catch (ClaudeStructuredOutputException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            // The SDK raises when the reply does not deserialise into the target type. Surface it as our own type so
+            // callers can retry with a different prompt or fall back — silently retrying would hide a prompt or
+            // schema problem.
+            throw new ClaudeStructuredOutputException(
+                    "Claude returned output that does not match " + responseType.getSimpleName(), e);
+        }
     }
 
     @Override

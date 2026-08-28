@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.silporestockai.client.claude.ClaudeApiClient;
 import com.silporestockai.exception.ClaudeApiException;
+import com.silporestockai.exception.ClaudeStructuredOutputException;
 import com.silporestockai.support.StubAnthropicServer;
 import java.io.IOException;
 import org.junit.jupiter.api.AfterAll;
@@ -67,6 +68,40 @@ class ClaudeApiClientIntegrationTest extends AbstractIntegrationTest {
         STUB.injectStatus(401);
 
         assertThatThrownBy(() -> claudeApiClient.complete("system", "user")).isInstanceOf(ClaudeApiException.class);
+
+        assertThat(STUB.callCount()).isEqualTo(1);
+    }
+
+    /** Target type for the structured-output tests. Deliberately trivial: this is a transport test. */
+    record InventoryDelta(String item, int quantity, boolean runningOut) {}
+
+    @Test
+    void deserialisesStructuredOutputIntoTheRequestedRecord() {
+        STUB.respondWithText("{\"item\":\"молоко\",\"quantity\":2,\"runningOut\":true}");
+
+        InventoryDelta delta =
+                claudeApiClient.completeStructured("system", "молока лишилось два", InventoryDelta.class);
+
+        assertThat(delta.item()).isEqualTo("молоко");
+        assertThat(delta.quantity()).isEqualTo(2);
+        assertThat(delta.runningOut()).isTrue();
+    }
+
+    @Test
+    void sendsAnOutputConfigDerivedFromTheTargetType() {
+        STUB.respondWithText("{\"item\":\"хліб\",\"quantity\":1,\"runningOut\":false}");
+
+        claudeApiClient.completeStructured("system", "user", InventoryDelta.class);
+
+        assertThat(STUB.requests().getFirst().toString()).contains("runningOut");
+    }
+
+    @Test
+    void surfacesProseInsteadOfStructuredOutputAsATypedException() {
+        STUB.respondWithText("Вибач, я не зрозумів запит.");
+
+        assertThatThrownBy(() -> claudeApiClient.completeStructured("system", "user", InventoryDelta.class))
+                .isInstanceOf(ClaudeStructuredOutputException.class);
 
         assertThat(STUB.callCount()).isEqualTo(1);
     }
