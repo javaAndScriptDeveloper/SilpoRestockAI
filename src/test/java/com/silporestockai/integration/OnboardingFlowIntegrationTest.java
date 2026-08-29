@@ -232,4 +232,70 @@ class OnboardingFlowIntegrationTest extends AbstractIntegrationTest {
                 .isEqualTo(OnboardingStep.ASK_HOUSEHOLD.name());
         assertThat(lastMessageText()).isNotBlank();
     }
+
+    @Test
+    void resumesFromTheSavedStepAfterTheUserGoesSilent() throws Exception {
+        sendText(1, "привіт");
+        tapButton(2, "onb:skip");
+        sendText(3, "нас четверо");
+
+        // Nothing in memory carries between webhook calls; only conversation_state does.
+        assertThat(conversationStateService.load(CHAT_ID).getCurrentStep())
+                .isEqualTo(OnboardingStep.ASK_RESTRICTIONS.name());
+
+        sendText(4, "нема");
+
+        assertThat(conversationStateService.load(CHAT_ID).getCurrentStep())
+                .isEqualTo(OnboardingStep.ASK_DISLIKES.name());
+        assertThat(conversationStateService.load(CHAT_ID).getContext()).containsEntry("householdSize", 4);
+        assertThat(userProfileRepository.count()).isZero();
+    }
+
+    @Test
+    void correctionOverwritesADetectedField() throws Exception {
+        sendText(1, "привіт");
+        connectSilpo();
+        CLAUDE.respondWithText("{\"householdSize\":4,\"hasKids\":false}");
+        tapButton(2, "onb:connected");
+
+        tapButton(3, "onb:correct");
+        sendText(4, "нас двоє");
+        sendText(5, "нема");
+        sendText(6, "нема");
+        sendText(7, "1800");
+
+        UUID userId = userRepository.findByTelegramChatId(CHAT_ID).orElseThrow().getId();
+        UserProfile profile = userProfileRepository.findByUserId(userId).orElseThrow();
+        assertThat(profile.getHouseholdSize()).isEqualTo(2);
+        assertThat(profile.getWeeklyBudget()).isEqualByComparingTo("1800");
+    }
+
+    @Test
+    void anOnboardedUserIsNotOnboardedAgain() throws Exception {
+        sendText(1, "привіт");
+        tapButton(2, "onb:skip");
+        sendText(3, "2");
+        sendText(4, "нема");
+        sendText(5, "нема");
+        sendText(6, "1500");
+        TELEGRAM.reset();
+
+        sendText(7, "а що далі?");
+
+        assertThat(userProfileRepository.count()).isEqualTo(1);
+        assertThat(lastMessageText()).contains("Профіль уже є");
+    }
+
+    @Test
+    void degradesToAskingWhenSilpoIsUnreachable() throws Exception {
+        sendText(1, "привіт");
+        connectSilpo();
+        MCP.injectStatus("initialize", 500);
+
+        tapButton(2, "onb:connected");
+
+        assertThat(conversationStateService.load(CHAT_ID).getCurrentStep())
+                .isEqualTo(OnboardingStep.ASK_HOUSEHOLD.name());
+        assertThat(userProfileRepository.count()).isZero();
+    }
 }

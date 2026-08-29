@@ -109,13 +109,26 @@ Telegram only delivers to a public HTTPS URL, so a local run needs a tunnel:
    ```
 
 4. `make run`. The app calls `setWebhook` on startup and logs `registered the Telegram webhook at …`.
-5. Message the bot. It echoes back, which proves webhook → router → conversation state → outbound.
+5. Message the bot. It answers with the onboarding welcome, which proves webhook → router →
+   conversation state → outbound.
 6. Check what Telegram thinks it is delivering to with
    `curl https://api.telegram.org/bot<token>/getWebhookInfo`.
 
 The URL changes every time the tunnel restarts, so step 3 repeats each session. Without
 `TELEGRAM_WEBHOOK_URL` the app boots normally and never contacts Telegram. A failed registration is logged
 and does not stop the app.
+
+#### Onboarding
+
+The first message any new chat sends starts onboarding. The bot creates the user row, offers a Silpo
+connect link, and — once connected — reads `silpo_get_my_family`, `silpo_get_my_food_restrictions`,
+`silpo_get_my_online_orders` and `silpo_get_my_favorites`, letting Claude turn whatever they return into a
+profile snapshot. Only the fields Silpo could not supply are asked, plus the weekly budget, which it never
+knows.
+
+Skipping the connect step, an unreachable Silpo, and a guest with no order history all take the same
+fallback: the bot asks directly. Onboarding ends with a saved `user_profile` and an
+`OnboardingCompletedEvent`, which meal plan generation will listen for.
 
 ### Anthropic Claude
 

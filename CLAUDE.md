@@ -58,6 +58,10 @@ fits; do not invent a parallel structure.
 - **Config idiom** is `${ENV_VAR:default}` inline in `application.yml`. Secrets never hardcoded;
   `.env` is gitignored, `.env.example` is committed. OAuth tokens stay server-side — never render
   them into anything a client sees.
+- **Conversation state is the only memory between webhook calls.** Nothing may be held in a field of a
+  flow service — Telegram delivers every update as an independent request, and two updates can land on
+  different instances. `OnboardingFlowService` keeps its partial profile in `conversation_state.context_json`
+  for exactly this reason.
 - `@Slf4j` for logging; no manual `LoggerFactory`.
 
 ## Commands
