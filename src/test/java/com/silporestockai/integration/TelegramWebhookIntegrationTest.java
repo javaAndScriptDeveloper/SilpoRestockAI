@@ -4,9 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.silporestockai.model.ConversationFlow;
 import com.silporestockai.repository.ConversationStateRepository;
-import com.silporestockai.service.ConversationStateService;
+import com.silporestockai.repository.UserProfileRepository;
+import com.silporestockai.repository.UserRepository;
 import com.silporestockai.support.StubTelegramServer;
 import java.io.IOException;
 import org.junit.jupiter.api.AfterAll;
@@ -34,7 +34,10 @@ class TelegramWebhookIntegrationTest extends AbstractIntegrationTest {
     private ConversationStateRepository conversationStateRepository;
 
     @Autowired
-    private ConversationStateService conversationStateService;
+    private UserProfileRepository userProfileRepository;
+
+    @Autowired
+    private UserRepository userRepository;
 
     private static StubTelegramServer start() {
         try {
@@ -59,7 +62,9 @@ class TelegramWebhookIntegrationTest extends AbstractIntegrationTest {
     @BeforeEach
     void reset() {
         STUB.reset();
+        userProfileRepository.deleteAll();
         conversationStateRepository.deleteAll();
+        userRepository.deleteAll();
     }
 
     private void deliver(String body) throws Exception {
@@ -92,29 +97,22 @@ class TelegramWebhookIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void echoesATextMessageEndToEnd() throws Exception {
-        deliver(textUpdate(1, "молоко закінчилось"));
+    void aFirstTextMessageStartsOnboarding() throws Exception {
+        deliver(textUpdate(1, "привіт"));
 
         assertThat(STUB.sentMessages()).hasSize(1);
         assertThat(STUB.sentMessages().getFirst().path("chat_id").asLong()).isEqualTo(CHAT_ID);
-        assertThat(STUB.sentMessages().getFirst().path("text").asText())
-                .isEqualTo("Комора: почув — «молоко закінчилось» (повідомлення №1)");
+        assertThat(STUB.sentMessages().getFirst().path("text").asText()).contains("Комора");
+        assertThat(conversationStateRepository.count()).isEqualTo(1);
     }
 
     @Test
-    void resumesConversationStateAcrossTwoSeparateWebhookCalls() throws Exception {
-        deliver(textUpdate(1, "перше"));
+    void aSecondMessageContinuesTheSameConversationRatherThanStartingANewOne() throws Exception {
+        deliver(textUpdate(1, "привіт"));
+        deliver(textUpdate(2, "ще раз"));
 
-        assertThat(conversationStateService.load(CHAT_ID).getContext()).containsEntry("messageCount", 1);
-
-        deliver(textUpdate(2, "друге"));
-
-        assertThat(STUB.sentMessages()).hasSize(2);
-        assertThat(STUB.sentMessages().get(1).path("text").asText())
-                .isEqualTo("Комора: почув — «друге» (повідомлення №2)");
-        assertThat(conversationStateService.load(CHAT_ID).getContext()).containsEntry("messageCount", 2);
-        assertThat(conversationStateService.load(CHAT_ID).getCurrentFlow()).isEqualTo(ConversationFlow.NONE);
         assertThat(conversationStateRepository.count()).isEqualTo(1);
+        assertThat(userRepository.count()).isEqualTo(1);
     }
 
     @Test
@@ -147,23 +145,21 @@ class TelegramWebhookIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void downloadsAVoiceNoteAndReportsItsSize() throws Exception {
+    void voiceNotesAreAcknowledgedRatherThanDropped() throws Exception {
+        deliver(textUpdate(1, "привіт"));
         deliver(voiceUpdate(3, "voice-file-id", 7));
 
-        assertThat(STUB.sentMessages()).hasSize(1);
-        assertThat(STUB.sentMessages().getFirst().path("text").asText())
-                .isEqualTo("Комора: голосове отримав (7 с, %d байт). Розшифровка буде пізніше."
-                        .formatted(StubTelegramServer.VOICE_BYTES.length));
+        assertThat(STUB.sentMessages().getLast().path("text").asText()).contains("Голосові");
     }
 
     @Test
     void routesAnInlineButtonCallbackAndAcknowledgesIt() throws Exception {
-        deliver(callbackUpdate(4, "cb-1", "cart:confirm"));
+        deliver(textUpdate(1, "привіт"));
+
+        deliver(callbackUpdate(4, "cb-1", "onb:skip"));
 
         assertThat(STUB.callbackAnswers()).hasSize(1);
         assertThat(STUB.callbackAnswers().getFirst().path("callback_query_id").asText())
                 .isEqualTo("cb-1");
-        assertThat(STUB.sentMessages()).hasSize(1);
-        assertThat(STUB.sentMessages().getFirst().path("text").asText()).isEqualTo("Комора: кнопка «cart:confirm».");
     }
 }

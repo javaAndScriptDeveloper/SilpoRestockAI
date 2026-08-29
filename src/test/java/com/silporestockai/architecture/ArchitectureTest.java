@@ -4,6 +4,7 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.fields;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 
+import com.tngtech.archunit.core.domain.JavaModifier;
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
@@ -47,17 +48,34 @@ class ArchitectureTest {
             .notBeAnnotatedWith("org.springframework.beans.factory.annotation.Autowired")
             .as("prefer constructor injection over field injection");
 
+    // Synthetic classes are excluded from every naming rule: a switch over an enum makes javac emit an
+    // anonymous `Outer$1` holding the switch map, and no naming convention can apply to a class nobody wrote.
     @ArchTest
-    static final ArchRule controllersAreNamedProperly =
-            classes().that().resideInAPackage("..controller..").should().haveSimpleNameEndingWith("Controller");
+    static final ArchRule controllersAreNamedProperly = classes()
+            .that()
+            .resideInAPackage("..controller..")
+            .and()
+            .doNotHaveModifier(JavaModifier.SYNTHETIC)
+            .should()
+            .haveSimpleNameEndingWith("Controller");
 
     @ArchTest
-    static final ArchRule servicesAreNamedProperly =
-            classes().that().resideInAPackage("..service..").should().haveSimpleNameEndingWith("Service");
+    static final ArchRule servicesAreNamedProperly = classes()
+            .that()
+            .resideInAPackage("..service..")
+            .and()
+            .doNotHaveModifier(JavaModifier.SYNTHETIC)
+            .should()
+            .haveSimpleNameEndingWith("Service");
 
     @ArchTest
-    static final ArchRule repositoriesAreNamedProperly =
-            classes().that().resideInAPackage("..repository..").should().haveSimpleNameEndingWith("Repository");
+    static final ArchRule repositoriesAreNamedProperly = classes()
+            .that()
+            .resideInAPackage("..repository..")
+            .and()
+            .doNotHaveModifier(JavaModifier.SYNTHETIC)
+            .should()
+            .haveSimpleNameEndingWith("Repository");
 
     /**
      * The Telegram SDK is an implementation detail of the two packages that own the channel. Domain services depend on
@@ -74,6 +92,11 @@ class ArchitectureTest {
             .as("Telegram SDK types must not leak outside controller.telegram and service.telegram");
 
     @ArchTest
-    static final ArchRule jobsAreNamedProperly =
-            classes().that().resideInAPackage("..job..").should().haveSimpleNameEndingWith("Scheduler");
+    static final ArchRule jobsAreNamedProperly = classes()
+            .that()
+            .resideInAPackage("..job..")
+            .and()
+            .doNotHaveModifier(JavaModifier.SYNTHETIC)
+            .should()
+            .haveSimpleNameEndingWith("Scheduler");
 }
