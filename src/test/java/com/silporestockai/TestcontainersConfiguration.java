@@ -1,8 +1,10 @@
 package com.silporestockai;
 
+import java.util.concurrent.Executor;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Bean;
+import org.springframework.core.task.SyncTaskExecutor;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
@@ -17,5 +19,15 @@ public class TestcontainersConfiguration {
     @ServiceConnection
     PostgreSQLContainer<?> postgresContainer() {
         return new PostgreSQLContainer<>(DockerImageName.parse("postgres:17-alpine"));
+    }
+
+    /**
+     * Runs {@code @Async} work on the calling thread. Boot's own executor auto-configuration backs off when an
+     * {@link Executor} bean exists, so this replaces it for tests: an asynchronous meal-plan hand-off would otherwise
+     * land in whatever test happens to be running when it finishes.
+     */
+    @Bean
+    Executor applicationTaskExecutor() {
+        return new SyncTaskExecutor();
     }
 }

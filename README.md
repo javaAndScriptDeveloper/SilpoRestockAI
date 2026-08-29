@@ -128,7 +128,20 @@ knows.
 
 Skipping the connect step, an unreachable Silpo, and a guest with no order history all take the same
 fallback: the bot asks directly. Onboarding ends with a saved `user_profile` and an
-`OnboardingCompletedEvent`, which meal plan generation will listen for.
+`OnboardingCompletedEvent`.
+
+#### The first weekly plan
+
+`MealPlanHandoffService` picks that event up asynchronously — the webhook thread must not wait on a model
+call — and asks `MealPlanService` for a week of meals. The system prompt is
+`src/main/resources/prompts/meal-plan-system.txt`, so wording can be changed without recompiling; the
+household's own constraints go in the user message.
+
+A plan that comes back missing days, or with a day that has fewer than three meals, is not stored: the
+service retries once with the defect named in the prompt and raises `MealPlanGenerationException` if the
+second answer is also unusable. Regeneration (`regenerateWithAdjustment`, for "мінус 200 ккал на день")
+writes a new `meal_plan` row and leaves the old one, because showing what changed between two plans needs
+both.
 
 ### Anthropic Claude
 

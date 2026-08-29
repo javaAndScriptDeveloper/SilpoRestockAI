@@ -10,6 +10,7 @@ import com.silporestockai.entity.UserProfile;
 import com.silporestockai.model.ConversationFlow;
 import com.silporestockai.model.OnboardingStep;
 import com.silporestockai.repository.ConversationStateRepository;
+import com.silporestockai.repository.MealPlanRepository;
 import com.silporestockai.repository.SilpoOAuthTokenRepository;
 import com.silporestockai.repository.UserProfileRepository;
 import com.silporestockai.repository.UserRepository;
@@ -56,6 +57,9 @@ class OnboardingFlowIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
     private ConversationStateRepository conversationStateRepository;
+
+    @Autowired
+    private MealPlanRepository mealPlanRepository;
 
     @Autowired
     private ConversationStateService conversationStateService;
@@ -111,6 +115,9 @@ class OnboardingFlowIntegrationTest extends AbstractIntegrationTest {
         TELEGRAM.reset();
         MCP.reset();
         CLAUDE.reset();
+        // The onboarding hand-off generates a plan the moment a profile is saved; these tests never script a valid
+        // plan answer, so what it leaves behind is cleaned rather than asserted on.
+        mealPlanRepository.deleteAll();
         userProfileRepository.deleteAll();
         conversationStateRepository.deleteAll();
         tokenRepository.deleteAll();
@@ -284,6 +291,7 @@ class OnboardingFlowIntegrationTest extends AbstractIntegrationTest {
 
         assertThat(userProfileRepository.count()).isEqualTo(1);
         assertThat(lastMessageText()).contains("Профіль уже є");
+        assertThat(mealPlanRepository.count()).isZero();
     }
 
     @Test

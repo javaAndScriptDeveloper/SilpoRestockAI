@@ -4,8 +4,14 @@ import java.time.Clock;
 import java.time.ZoneId;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.scheduling.annotation.EnableAsync;
 
+/**
+ * {@code @EnableAsync} is here for {@code MealPlanHandoffService}: meal plan generation must not run on the Telegram
+ * webhook thread, which Telegram expects to answer within seconds.
+ */
 @Configuration
+@EnableAsync
 public class BaseConfig {
 
     /**
