@@ -2,6 +2,7 @@ package com.silporestockai.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.silporestockai.entity.MealPlan;
+import com.silporestockai.entity.ShoppingListItem;
 import com.silporestockai.model.OnboardingCompletedEvent;
 import com.silporestockai.model.PlannedDay;
 import com.silporestockai.model.PlannedMeal;
@@ -35,6 +36,7 @@ public class MealPlanHandoffService {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final MealPlanService mealPlanService;
+    private final ShoppingListService shoppingListService;
     private final UserRepository userRepository;
     private final TelegramOutboundService telegramOutboundService;
 
@@ -57,7 +59,9 @@ public class MealPlanHandoffService {
                         user -> {
                             try {
                                 MealPlan plan = mealPlanService.generateWeeklyPlan(userId);
-                                telegramOutboundService.sendMessage(user.getTelegramChatId(), summarise(plan));
+                                List<ShoppingListItem> list = shoppingListService.deriveFromMealPlan(plan.getId());
+                                telegramOutboundService.sendMessage(
+                                        user.getTelegramChatId(), summarise(plan, list.size()));
                             } catch (RuntimeException e) {
                                 log.error("could not generate the first plan for user {}", userId, e);
                                 telegramOutboundService.sendMessage(
@@ -69,7 +73,7 @@ public class MealPlanHandoffService {
     }
 
     /** One line: the week is ready, and here is Monday, which is the only part anyone reads immediately. */
-    private static String summarise(MealPlan plan) {
+    private static String summarise(MealPlan plan, int shoppingListSize) {
         WeeklyMealPlan week = MAPPER.convertValue(plan.getPlan(), WeeklyMealPlan.class);
         String monday = week.days().stream()
                 .filter(day -> day.day() == DayOfWeek.MONDAY)
@@ -79,7 +83,7 @@ public class MealPlanHandoffService {
                 .stream()
                 .map(PlannedMeal::name)
                 .collect(Collectors.joining(" / "));
-        return "План на тиждень готовий, %d днів.\nПонеділок: %s\nСписок покупок зберу далі."
-                .formatted(week.days().size(), monday);
+        return "План на тиждень готовий, %d днів.\nПонеділок: %s\nСписок покупок: %d позицій."
+                .formatted(week.days().size(), monday, shoppingListSize);
     }
 }

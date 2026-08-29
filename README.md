@@ -143,6 +143,12 @@ second answer is also unusable. Regeneration (`regenerateWithAdjustment`, for "�
 writes a new `meal_plan` row and leaves the old one, because showing what changed between two plans needs
 both.
 
+`ShoppingListService` then collapses the plan into the list somebody actually shops from — no model call,
+just arithmetic: one line per ingredient and unit, quantities summed across every meal that uses it. The
+same ingredient in two units (2 шт цибулі and 200 г цибулі) deliberately stays two lines rather than being
+converted on a guess. Deriving again for a plan replaces its lines; an ad-hoc list (`createAdHocList`, for
+the Friday-night snacks) carries a `user_id`, no `meal_plan_id`, and is never touched by a regeneration.
+
 ### Anthropic Claude
 
 Used for meal plan generation, check-in parsing and (stretch) fridge-photo parsing:

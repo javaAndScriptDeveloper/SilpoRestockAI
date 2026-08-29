@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.silporestockai.entity.User;
 import com.silporestockai.entity.UserProfile;
 import com.silporestockai.repository.MealPlanRepository;
+import com.silporestockai.repository.ShoppingListItemRepository;
 import com.silporestockai.repository.UserProfileRepository;
 import com.silporestockai.repository.UserRepository;
 import com.silporestockai.service.MealPlanHandoffService;
@@ -51,6 +52,9 @@ class MealPlanHandoffIntegrationTest extends AbstractIntegrationTest {
     @Autowired
     private MealPlanRepository mealPlanRepository;
 
+    @Autowired
+    private ShoppingListItemRepository shoppingListItemRepository;
+
     private static StubTelegramServer startTelegram() {
         try {
             return new StubTelegramServer(BOT_TOKEN);
@@ -85,6 +89,7 @@ class MealPlanHandoffIntegrationTest extends AbstractIntegrationTest {
     void clean() {
         TELEGRAM.reset();
         CLAUDE.reset();
+        shoppingListItemRepository.deleteAll();
         mealPlanRepository.deleteAll();
         userProfileRepository.deleteAll();
         userRepository.deleteAll();
@@ -125,8 +130,10 @@ class MealPlanHandoffIntegrationTest extends AbstractIntegrationTest {
         mealPlanHandoffService.generateFirstPlan(userId);
 
         assertThat(mealPlanRepository.count()).isEqualTo(1);
+        // Three distinct ingredients across the week, each repeated every day: the list is the collapsed form.
+        assertThat(shoppingListItemRepository.count()).isEqualTo(3);
         String message = TELEGRAM.sentMessages().getLast().path("text").asText();
-        assertThat(message).contains("Вівсянка").contains("Борщ");
+        assertThat(message).contains("Вівсянка").contains("Борщ").contains("3 позицій");
     }
 
     @Test

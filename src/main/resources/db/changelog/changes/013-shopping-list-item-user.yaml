@@ -1,0 +1,25 @@
+databaseChangeLog:
+  - changeSet:
+      id: 013-shopping-list-item-user
+      author: komora
+      comment: >-
+        Gives a shopping list line an owner. An ad-hoc list — the Friday-night snack order, the blackout
+        lunch — has no meal_plan_id, so without this column nothing could find it again for the user who
+        asked for it. Nullable so the column can be added to existing rows, and set for every new one.
+      changes:
+        - addColumn:
+            tableName: shopping_list_item
+            columns:
+              - column:
+                  name: user_id
+                  type: UUID
+                  constraints:
+                    foreignKeyName: fk_shopping_list_item_user
+                    references: users(id)
+                    deleteCascade: true
+        - createIndex:
+            indexName: ix_shopping_list_item_user
+            tableName: shopping_list_item
+            columns:
+              - column:
+                  name: user_id

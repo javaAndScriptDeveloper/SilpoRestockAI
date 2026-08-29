@@ -16,7 +16,8 @@ import lombok.ToString;
 /**
  * One line of a shopping list.
  *
- * <p>{@code mealPlanId} is nullable: the same table carries ad-hoc lists that belong to no weekly plan.
+ * <p>{@code mealPlanId} is nullable: the same table carries ad-hoc lists that belong to no weekly plan. {@code userId}
+ * is what makes those findable again.
  */
 @Entity
 @Table(name = "shopping_list_item")
@@ -34,6 +35,9 @@ public class ShoppingListItem {
 
     @Column(name = "meal_plan_id")
     private UUID mealPlanId;
+
+    @Column(name = "user_id")
+    private UUID userId;
 
     @Column(name = "name", nullable = false)
     private String name;
