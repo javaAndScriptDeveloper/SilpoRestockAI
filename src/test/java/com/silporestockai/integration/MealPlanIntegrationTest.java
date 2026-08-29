@@ -7,6 +7,7 @@ import com.silporestockai.entity.MealPlan;
 import com.silporestockai.entity.User;
 import com.silporestockai.entity.UserProfile;
 import com.silporestockai.exception.ApplicationException;
+import com.silporestockai.exception.MealPlanGenerationException;
 import com.silporestockai.repository.MealPlanRepository;
 import com.silporestockai.repository.UserProfileRepository;
 import com.silporestockai.repository.UserRepository;
@@ -151,5 +152,59 @@ class MealPlanIntegrationTest extends AbstractIntegrationTest {
 
         assertThat(CLAUDE.callCount()).isZero();
         assertThat(mealPlanRepository.count()).isZero();
+    }
+
+    /** A week with SATURDAY missing — well-formed JSON that would be wrong to store. */
+    static String sixDayJson() {
+        StringBuilder days = new StringBuilder();
+        for (DayOfWeek day : DayOfWeek.values()) {
+            if (day == DayOfWeek.SATURDAY) {
+                continue;
+            }
+            if (!days.isEmpty()) {
+                days.append(',');
+            }
+            days.append(dayJson(day.name()));
+        }
+        return "{\"days\":[" + days + "]}";
+    }
+
+    @Test
+    void retriesOnceWhenADayIsMissingAndNamesTheDefect() {
+        UUID userId = profiledUser(8104L, List.of(), List.of());
+        CLAUDE.respondWithTexts(sixDayJson(), fullWeekJson());
+
+        MealPlan saved = mealPlanService.generateWeeklyPlan(userId);
+
+        assertThat(CLAUDE.callCount()).isEqualTo(2);
+        assertThat(CLAUDE.requests().getLast().toString()).contains("SATURDAY");
+        assertThat(mealPlanRepository.findById(saved.getId())).isPresent();
+    }
+
+    @Test
+    void failsWithoutStoringAnythingWhenTheSecondAnswerIsAlsoBroken() {
+        UUID userId = profiledUser(8105L, List.of(), List.of());
+        CLAUDE.respondWithTexts(sixDayJson(), sixDayJson());
+
+        assertThatThrownBy(() -> mealPlanService.generateWeeklyPlan(userId))
+                .isInstanceOf(MealPlanGenerationException.class)
+                .hasMessageContaining("SATURDAY");
+
+        assertThat(CLAUDE.callCount()).isEqualTo(2);
+        assertThat(mealPlanRepository.count()).isZero();
+    }
+
+    @Test
+    void rejectsADayThatHasTooFewMeals() {
+        UUID userId = profiledUser(8106L, List.of(), List.of());
+        String thinMonday = fullWeekJson().replace(dayJson("MONDAY"), """
+                        {"day":"MONDAY","meals":[{"type":"BREAKFAST","name":"Вівсянка",\
+                        "ingredients":[{"name":"вівсяні пластівці","quantity":0.3,"unit":"кг"}]}]}""");
+        CLAUDE.respondWithTexts(thinMonday, fullWeekJson());
+
+        mealPlanService.generateWeeklyPlan(userId);
+
+        assertThat(CLAUDE.callCount()).isEqualTo(2);
+        assertThat(CLAUDE.requests().getLast().toString()).contains("MONDAY");
     }
 }

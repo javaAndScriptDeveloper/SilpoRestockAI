@@ -29,6 +29,9 @@ public final class StubAnthropicServer implements AutoCloseable {
     private final HttpServer server;
     private final List<JsonNode> requests = new ArrayList<>();
     private final Deque<Integer> injectedStatuses = new ArrayDeque<>();
+    /** Texts for the next responses, in order. Falls back to {@link #respondWithText} when empty. */
+    private final Deque<String> scriptedTexts = new ArrayDeque<>();
+
     private final AtomicInteger callCount = new AtomicInteger();
     private volatile String responseText = "stub completion";
 
@@ -48,6 +51,11 @@ public final class StubAnthropicServer implements AutoCloseable {
         this.responseText = text;
     }
 
+    /** Scripts the next responses in order, for tests that need a bad answer followed by a good one. */
+    public synchronized void respondWithTexts(String... texts) {
+        scriptedTexts.addAll(List.of(texts));
+    }
+
     /** Makes the next call answer with {@code status} and an Anthropic-shaped error body. */
     public synchronized void injectStatus(int status) {
         injectedStatuses.add(status);
@@ -64,6 +72,7 @@ public final class StubAnthropicServer implements AutoCloseable {
     public synchronized void reset() {
         requests.clear();
         injectedStatuses.clear();
+        scriptedTexts.clear();
         callCount.set(0);
         responseText = "stub completion";
     }
@@ -84,7 +93,7 @@ public final class StubAnthropicServer implements AutoCloseable {
                 respond(exchange, injected, errorBody(injected));
                 return;
             }
-            respond(exchange, 200, successBody(responseText));
+            respond(exchange, 200, successBody(nextText()));
         } finally {
             exchange.close();
         }
@@ -96,6 +105,11 @@ public final class StubAnthropicServer implements AutoCloseable {
 
     private synchronized Integer nextInjectedStatus() {
         return injectedStatuses.poll();
+    }
+
+    private synchronized String nextText() {
+        String scripted = scriptedTexts.poll();
+        return scripted == null ? responseText : scripted;
     }
 
     private static String successBody(String text) {

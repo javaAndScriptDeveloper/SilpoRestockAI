@@ -5,6 +5,9 @@ import com.silporestockai.client.claude.ClaudeApiClient;
 import com.silporestockai.entity.MealPlan;
 import com.silporestockai.entity.UserProfile;
 import com.silporestockai.exception.ApplicationException;
+import com.silporestockai.exception.MealPlanGenerationException;
+import com.silporestockai.model.PlannedDay;
+import com.silporestockai.model.PlannedMeal;
 import com.silporestockai.model.SpecialMode;
 import com.silporestockai.model.WeeklyMealPlan;
 import com.silporestockai.repository.MealPlanRepository;
@@ -16,8 +19,11 @@ import java.time.Clock;
 import java.time.DayOfWeek;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -41,6 +47,8 @@ public class MealPlanService {
 
     /** Own mapper, as in {@code TelegramWebhookController}: Boot 4 carries both Jackson 2 and Jackson 3. */
     private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    private static final int MINIMUM_MEALS_PER_DAY = 3;
 
     private final UserProfileRepository userProfileRepository;
     private final MealPlanRepository mealPlanRepository;
@@ -75,7 +83,61 @@ public class MealPlanService {
 
         String userPrompt = describe(profile, adjustment);
         WeeklyMealPlan plan = claudeApiClient.completeStructured(systemPrompt, userPrompt, WeeklyMealPlan.class);
+        List<String> defects = defectsOf(plan);
+        if (!defects.isEmpty()) {
+            // One retry, naming what was wrong. Re-sending the same prompt would be a coin flip, and the transport
+            // retries in ClaudeApiClientImpl do not see this class of failure at all — the answer arrived fine, it is
+            // the plan inside it that is unusable.
+            log.warn("Claude returned an unusable plan for user {}: {}", userId, defects);
+            plan = claudeApiClient.completeStructured(
+                    systemPrompt, correctionOf(userPrompt, defects), WeeklyMealPlan.class);
+            defects = defectsOf(plan);
+            if (!defects.isEmpty()) {
+                throw new MealPlanGenerationException(userId, defects);
+            }
+        }
         return persist(userId, plan);
+    }
+
+    private static String correctionOf(String userPrompt, List<String> defects) {
+        return userPrompt + "\nПопередня відповідь була некоректна: " + String.join("; ", defects)
+                + "\nПоверни повний план на всі 7 днів.";
+    }
+
+    /** Everything wrong with a plan, in the words the retry prompt uses. Empty means the plan is storable. */
+    private static List<String> defectsOf(WeeklyMealPlan plan) {
+        List<String> defects = new ArrayList<>();
+        if (plan == null || plan.days() == null || plan.days().isEmpty()) {
+            defects.add("у відповіді немає жодного дня");
+            return defects;
+        }
+        Set<DayOfWeek> seen = EnumSet.noneOf(DayOfWeek.class);
+        for (PlannedDay day : plan.days()) {
+            if (day == null || day.day() == null) {
+                defects.add("день без назви дня тижня");
+                continue;
+            }
+            if (!seen.add(day.day())) {
+                defects.add("день %s повторюється".formatted(day.day()));
+            }
+            List<PlannedMeal> meals = day.meals() == null ? List.of() : day.meals();
+            if (meals.size() < MINIMUM_MEALS_PER_DAY) {
+                defects.add("у дні %s менше ніж %d прийоми їжі".formatted(day.day(), MINIMUM_MEALS_PER_DAY));
+            }
+            for (PlannedMeal meal : meals) {
+                if (meal == null || meal.name() == null || meal.name().isBlank()) {
+                    defects.add("страва без назви у дні %s".formatted(day.day()));
+                } else if (meal.ingredients() == null || meal.ingredients().isEmpty()) {
+                    defects.add("страва «%s» без інгредієнтів".formatted(meal.name()));
+                }
+            }
+        }
+        for (DayOfWeek day : DayOfWeek.values()) {
+            if (!seen.contains(day)) {
+                defects.add("у відповіді немає дня %s".formatted(day));
+            }
+        }
+        return defects;
     }
 
     private MealPlan persist(UUID userId, WeeklyMealPlan plan) {
