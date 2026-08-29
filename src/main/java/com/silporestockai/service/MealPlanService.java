@@ -74,6 +74,17 @@ public class MealPlanService {
         return generate(userId, null);
     }
 
+    /**
+     * A new plan for the same week under an extra instruction — "мінус 200 ккал на день", "мас-набір".
+     *
+     * <p>Writes a new row rather than replacing the old one: showing what changed between two plans is a product
+     * feature (brief flow #6), and it needs both of them.
+     */
+    @Transactional
+    public MealPlan regenerateWithAdjustment(UUID userId, String adjustmentInstruction) {
+        return generate(userId, adjustmentInstruction);
+    }
+
     private MealPlan generate(UUID userId, String adjustment) {
         UserProfile profile = userProfileRepository
                 .findByUserId(userId)

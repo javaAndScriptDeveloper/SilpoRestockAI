@@ -160,7 +160,8 @@ class SchemaRoundTripIntegrationTest extends AbstractIntegrationTest {
 
         assertThat(latest.getWeekStartDate()).isEqualTo(LocalDate.of(2026, 8, 24));
         assertThat(latest.getPlan()).containsEntry("monday", "плов");
-        assertThat(mealPlanRepository.findByUserIdAndWeekStartDate(user.getId(), LocalDate.of(2026, 8, 17)))
+        assertThat(mealPlanRepository.findFirstByUserIdAndWeekStartDateOrderByCreatedAtDesc(
+                        user.getId(), LocalDate.of(2026, 8, 17)))
                 .isPresent();
     }
 

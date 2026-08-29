@@ -207,4 +207,25 @@ class MealPlanIntegrationTest extends AbstractIntegrationTest {
         assertThat(CLAUDE.callCount()).isEqualTo(2);
         assertThat(CLAUDE.requests().getLast().toString()).contains("MONDAY");
     }
+
+    @Test
+    void regenerationAddsAPlanAndLeavesThePreviousOne() {
+        UUID userId = profiledUser(8107L, List.of(), List.of());
+        CLAUDE.respondWithText(fullWeekJson());
+        MealPlan first = mealPlanService.generateWeeklyPlan(userId);
+
+        MealPlan second = mealPlanService.regenerateWithAdjustment(userId, "мінус 200 ккал на день");
+
+        assertThat(second.getId()).isNotEqualTo(first.getId());
+        assertThat(second.getWeekStartDate()).isEqualTo(first.getWeekStartDate());
+        assertThat(mealPlanRepository.count()).isEqualTo(2);
+        assertThat(mealPlanRepository.findById(first.getId())).isPresent();
+        assertThat(CLAUDE.requests().getLast().toString()).contains("мінус 200 ккал");
+
+        assertThat(mealPlanRepository
+                        .findFirstByUserIdAndWeekStartDateOrderByCreatedAtDesc(userId, second.getWeekStartDate())
+                        .orElseThrow()
+                        .getId())
+                .isEqualTo(second.getId());
+    }
 }
