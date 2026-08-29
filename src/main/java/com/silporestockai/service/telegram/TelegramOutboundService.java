@@ -59,12 +59,8 @@ public class TelegramOutboundService {
     }
 
     public void sendMessageWithButtons(long chatId, String text, List<TelegramButton> buttons) {
-        InlineKeyboardRow row = new InlineKeyboardRow(buttons.stream()
-                .map(button -> InlineKeyboardButton.builder()
-                        .text(button.label())
-                        .callbackData(button.callbackData())
-                        .build())
-                .toList());
+        InlineKeyboardRow row = new InlineKeyboardRow(
+                buttons.stream().map(TelegramOutboundService::toInlineButton).toList());
         SendMessage message = SendMessage.builder()
                 .chatId(chatId)
                 .text(text)
@@ -124,6 +120,17 @@ public class TelegramOutboundService {
         } catch (TelegramApiException e) {
             throw failure("setWebhook", e);
         }
+    }
+
+    private static InlineKeyboardButton toInlineButton(TelegramButton button) {
+        var builder = InlineKeyboardButton.builder().text(button.label());
+        // Telegram rejects a button carrying both, so set exactly the one the caller chose.
+        if (button.url() != null) {
+            builder.url(button.url());
+        } else {
+            builder.callbackData(button.callbackData());
+        }
+        return builder.build();
     }
 
     /** The message carries the Bot API error, never the token — the token lives only in the URL path. */

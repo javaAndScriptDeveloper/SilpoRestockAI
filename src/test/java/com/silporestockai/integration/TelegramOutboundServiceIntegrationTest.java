@@ -62,7 +62,7 @@ class TelegramOutboundServiceIntegrationTest extends AbstractIntegrationTest {
         telegramOutboundService.sendMessageWithButtons(
                 777L,
                 "Підтвердити кошик?",
-                List.of(new TelegramButton("Так", "cart:confirm"), new TelegramButton("Ні", "cart:cancel")));
+                List.of(TelegramButton.callback("Так", "cart:confirm"), TelegramButton.callback("Ні", "cart:cancel")));
 
         var keyboard = STUB.sentMessages().getFirst().path("reply_markup").path("inline_keyboard");
         assertThat(keyboard).hasSize(1);
@@ -86,5 +86,25 @@ class TelegramOutboundServiceIntegrationTest extends AbstractIntegrationTest {
         byte[] audio = telegramOutboundService.downloadVoiceNote("voice-file-id");
 
         assertThat(audio).isEqualTo(StubTelegramServer.VOICE_BYTES);
+    }
+
+    @Test
+    void sendsAUrlButtonWhenTheButtonCarriesALink() {
+        telegramOutboundService.sendMessageWithButtons(
+                777L,
+                "Під'єднай Сільпо",
+                List.of(
+                        TelegramButton.link("Під'єднати Сільпо", "https://mcp.silpo.ua/authorize?x=1"),
+                        TelegramButton.callback("Пропустити", "onb:skip")));
+
+        var row = STUB.sentMessages()
+                .getFirst()
+                .path("reply_markup")
+                .path("inline_keyboard")
+                .get(0);
+        assertThat(row.get(0).path("url").asText()).isEqualTo("https://mcp.silpo.ua/authorize?x=1");
+        assertThat(row.get(0).has("callback_data")).isFalse();
+        assertThat(row.get(1).path("callback_data").asText()).isEqualTo("onb:skip");
+        assertThat(row.get(1).has("url")).isFalse();
     }
 }
