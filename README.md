@@ -149,6 +149,31 @@ same ingredient in two units (2 шт цибулі and 200 г цибулі) delib
 converted on a guess. Deriving again for a plan replaces its lines; an ad-hoc list (`createAdHocList`, for
 the Friday-night snacks) carries a `user_id`, no `meal_plan_id`, and is never touched by a regeneration.
 
+#### Building a real Silpo cart
+
+`CartBuildingService.buildCart(userId, items)` runs the documented sequence — `silpo_get_my_shopping_cart`,
+`silpo_get_shopping_cart_by_id`, `silpo_get_time_slots`, `silpo_find_products_batch` (chunked at 30),
+`silpo_add_or_update_cart_products`, then `silpo_get_shopping_cart_by_id` again to verify. Every call is
+logged at INFO as `MCP -> tool {args}` / `MCP <- result`, which is the evidence log the hackathon asks for:
+record the console during a run and the JSON-RPC conversation is visible.
+
+Items Silpo cannot match come back in `CartSummary.unresolved` rather than disappearing. Loyalty bonuses are
+reported (`bonusAvailable`, `bonusDecisionPending`) and never spent — confirming that is task 10's job. No
+time slot at all is fatal: a cart nobody can deliver fails here rather than at checkout.
+
+**Smoke-testing it against the real server** (needs a real Silpo account; nothing in CI can do this):
+
+1. `make run`, then complete the Silpo OAuth login so an `mcp_oauth_token` row exists for the user.
+2. Finish onboarding in Telegram, so a `user_profile`, a `meal_plan` and its `shopping_list_item` rows exist.
+3. Call `buildCart` for that user — from a REST controller once task 10 adds one, or from a scratch
+   `@SpringBootTest` pointed at the live endpoint.
+4. Watch the log: six `MCP ->` lines in the documented order, then a `verified` line with a non-zero item
+   count. Opening `checkoutWebLink` should show the same cart in Silpo's web checkout.
+
+Tool names and response keys come from the MCP documentation and have not been exercised against the live
+server. If a key differs, it is a one-line fix in `utils/McpResponses`, where every key name this application
+depends on is declared.
+
 ### Anthropic Claude
 
 Used for meal plan generation, check-in parsing and (stretch) fridge-photo parsing:

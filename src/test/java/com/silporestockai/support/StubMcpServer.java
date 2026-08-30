@@ -10,6 +10,7 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Deque;
 import java.util.List;
 import java.util.Map;
@@ -32,6 +33,12 @@ public final class StubMcpServer implements AutoCloseable {
     private final HttpServer server;
     private final Map<String, Deque<Integer>> injectedStatuses = new ConcurrentHashMap<>();
     private final Map<String, AtomicInteger> callCounts = new ConcurrentHashMap<>();
+    /** Canned JSON per tool name, returned as that tool's single text block. */
+    private final Map<String, String> toolResponses = new ConcurrentHashMap<>();
+
+    /** Names of the tools called, in order — this is what a sequence test asserts on. */
+    private final List<String> calledTools = Collections.synchronizedList(new ArrayList<>());
+
     private final List<String> seenAuthorizationHeaders = new ArrayList<>();
     private final List<String> seenCookieHeaders = new ArrayList<>();
     private final List<String> toolNames;
@@ -52,10 +59,22 @@ public final class StubMcpServer implements AutoCloseable {
         injectedStatuses.computeIfAbsent(method, key -> new ArrayDeque<>()).add(status);
     }
 
-    /** Clears counters, injected statuses and recorded headers between tests. */
+    /** Makes {@code toolName} answer with {@code json}. A tool with no scripted answer keeps the old canned text. */
+    public void respondToTool(String toolName, String json) {
+        toolResponses.put(toolName, json);
+    }
+
+    /** Every {@code tools/call} the server saw, in order. */
+    public List<String> calledTools() {
+        return List.copyOf(calledTools);
+    }
+
+    /** Clears counters, injected statuses, scripted responses and recorded headers between tests. */
     public synchronized void reset() {
         injectedStatuses.clear();
         callCounts.clear();
+        toolResponses.clear();
+        calledTools.clear();
         seenAuthorizationHeaders.clear();
         seenCookieHeaders.clear();
     }
@@ -91,6 +110,9 @@ public final class StubMcpServer implements AutoCloseable {
             JsonNode request = MAPPER.readTree(body);
             String method = request.path("method").asText();
             callCounts.computeIfAbsent(method, key -> new AtomicInteger()).incrementAndGet();
+            if ("tools/call".equals(method)) {
+                calledTools.add(request.path("params").path("name").asText());
+            }
 
             Deque<Integer> statuses = injectedStatuses.get(method);
             if (statuses != null && !statuses.isEmpty()) {
@@ -103,7 +125,7 @@ public final class StubMcpServer implements AutoCloseable {
                 return;
             }
 
-            respond(exchange, request.path("id"), resultFor(method));
+            respond(exchange, request.path("id"), resultFor(method, request));
         } finally {
             exchange.close();
         }
@@ -120,7 +142,7 @@ public final class StubMcpServer implements AutoCloseable {
         }
     }
 
-    private Object resultFor(String method) {
+    private Object resultFor(String method, JsonNode request) {
         return switch (method) {
             case "initialize" ->
                 Map.of(
@@ -142,8 +164,11 @@ public final class StubMcpServer implements AutoCloseable {
                                         "inputSchema",
                                         Map.of("type", "object", "properties", Map.of())))
                                 .toList());
-            case "tools/call" ->
-                Map.of("content", List.of(Map.of("type", "text", "text", "stub tool result")), "isError", false);
+            case "tools/call" -> {
+                String tool = request.path("params").path("name").asText();
+                String json = toolResponses.getOrDefault(tool, "stub tool result");
+                yield Map.of("content", List.of(Map.of("type", "text", "text", json)), "isError", false);
+            }
             case "ping" -> Map.of();
             default -> Map.of();
         };
