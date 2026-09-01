@@ -327,6 +327,24 @@ class CheckinParsingIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void aLeftoverKeyboardIsAcknowledgedAndIgnoredDuringACheckin() throws Exception {
+        awaitingCheckin();
+
+        mockMvc.perform(post("/telegram/webhook")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"update_id":1,"callback_query":{"id":"cb-1","chat_instance":"ci",\
+                                "from":{"id":5,"is_bot":false,"first_name":"Тест"},"data":"cart:confirm",\
+                                "message":{"message_id":1,"date":1,"chat":{"id":%d,"type":"private"}}}}""".formatted(CHAT_ID)))
+                .andExpect(status().isOk());
+
+        // Nothing in a check-in has buttons; the tap belongs to a flow that already ended.
+        assertThat(TELEGRAM.sentMessages()).isEmpty();
+        assertThat(TELEGRAM.callbackAnswers()).hasSize(1);
+        assertThat(checkinRepository.count()).isZero();
+    }
+
+    @Test
     void asksForTextWhenTranscriptionFails() throws Exception {
         awaitingCheckin();
         STT.respondWithStatus(500);

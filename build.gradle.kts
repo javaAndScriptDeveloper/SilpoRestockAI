@@ -142,9 +142,15 @@ tasks.jacocoTestCoverageVerification {
     )
     violationRules {
         rule {
+            // Measured, not chosen: the suite covers 91% of instructions and 71% of branches as of task 16.
+            // Both gates sit a few points below that, so an honest refactor has room and a dropped test does not.
             limit {
-                // Bootstrap threshold: this is a near-empty template. Raise it as domain code lands.
-                minimum = "0.0".toBigDecimal()
+                counter = "INSTRUCTION"
+                minimum = "0.85".toBigDecimal()
+            }
+            limit {
+                counter = "BRANCH"
+                minimum = "0.65".toBigDecimal()
             }
         }
     }

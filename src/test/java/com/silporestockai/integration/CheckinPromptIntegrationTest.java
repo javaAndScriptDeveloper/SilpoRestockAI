@@ -1,11 +1,15 @@
 package com.silporestockai.integration;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.silporestockai.entity.BaselineBasket;
 import com.silporestockai.entity.Checkin;
 import com.silporestockai.entity.CustomerOrder;
 import com.silporestockai.entity.User;
+import com.silporestockai.entity.UserProfile;
+import com.silporestockai.job.CheckinScheduler;
 import com.silporestockai.model.BasketItem;
 import com.silporestockai.model.ConversationFlow;
 import com.silporestockai.model.OrderStatus;
@@ -14,6 +18,7 @@ import com.silporestockai.repository.BaselineBasketRepository;
 import com.silporestockai.repository.CheckinRepository;
 import com.silporestockai.repository.ConversationStateRepository;
 import com.silporestockai.repository.CustomerOrderRepository;
+import com.silporestockai.repository.UserProfileRepository;
 import com.silporestockai.repository.UserRepository;
 import com.silporestockai.service.CheckinPromptService;
 import com.silporestockai.service.ConversationStateService;
@@ -31,8 +36,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.web.servlet.MockMvc;
 
 @DisplayName("the agent opens a check-in on its own, once per window, and only with households that have a baseline")
 class CheckinPromptIntegrationTest extends AbstractIntegrationTest {
@@ -46,6 +53,15 @@ class CheckinPromptIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
     private CheckinPromptService checkinPromptService;
+
+    @Autowired
+    private CheckinScheduler checkinScheduler;
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    @Autowired
+    private UserProfileRepository userProfileRepository;
 
     @Autowired
     private UserAccountService userAccountService;
@@ -92,6 +108,7 @@ class CheckinPromptIntegrationTest extends AbstractIntegrationTest {
         TELEGRAM.reset();
         checkinRepository.deleteAll();
         baselineBasketRepository.deleteAll();
+        userProfileRepository.deleteAll();
         customerOrderRepository.deleteAll();
         conversationStateRepository.deleteAll();
         userRepository.deleteAll();
@@ -129,6 +146,44 @@ class CheckinPromptIntegrationTest extends AbstractIntegrationTest {
         return TELEGRAM.sentMessages().stream()
                 .map(message -> message.path("text").asText())
                 .toList();
+    }
+
+    /** Onboarded, so the router hands their messages to the check-in flow rather than to onboarding. */
+    private void withProfile(User user) {
+        userProfileRepository.save(UserProfile.builder()
+                .id(UUID.randomUUID())
+                .userId(user.getId())
+                .householdSize(2)
+                .build());
+    }
+
+    @Test
+    void theScheduledSweepIsTheSameSweep() {
+        household(4);
+
+        checkinScheduler.sweepForDueCheckins();
+
+        assertThat(promptsSent()).hasSize(1);
+    }
+
+    @Test
+    void aVoiceCheckinAsksForTextWhenNoTranscriptionIsConfigured() throws Exception {
+        // This context leaves stt.api-key blank, which is a supported configuration: voice degrades to typing.
+        User user = household(4);
+        withProfile(user);
+        checkinPromptService.sweep();
+        TELEGRAM.reset();
+
+        mockMvc.perform(post("/telegram/webhook")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"update_id":1,"message":{"message_id":1,"date":1,\
+                                "chat":{"id":%d,"type":"private"},"from":{"id":5,"is_bot":false,"first_name":"Тест"},\
+                                "voice":{"file_id":"voice-1","file_unique_id":"u1","duration":3,\
+                                "mime_type":"audio/ogg"}}}""".formatted(CHAT_ID)))
+                .andExpect(status().isOk());
+
+        assertThat(promptsSent()).singleElement().asString().contains("текстом");
     }
 
     @Test
