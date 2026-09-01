@@ -21,3 +21,4 @@ komora:
   checkin:
     interval: 3d
     sweep-cron: "0 0 0 31 2 ?"
+    removal-threshold: 3

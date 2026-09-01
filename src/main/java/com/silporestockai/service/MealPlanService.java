@@ -53,6 +53,7 @@ public class MealPlanService {
     private final UserProfileRepository userProfileRepository;
     private final MealPlanRepository mealPlanRepository;
     private final ClaudeApiClient claudeApiClient;
+    private final InventoryTrendService inventoryTrendService;
     private final Clock clock;
     private final String systemPrompt;
 
@@ -60,11 +61,13 @@ public class MealPlanService {
             UserProfileRepository userProfileRepository,
             MealPlanRepository mealPlanRepository,
             ClaudeApiClient claudeApiClient,
+            InventoryTrendService inventoryTrendService,
             Clock clock,
             @Value("classpath:prompts/meal-plan-system.txt") Resource systemPromptResource) {
         this.userProfileRepository = userProfileRepository;
         this.mealPlanRepository = mealPlanRepository;
         this.claudeApiClient = claudeApiClient;
+        this.inventoryTrendService = inventoryTrendService;
         this.clock = clock;
         this.systemPrompt = read(systemPromptResource);
     }
@@ -92,7 +95,7 @@ public class MealPlanService {
                         HttpStatus.PRECONDITION_REQUIRED,
                         "user %s has no profile yet; onboarding has to finish first".formatted(userId)));
 
-        String userPrompt = describe(profile, adjustment);
+        String userPrompt = describe(profile, adjustment, inventoryTrendService.getRemovalCandidates(userId));
         WeeklyMealPlan plan = claudeApiClient.completeStructured(systemPrompt, userPrompt, WeeklyMealPlan.class);
         List<String> defects = defectsOf(plan);
         if (!defects.isEmpty()) {
@@ -175,7 +178,7 @@ public class MealPlanService {
     }
 
     /** Everything the model needs about this household, in the user message rather than the system prompt. */
-    private String describe(UserProfile profile, String adjustment) {
+    private String describe(UserProfile profile, String adjustment, List<String> untouched) {
         StringBuilder text = new StringBuilder("Склади меню на тиждень для цієї родини.\n");
         text.append("Людей удома: ")
                 .append(profile.getHouseholdSize() == null ? "невідомо" : profile.getHouseholdSize())
@@ -206,6 +209,12 @@ public class MealPlanService {
         if (profile.getSpecialMode() != null && profile.getSpecialMode() != SpecialMode.NONE) {
             text.append("Особливий режим харчування: ")
                     .append(profile.getSpecialMode().name())
+                    .append('\n');
+        }
+        if (!untouched.isEmpty()) {
+            // The whole point of the trend counter: what the household demonstrably does not eat, said plainly.
+            text.append("Не пропонуй ці продукти — їх стабільно не їдять: ")
+                    .append(String.join(", ", untouched))
                     .append('\n');
         }
         if (adjustment != null && !adjustment.isBlank()) {

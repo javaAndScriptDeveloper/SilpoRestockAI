@@ -15,6 +15,7 @@ import com.silporestockai.model.ConversationFlow;
 import com.silporestockai.repository.BaselineBasketRepository;
 import com.silporestockai.repository.CheckinRepository;
 import com.silporestockai.repository.ConversationStateRepository;
+import com.silporestockai.repository.InventoryTrendRepository;
 import com.silporestockai.repository.UserProfileRepository;
 import com.silporestockai.repository.UserRepository;
 import com.silporestockai.service.CheckinParsingService;
@@ -63,6 +64,9 @@ class CheckinParsingIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
     private CheckinRepository checkinRepository;
+
+    @Autowired
+    private InventoryTrendRepository inventoryTrendRepository;
 
     @Autowired
     private BaselineBasketRepository baselineBasketRepository;
@@ -122,6 +126,7 @@ class CheckinParsingIntegrationTest extends AbstractIntegrationTest {
         TELEGRAM.reset();
         CLAUDE.reset();
         STT.reset();
+        inventoryTrendRepository.deleteAll();
         checkinRepository.deleteAll();
         baselineBasketRepository.deleteAll();
         conversationStateRepository.deleteAll();
@@ -298,6 +303,27 @@ class CheckinParsingIntegrationTest extends AbstractIntegrationTest {
         assertThat(stored.getRawInputText()).isEqualTo("молоко ще є а хліба нема");
         assertThat(stored.getParsedDelta().goneCompletely()).containsExactly("Хліб пшеничний");
         assertThat(lastMessageText()).contains("Записав");
+    }
+
+    @Test
+    void aStoredCheckinMovesTheTrendCountersOnItsOwn() {
+        User user = awaitingCheckin();
+        CLAUDE.respondWithText(delta("\"Гречка\"", "", "\"Молоко 2.5%\""));
+
+        checkinParsingService.parseText(user.getId(), "гречки повно, молоко скінчилось");
+
+        // Storing a check-in and moving the counters is one step, so every channel gets it — including task 17's
+        // photos.
+        assertThat(inventoryTrendRepository
+                        .findByUserIdAndItemName(user.getId(), "Гречка")
+                        .orElseThrow()
+                        .getConsecutiveUntouchedCycles())
+                .isEqualTo(1);
+        assertThat(inventoryTrendRepository
+                        .findByUserIdAndItemName(user.getId(), "Молоко 2.5%")
+                        .orElseThrow()
+                        .getConsecutiveUntouchedCycles())
+                .isZero();
     }
 
     @Test

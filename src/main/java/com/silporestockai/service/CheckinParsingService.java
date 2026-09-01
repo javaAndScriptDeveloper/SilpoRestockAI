@@ -43,6 +43,7 @@ public class CheckinParsingService {
     private final CheckinRepository checkinRepository;
     private final ClaudeApiClient claudeApiClient;
     private final SpeechToTextClient speechToTextClient;
+    private final InventoryTrendService inventoryTrendService;
     private final Clock clock;
     private final String systemPrompt;
 
@@ -51,12 +52,14 @@ public class CheckinParsingService {
             CheckinRepository checkinRepository,
             ClaudeApiClient claudeApiClient,
             SpeechToTextClient speechToTextClient,
+            InventoryTrendService inventoryTrendService,
             Clock clock,
             @Value("classpath:prompts/checkin-system.txt") Resource systemPromptResource) {
         this.baselineBasketRepository = baselineBasketRepository;
         this.checkinRepository = checkinRepository;
         this.claudeApiClient = claudeApiClient;
         this.speechToTextClient = speechToTextClient;
+        this.inventoryTrendService = inventoryTrendService;
         this.clock = clock;
         this.systemPrompt = read(systemPromptResource);
     }
@@ -156,6 +159,12 @@ public class CheckinParsingService {
         return new CheckinDelta(List.of(), List.of(), List.of());
     }
 
+    /**
+     * Stores the check-in and moves the trend counters it implies.
+     *
+     * <p>Both together, here, rather than in the Telegram flow: every stored check-in updates the trend, whichever
+     * channel it arrived through — including the fridge-photo path of task 17.
+     */
     private void store(UUID userId, String rawText, CheckinDelta delta) {
         checkinRepository.save(Checkin.builder()
                 .id(UUID.randomUUID())
@@ -164,6 +173,7 @@ public class CheckinParsingService {
                 .parsedDelta(delta)
                 .receivedAt(clock.instant())
                 .build());
+        inventoryTrendService.recordCheckin(userId, delta);
     }
 
     private static String describe(List<String> baseline, String rawText) {

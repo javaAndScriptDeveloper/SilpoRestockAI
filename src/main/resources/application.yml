@@ -147,6 +147,8 @@ komora:
   checkin:
     interval: ${CHECKIN_INTERVAL:3d}
     sweep-cron: ${CHECKIN_SWEEP_CRON:0 0 * * * *}
+    # Reported as "still there" this many check-ins in a row and the agent stops putting it in the plan.
+    removal-threshold: ${CHECKIN_REMOVAL_THRESHOLD:3}
 
 springdoc:
   swagger-ui:
