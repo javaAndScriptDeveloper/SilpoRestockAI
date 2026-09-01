@@ -14,6 +14,7 @@ import java.util.Collections;
 import java.util.Deque;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -35,6 +36,9 @@ public final class StubMcpServer implements AutoCloseable {
     private final Map<String, AtomicInteger> callCounts = new ConcurrentHashMap<>();
     /** Canned JSON per tool name, returned as that tool's single text block. */
     private final Map<String, String> toolResponses = new ConcurrentHashMap<>();
+
+    /** Tools that answer {@code isError: true}. */
+    private final Set<String> failingTools = ConcurrentHashMap.newKeySet();
 
     /** Names of the tools called, in order — this is what a sequence test asserts on. */
     private final List<String> calledTools = Collections.synchronizedList(new ArrayList<>());
@@ -64,6 +68,11 @@ public final class StubMcpServer implements AutoCloseable {
         toolResponses.put(toolName, json);
     }
 
+    /** Makes {@code toolName} answer {@code isError: true} — a tool the server ran and refused, not a transport fault. */
+    public void failTool(String toolName) {
+        failingTools.add(toolName);
+    }
+
     /** Every {@code tools/call} the server saw, in order. */
     public List<String> calledTools() {
         return List.copyOf(calledTools);
@@ -74,6 +83,7 @@ public final class StubMcpServer implements AutoCloseable {
         injectedStatuses.clear();
         callCounts.clear();
         toolResponses.clear();
+        failingTools.clear();
         calledTools.clear();
         seenAuthorizationHeaders.clear();
         seenCookieHeaders.clear();
@@ -167,7 +177,11 @@ public final class StubMcpServer implements AutoCloseable {
             case "tools/call" -> {
                 String tool = request.path("params").path("name").asText();
                 String json = toolResponses.getOrDefault(tool, "stub tool result");
-                yield Map.of("content", List.of(Map.of("type", "text", "text", json)), "isError", false);
+                yield Map.of(
+                        "content",
+                        List.of(Map.of("type", "text", "text", json)),
+                        "isError",
+                        failingTools.contains(tool));
             }
             case "ping" -> Map.of();
             default -> Map.of();

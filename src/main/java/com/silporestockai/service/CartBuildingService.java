@@ -45,7 +45,7 @@ public class CartBuildingService {
     /** Steps 1 to 6, in the documented order. Unresolved items are reported, not fatal. */
     public CartSummary buildCart(UUID userId, List<ShoppingListItem> items) {
         CartContext context = getOrCreateCartContext(userId);
-        validateTimeSlot(userId, context);
+        String deliverySlot = validateTimeSlot(userId, context);
         List<ResolvedProduct> resolved = resolveProducts(userId, context, items);
         List<String> unresolved = items.stream()
                 .map(ShoppingListItem::getName)
@@ -56,7 +56,7 @@ public class CartBuildingService {
             log.info("Silpo matched no product for {} of {} items: {}", unresolved.size(), items.size(), unresolved);
         }
         addProductsToCart(userId, context, resolved);
-        return getVerifiedCart(userId, context, unresolved);
+        return getVerifiedCart(userId, context, deliverySlot, unresolved);
     }
 
     /** Steps 1 and 2: which cart, and which branch it is bound to. */
@@ -164,7 +164,7 @@ public class CartBuildingService {
     }
 
     /** Step 6: read the cart back rather than trusting the write. */
-    public CartSummary getVerifiedCart(UUID userId, CartContext context, List<String> unresolved) {
+    public CartSummary getVerifiedCart(UUID userId, CartContext context, String deliverySlot, List<String> unresolved) {
         JsonNode cart = call(userId, TOOL_CART_BY_ID, Map.of("cartId", context.cartId()));
 
         List<BasketItem> items = McpResponses.findArray(cart, McpResponses.ITEMS).stream()
@@ -191,6 +191,7 @@ public class CartBuildingService {
 
         CartSummary summary = new CartSummary(
                 context.cartId(),
+                deliverySlot,
                 items,
                 McpResponses.findNumber(cart, McpResponses.TOTAL).orElse(BigDecimal.ZERO),
                 McpResponses.findArray(cart, McpResponses.VALIDATIONS).stream()

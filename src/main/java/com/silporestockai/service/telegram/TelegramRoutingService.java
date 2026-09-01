@@ -1,7 +1,10 @@
 package com.silporestockai.service.telegram;
 
 import com.silporestockai.entity.User;
+import com.silporestockai.model.ConversationFlow;
 import com.silporestockai.model.TelegramIncomingUpdate;
+import com.silporestockai.service.CartConfirmationService;
+import com.silporestockai.service.ConversationStateService;
 import com.silporestockai.service.UserAccountService;
 import com.silporestockai.service.onboarding.OnboardingFlowService;
 import java.util.Optional;
@@ -28,6 +31,8 @@ public class TelegramRoutingService {
 
     private final UserAccountService userAccountService;
     private final OnboardingFlowService onboardingFlowService;
+    private final ConversationStateService conversationStateService;
+    private final CartConfirmationService cartConfirmationService;
     private final TelegramOutboundService telegramOutboundService;
 
     public void route(Update update) {
@@ -65,6 +70,19 @@ public class TelegramRoutingService {
         User user = userAccountService.findOrCreate(incoming.chatId());
         if (!onboardingFlowService.isOnboarded(user.getId())) {
             onboardingFlowService.handle(user, incoming);
+            return;
+        }
+        ConversationFlow flow = conversationStateService.load(incoming.chatId()).getCurrentFlow();
+        if (flow == ConversationFlow.CART_CONFIRMATION) {
+            cartConfirmationService.handle(user, incoming);
+            return;
+        }
+        if (incoming instanceof TelegramIncomingUpdate.ButtonTap tap) {
+            // A keyboard left over from a conversation that has already ended — a second tap on confirm, most
+            // often. Acknowledge it so Telegram stops spinning and say nothing: answering a button nobody is
+            // waiting on with small talk is worse than silence.
+            telegramOutboundService.answerCallback(tap.callbackQueryId());
+            log.debug("ignoring stale button tap {} in chat {}", tap.data(), tap.chatId());
             return;
         }
         // TODO(#11): scheduled check-ins and the reorder cycle answer here.

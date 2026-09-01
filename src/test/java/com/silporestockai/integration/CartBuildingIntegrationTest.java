@@ -230,6 +230,7 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
 
         CartSummary summary = cartBuildingService.buildCart(userId, List.of(item("цибуля", "0.5", "кг")));
 
+        assertThat(summary.deliverySlot()).isEqualTo("slot-1");
         assertThat(summary.bonusAvailable()).isEqualByComparingTo("120");
         assertThat(summary.bonusDecisionPending()).isTrue();
         assertThat(summary.total()).isEqualByComparingTo("73.5");
