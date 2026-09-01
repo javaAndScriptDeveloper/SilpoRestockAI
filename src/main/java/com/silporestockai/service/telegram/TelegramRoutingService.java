@@ -4,6 +4,7 @@ import com.silporestockai.entity.User;
 import com.silporestockai.model.ConversationFlow;
 import com.silporestockai.model.TelegramButton;
 import com.silporestockai.model.TelegramIncomingUpdate;
+import com.silporestockai.service.BlackoutModeService;
 import com.silporestockai.service.CartConfirmationService;
 import com.silporestockai.service.CheckinFlowService;
 import com.silporestockai.service.ConversationStateService;
@@ -41,6 +42,7 @@ public class TelegramRoutingService {
     private final CheckinFlowService checkinFlowService;
     private final ReorderConfirmationService reorderConfirmationService;
     private final GoogleAuthService googleAuthService;
+    private final BlackoutModeService blackoutModeService;
     private final TelegramOutboundService telegramOutboundService;
 
     public void route(Update update) {
@@ -113,6 +115,14 @@ public class TelegramRoutingService {
         }
         if (flow == ConversationFlow.REORDER_CONFIRMATION) {
             reorderConfirmationService.handle(user, incoming);
+            return;
+        }
+        if (incoming instanceof TelegramIncomingUpdate.Text blackout
+                && blackout.text().strip().startsWith("/blackout")) {
+            // Explicit only. Inferring an outage from a sentence and sending an unwanted order would land at the
+            // worst possible moment, which is the one this mode exists for.
+            telegramOutboundService.sendMessage(incoming.chatId(), "Збираю щось на поїсти без плити й холодильника.");
+            blackoutModeService.buildBlackoutOrder(user);
             return;
         }
         if (incoming instanceof TelegramIncomingUpdate.Text text

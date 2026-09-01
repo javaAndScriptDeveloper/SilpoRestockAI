@@ -199,6 +199,17 @@ To smoke-test against the real API, export a key and point the client at product
 ANTHROPIC_API_KEY=sk-ant-... ANTHROPIC_BASE_URL=https://api.anthropic.com make run
 ```
 
+### Blackout mode
+
+`/blackout` builds a small ad-hoc order of food that needs no stove and no fridge — ready meals, tinned
+fish, pâté, bread, nuts, biscuits, juice, still water — and puts it through the same confirmation as any
+other cart. The list is curated in `BlackoutModeService`, deliberately: Silpo's product data carries no
+"needs no cooking" flag, and guessing one from a product name is how a demo orders frozen dumplings
+during an outage.
+
+The order is stored as `AD_HOC` and never becomes the baseline: an emergency lunch is not evidence
+about what a household normally eats. There is no outage detection — the command is the trigger.
+
 ### Google Calendar (optional)
 
 After an order is confirmed, the delivery window can be written into the user's calendar. It is opt-in

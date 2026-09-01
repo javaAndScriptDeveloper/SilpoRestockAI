@@ -70,6 +70,16 @@ public class CartConfirmationService {
      * stack trace in a log is not an answer to somebody waiting in a chat.
      */
     public void present(User user, List<ShoppingListItem> items) {
+        present(user, items, OrderType.INITIAL);
+    }
+
+    /**
+     * The same presentation for an order that is not the household's first.
+     *
+     * <p>The type matters at confirmation time and nowhere else: only an {@link OrderType#INITIAL} order becomes the
+     * baseline. An emergency lunch during a blackout is not evidence about what this household normally eats.
+     */
+    public void present(User user, List<ShoppingListItem> items, OrderType type) {
         long chatId = user.getTelegramChatId();
         CartSummary summary;
         try {
@@ -89,7 +99,7 @@ public class CartConfirmationService {
         CustomerOrder order = customerOrderRepository.save(CustomerOrder.builder()
                 .id(UUID.randomUUID())
                 .userId(user.getId())
-                .type(OrderType.INITIAL)
+                .type(type)
                 .items(summary.items())
                 .deliverySlot(summary.deliverySlot())
                 .status(OrderStatus.DRAFT)
@@ -141,7 +151,9 @@ public class CartConfirmationService {
         order.setStatus(OrderStatus.CONFIRMED);
         order.setConfirmedAt(Instant.now());
         customerOrderRepository.save(order);
-        storeBaseline(user.getId(), order);
+        if (order.getType() == OrderType.INITIAL) {
+            storeBaseline(user.getId(), order);
+        }
         // Optional integrations listen for this; nothing here depends on any of them existing.
         events.publishEvent(new OrderConfirmedEvent(
                 user.getId(),
