@@ -132,6 +132,13 @@ silpo:
     # startup, which means stored tokens do not survive a restart. Never commit a real key.
     token-encryption-key: ${SILPO_TOKEN_ENCRYPTION_KEY:}
 
+# The check-in cycle: how long after the last contact a household is asked what is left, and how often
+# the sweep looks for someone to ask. Shorten the interval for a demo.
+komora:
+  checkin:
+    interval: ${CHECKIN_INTERVAL:3d}
+    sweep-cron: ${CHECKIN_SWEEP_CRON:0 0 * * * *}
+
 springdoc:
   swagger-ui:
     path: /swagger-ui.html

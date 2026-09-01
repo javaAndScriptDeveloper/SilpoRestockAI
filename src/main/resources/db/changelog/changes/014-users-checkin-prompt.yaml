@@ -1,0 +1,16 @@
+databaseChangeLog:
+  - changeSet:
+      id: 014-users-checkin-prompt
+      author: komora
+      comment: >-
+        Records when the agent last opened a check-in conversation. The conversation state cannot answer
+        this: it is cleared the moment the user replies, and "when did we last speak" has to survive that
+        — otherwise someone who never answers is either nagged hourly or never asked again. Nullable: a
+        user who has never been prompted has no value to record.
+      changes:
+        - addColumn:
+            tableName: users
+            columns:
+              - column:
+                  name: last_checkin_prompt_sent_at
+                  type: TIMESTAMP WITH TIME ZONE

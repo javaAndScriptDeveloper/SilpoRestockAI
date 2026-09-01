@@ -46,7 +46,9 @@ public class MealPlanHandoffService {
      * {@link #generateFirstPlan(UUID)}, which is directly callable — an {@code @Async} method is proxied even when
      * called from a test, so a test of the listener could only ever race with it.
      */
-    @Async
+    // Named executor, not the bare annotation: @EnableScheduling contributes a TaskScheduler that is also an
+    // Executor, so an unqualified @Async would find two candidates and quietly fall back to a new thread per call.
+    @Async("applicationTaskExecutor")
     @EventListener
     public void onOnboardingCompleted(OnboardingCompletedEvent event) {
         generateFirstPlan(event.userId());

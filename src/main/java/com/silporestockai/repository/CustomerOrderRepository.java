@@ -14,6 +14,9 @@ public interface CustomerOrderRepository extends JpaRepository<CustomerOrder, UU
 
     List<CustomerOrder> findByUserIdAndStatus(UUID userId, OrderStatus status);
 
+    /** The most recent order in a given state — the check-in cycle asks for the last confirmed one. */
+    Optional<CustomerOrder> findFirstByUserIdAndStatusOrderByConfirmedAtDesc(UUID userId, OrderStatus status);
+
     /** Resolves the order behind a Silpo cart, which is how a duplicate confirm callback is recognised. */
     Optional<CustomerOrder> findBySilpoCartId(String silpoCartId);
 }

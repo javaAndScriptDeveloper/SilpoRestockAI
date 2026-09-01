@@ -41,4 +41,8 @@ public class User {
 
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
+
+    /** When the agent last opened a check-in. Null until the first prompt goes out. */
+    @Column(name = "last_checkin_prompt_sent_at")
+    private Instant lastCheckinPromptSentAt;
 }
