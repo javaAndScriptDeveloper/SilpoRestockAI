@@ -36,3 +36,7 @@ google:
   calendar:
     token-endpoint: http://localhost:1/token
     api-url: http://localhost:1
+
+# Feign needs a URL at startup even with the feature off; the voice tests point this at a stub.
+respeecher:
+  base-url: http://localhost:1

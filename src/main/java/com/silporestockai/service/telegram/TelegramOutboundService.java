@@ -1,8 +1,11 @@
 package com.silporestockai.service.telegram;
 
 import com.silporestockai.config.TelegramProperties;
+import com.silporestockai.entity.User;
 import com.silporestockai.exception.TelegramApiFailureException;
 import com.silporestockai.model.TelegramButton;
+import com.silporestockai.repository.UserRepository;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -15,9 +18,12 @@ import org.telegram.telegrambots.client.okhttp.OkHttpTelegramClient;
 import org.telegram.telegrambots.meta.TelegramUrl;
 import org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery;
 import org.telegram.telegrambots.meta.api.methods.GetFile;
+import org.telegram.telegrambots.meta.api.methods.send.SendAudio;
+import org.telegram.telegrambots.meta.api.methods.send.SendDocument;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.methods.updates.SetWebhook;
 import org.telegram.telegrambots.meta.api.objects.File;
+import org.telegram.telegrambots.meta.api.objects.InputFile;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardRow;
@@ -43,18 +49,71 @@ public class TelegramOutboundService {
     private final String apiUrl;
     private final String botToken;
 
-    public TelegramOutboundService(TelegramProperties properties) {
+    private final VoiceReplyService voiceReplyService;
+    private final UserRepository userRepository;
+
+    public TelegramOutboundService(
+            TelegramProperties properties, VoiceReplyService voiceReplyService, UserRepository userRepository) {
         this.apiUrl = stripTrailingSlash(properties.apiUrl());
         this.botToken = properties.botToken();
         this.client = new OkHttpTelegramClient(botToken, telegramUrl(apiUrl));
+        this.voiceReplyService = voiceReplyService;
+        this.userRepository = userRepository;
     }
 
+    /**
+     * Sends a message, and says it too when this chat asked for that with {@code /voice}.
+     *
+     * <p>Only plain messages are spoken. A message with buttons is a thing you tap, and reading a cart aloud two
+     * items at a time would be worse than not speaking at all.
+     */
     public void sendMessage(long chatId, String text) {
         SendMessage message = SendMessage.builder().chatId(chatId).text(text).build();
         try {
             client.execute(message);
         } catch (TelegramApiException e) {
             throw failure("sendMessage", e);
+        }
+        speakIfWanted(chatId, text);
+    }
+
+    private void speakIfWanted(long chatId, String text) {
+        if (!voiceReplyService.enabled()) {
+            return;
+        }
+        boolean wanted = userRepository
+                .findByTelegramChatId(chatId)
+                .map(User::isVoiceRepliesEnabled)
+                .orElse(false);
+        if (wanted) {
+            voiceReplyService.speak(text).ifPresent(wav -> sendAudioReply(chatId, wav));
+        }
+    }
+
+    /**
+     * Sends synthesised speech.
+     *
+     * <p>Respeecher answers with WAV, which Telegram's {@code sendVoice} does not accept — its documentation says
+     * other formats "may be sent as Audio or Document", so that is what happens here, in that order. Transcoding to
+     * Opus would mean a native encoder for a stretch feature.
+     *
+     * <p>Failures are logged and swallowed: the written message has already been delivered.
+     */
+    public void sendAudioReply(long chatId, byte[] wav) {
+        InputFile audio = new InputFile(new ByteArrayInputStream(wav), "komora.wav");
+        try {
+            client.execute(SendAudio.builder().chatId(chatId).audio(audio).build());
+            return;
+        } catch (TelegramApiException e) {
+            log.debug("Telegram refused the audio, falling back to a document: {}", e.getMessage());
+        }
+        try {
+            client.execute(SendDocument.builder()
+                    .chatId(chatId)
+                    .document(new InputFile(new ByteArrayInputStream(wav), "komora.wav"))
+                    .build());
+        } catch (TelegramApiException e) {
+            log.warn("could not deliver a voice reply to chat {}: {}", chatId, e.getMessage());
         }
     }
 

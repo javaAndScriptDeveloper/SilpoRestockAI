@@ -20,6 +20,7 @@ starting point you want.
 | An HTTPS tunnel | everything | `ngrok http 8080`, or Cloudflare Tunnel |
 | `ANTHROPIC_API_KEY` | meal plans, check-in parsing, fridge photos | [console.anthropic.com](https://console.anthropic.com/settings/keys) |
 | A Silpo account | carts, orders, reorders | your own; connected through the bot |
+| `RESPEECHER_API_KEY` | spoken replies only (step 14a) | [space.respeecher.com](https://space.respeecher.com) playground |
 | `STT_API_KEY` | voice check-ins only | OpenAI, or any OpenAI-compatible endpoint (Groq) |
 | Google OAuth client | calendar events only | [console.cloud.google.com](https://console.cloud.google.com/apis/credentials) |
 
@@ -471,6 +472,38 @@ bot says «Календар зараз не налаштований на сер
 
 ---
 
+## 14a. Spoken replies (Respeecher)
+
+Needs `RESPEECHER_API_KEY` (Space API key from the Respeecher playground) and `ANTHROPIC_API_KEY` — the
+message is rewritten for speech before it is synthesised.
+
+**Send:** `/voice`
+
+**Expect:** «Тепер відповідатиму ще й голосом…» *and* an audio message saying roughly the same thing —
+the confirmation is itself spoken, which is the fastest way to hear that it works.
+
+**Verify:**
+
+```sql
+SELECT telegram_chat_id, voice_replies_enabled FROM users;   -- true
+```
+
+Now send anything that gets a plain reply — a check-in answer, for instance — and you should get text
+plus audio. **What to listen for**, against Silpo's guidance: numbers spoken as words, no URL read
+aloud, at most two items per sentence, short sentences.
+
+A cart or any message with buttons stays text-only, deliberately.
+
+**Send `/voice` again** to turn it off; the reply says «Вимкнув голосові відповіді.» and nothing is
+spoken after that.
+
+**Without the key:** `/voice` answers «Голосові відповіді зараз не налаштовані на сервері.» and nothing
+changes — the same shape as every other optional integration here.
+
+**If the audio arrives as a file rather than a playable bubble:** that is the documented fallback.
+Respeecher returns WAV, Telegram's voice messages want OGG/Opus, so it is sent as audio and falls back
+to a document.
+
 ## 15. Blackout mode
 
 **Send:** `/blackout`
@@ -596,7 +629,7 @@ during steps 6–7 is the most convincing artefact this project produces.
 
 ## Automated tests, for comparison
 
-Everything above is also covered by 204 automated tests against stub servers:
+Everything above is also covered by 211 automated tests against stub servers:
 
 ```bash
 make test          # unit + integration, needs Docker

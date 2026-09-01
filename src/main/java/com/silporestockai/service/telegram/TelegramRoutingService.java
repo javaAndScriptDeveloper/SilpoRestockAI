@@ -4,6 +4,7 @@ import com.silporestockai.entity.User;
 import com.silporestockai.model.ConversationFlow;
 import com.silporestockai.model.TelegramButton;
 import com.silporestockai.model.TelegramIncomingUpdate;
+import com.silporestockai.repository.UserRepository;
 import com.silporestockai.service.BlackoutModeService;
 import com.silporestockai.service.CartConfirmationService;
 import com.silporestockai.service.CheckinFlowService;
@@ -45,10 +46,33 @@ public class TelegramRoutingService {
     private final GoogleAuthService googleAuthService;
     private final BlackoutModeService blackoutModeService;
     private final ReorderService reorderService;
+    private final VoiceReplyService voiceReplyService;
+    private final UserRepository userRepository;
     private final TelegramOutboundService telegramOutboundService;
 
     public void route(Update update) {
         toIncoming(update).ifPresentOrElse(this::handle, () -> log.debug("ignoring unsupported Telegram update"));
+    }
+
+    /**
+     * Turns spoken replies on or off for this chat.
+     *
+     * <p>Two switches have to agree before anything is spoken: this one, and a configured Respeecher key. Neither
+     * defaults to on — a voice note nobody asked for is an interruption.
+     */
+    private void toggleVoice(User user, long chatId) {
+        if (!voiceReplyService.enabled()) {
+            telegramOutboundService.sendMessage(chatId, "Голосові відповіді зараз не налаштовані на сервері.");
+            return;
+        }
+        boolean turningOn = !user.isVoiceRepliesEnabled();
+        user.setVoiceRepliesEnabled(turningOn);
+        userRepository.save(user);
+        telegramOutboundService.sendMessage(
+                chatId,
+                turningOn
+                        ? "Тепер відповідатиму ще й голосом. Щоб вимкнути — надішли /voice ще раз."
+                        : "Вимкнув голосові відповіді.");
     }
 
     /** Opt-in, and only ever opt-in: a calendar nobody connected is never touched. */
@@ -117,6 +141,11 @@ public class TelegramRoutingService {
         }
         if (flow == ConversationFlow.REORDER_CONFIRMATION) {
             reorderConfirmationService.handle(user, incoming);
+            return;
+        }
+        if (incoming instanceof TelegramIncomingUpdate.Text voice
+                && voice.text().strip().startsWith("/voice")) {
+            toggleVoice(user, incoming.chatId());
             return;
         }
         if (incoming instanceof TelegramIncomingUpdate.Text reorder

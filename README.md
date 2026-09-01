@@ -253,6 +253,29 @@ To try it end to end, with a key exported and the bot running:
 
 Photos of a mostly-empty shelf and of a full one make the difference legible in a recording.
 
+### Respeecher (optional spoken replies)
+
+The bot can say its replies as well as write them, using Respeecher's Space API.
+
+| Variable              | Default                       | Purpose                                             |
+|-----------------------|-------------------------------|-----------------------------------------------------|
+| `RESPEECHER_API_KEY`  | *(empty)*                     | Blank disables spoken replies everywhere            |
+| `RESPEECHER_MODEL`    | `ua-rt`                       | Ukrainian model; the one supporting stress marks     |
+| `RESPEECHER_VOICE_ID` | `samantha`                    | Which voice speaks                                   |
+
+Two switches must agree: the key above, and `/voice` in the chat — off for every user until they ask.
+
+**This is text-to-speech only.** The Space API has no transcription endpoint (its own docs say
+"Text-to-speech only"), so voice *check-ins* are still transcribed by the `STT_*` settings below.
+
+A message written for a screen is not a message a person can say, so each reply is first rewritten by
+Claude under Silpo's voice guidance — `resources/prompts/voice-style-system.txt`, kept verbatim, so
+tuning the voice is a text edit. Messages carrying inline buttons are never spoken: a cart is something
+you tap, and "two items maximum" read aloud is worse than a list.
+
+Respeecher returns WAV and Telegram's `sendVoice` does not accept it, so audio goes out through
+`sendAudio` with a `sendDocument` fallback. Transcoding to Opus would mean a native encoder.
+
 ### Speech to text (voice check-ins)
 
 The Anthropic Messages API takes text, images and PDFs — not audio — so a voice check-in needs a

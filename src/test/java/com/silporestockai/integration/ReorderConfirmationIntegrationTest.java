@@ -201,12 +201,16 @@ class ReorderConfirmationIntegrationTest extends AbstractIntegrationTest {
         MCP.respondToTool("silpo_get_time_slots", slotsJson());
     }
 
-    /** Two windows: the coming Wednesday and the coming Friday, in the order a server would list them. */
+    /** Tomorrow, and three days out. Relative to today rather than to named weekdays: which weekday is "next"
+     * depends on when the suite runs, and a test that passes on Tuesday and fails on Wednesday tests the calendar. */
+    private static final LocalDate SOONER = LocalDate.now(KYIV).plusDays(1);
+
+    private static final LocalDate LATER = LocalDate.now(KYIV).plusDays(3);
+
+    /** Two windows, listed later-first so "the earliest" cannot be satisfied by taking the first one. */
     private static String slotsJson() {
-        LocalDate wednesday = LocalDate.now(KYIV).with(TemporalAdjusters.next(DayOfWeek.WEDNESDAY));
-        LocalDate friday = LocalDate.now(KYIV).with(TemporalAdjusters.next(DayOfWeek.FRIDAY));
-        return "{\"timeSlots\":[{\"id\":\"slot-wed\",\"from\":\"%s\"},{\"id\":\"slot-fri\",\"from\":\"%s\"}]}"
-                .formatted(wednesday, friday);
+        return "{\"timeSlots\":[{\"id\":\"slot-later\",\"from\":\"%s\"},{\"id\":\"slot-sooner\",\"from\":\"%s\"}]}"
+                .formatted(LATER, SOONER);
     }
 
     private void needs(List<String> gone) {
@@ -219,7 +223,7 @@ class ReorderConfirmationIntegrationTest extends AbstractIntegrationTest {
                 .build());
     }
 
-    /** A past confirmed order on a Friday, which is what makes Friday this household's habit. */
+    /** A past confirmed order on some weekday, which is what makes that weekday this household's habit. */
     private void pastOrderOn(DayOfWeek day) {
         Instant confirmedAt = LocalDate.now(KYIV)
                 .with(TemporalAdjusters.previous(day))
@@ -270,11 +274,12 @@ class ReorderConfirmationIntegrationTest extends AbstractIntegrationTest {
     @Test
     void picksTheSlotOnTheHouseholdsUsualDay() {
         needs(List.of("Молоко"));
-        pastOrderOn(DayOfWeek.FRIDAY);
+        // The household always orders on the later slot's weekday, so the habit must beat the earlier window.
+        pastOrderOn(LATER.getDayOfWeek());
 
         present();
 
-        assertThat(draft().getDeliverySlot()).isEqualTo("slot-fri");
+        assertThat(draft().getDeliverySlot()).isEqualTo("slot-later");
     }
 
     @Test
@@ -283,7 +288,7 @@ class ReorderConfirmationIntegrationTest extends AbstractIntegrationTest {
 
         present();
 
-        assertThat(draft().getDeliverySlot()).isEqualTo("slot-wed");
+        assertThat(draft().getDeliverySlot()).isEqualTo("slot-sooner");
     }
 
     @Test
@@ -370,7 +375,7 @@ class ReorderConfirmationIntegrationTest extends AbstractIntegrationTest {
         tapButton(1, ReorderMessageService.CALLBACK_CONFIRM);
 
         JsonNode update = MCP.callArguments("silpo_update_shopping_cart").getFirst();
-        assertThat(update.path("timeslot").asText()).isEqualTo("slot-wed");
+        assertThat(update.path("timeslot").asText()).isEqualTo("slot-sooner");
         assertThat(draft2()).isEmpty();
     }
 
@@ -384,11 +389,12 @@ class ReorderConfirmationIntegrationTest extends AbstractIntegrationTest {
         present();
 
         tapButton(1, ReorderMessageService.CALLBACK_SLOT_MENU);
-        tapButton(2, ReorderMessageService.CALLBACK_SLOT_PREFIX + "1");
+        tapButton(2, ReorderMessageService.CALLBACK_SLOT_PREFIX + "0");
         tapButton(3, ReorderMessageService.CALLBACK_CONFIRM);
 
+        // Index 0 is the later window, which is not the one chosen for them.
         JsonNode update = MCP.callArguments("silpo_update_shopping_cart").getFirst();
-        assertThat(update.path("timeslot").asText()).isEqualTo("slot-fri");
+        assertThat(update.path("timeslot").asText()).isEqualTo("slot-later");
         // Changing when the food arrives is not an edit of what is in the basket.
         assertThat(trustCounter()).isEqualTo(1);
     }

@@ -42,6 +42,11 @@ public class User {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
+    /** Whether this chat asked for spoken replies with {@code /voice}. Off until somebody says otherwise. */
+    @Column(name = "voice_replies_enabled", nullable = false)
+    @Builder.Default
+    private boolean voiceRepliesEnabled = false;
+
     /** When the agent last opened a check-in. Null until the first prompt goes out. */
     @Column(name = "last_checkin_prompt_sent_at")
     private Instant lastCheckinPromptSentAt;

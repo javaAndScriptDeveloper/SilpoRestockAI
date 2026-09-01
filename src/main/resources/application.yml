@@ -134,6 +134,18 @@ silpo:
 
 # Speech-to-text for voice check-ins. Any OpenAI-compatible /v1/audio/transcriptions endpoint works —
 # OpenAI, Groq, or a local whisper server. Blank key disables the voice path: the bot asks for text instead.
+# Optional spoken replies through Respeecher's Space API (text-to-speech). A blank key disables them
+# deployment-wide: /voice says so and every reply stays written. Per chat they are off until /voice.
+# Note this is TTS only — voice check-ins are transcribed by the `stt` block above, not by Respeecher.
+respeecher:
+  api-key: ${RESPEECHER_API_KEY:}
+  base-url: ${RESPEECHER_BASE_URL:https://api.respeecher.com}
+  # ua-rt is the Ukrainian model, and the only one that supports explicit stress marking.
+  model: ${RESPEECHER_MODEL:ua-rt}
+  voice-id: ${RESPEECHER_VOICE_ID:samantha}
+  # The bytes endpoint is documented for roughly this much text.
+  max-characters: ${RESPEECHER_MAX_CHARACTERS:5000}
+
 # Optional Google Calendar integration: a confirmed delivery slot becomes an event. A blank client id
 # disables it entirely — /calendar says so, and every confirmation behaves exactly as before.
 google:

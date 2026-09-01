@@ -39,6 +39,8 @@ public final class StubTelegramServer implements AutoCloseable {
     private final List<JsonNode> sentMessages = new ArrayList<>();
     private final List<JsonNode> callbackAnswers = new ArrayList<>();
     private final List<JsonNode> setWebhookCalls = new ArrayList<>();
+    /** Bodies of {@code sendAudio} and {@code sendDocument} calls — how a spoken reply leaves the application. */
+    private final List<String> sentAudio = new ArrayList<>();
 
     public StubTelegramServer(String botToken) throws IOException {
         this.botToken = botToken;
@@ -64,10 +66,16 @@ public final class StubTelegramServer implements AutoCloseable {
         return List.copyOf(setWebhookCalls);
     }
 
+    /** The raw multipart bodies of any audio the bot sent; the payload is visible inside each one. */
+    public synchronized List<String> sentAudio() {
+        return List.copyOf(sentAudio);
+    }
+
     public synchronized void reset() {
         sentMessages.clear();
         callbackAnswers.clear();
         setWebhookCalls.clear();
+        sentAudio.clear();
     }
 
     @Override
@@ -92,6 +100,12 @@ public final class StubTelegramServer implements AutoCloseable {
             byte[] rawBody = exchange.getRequestBody().readAllBytes();
             String contentType = exchange.getRequestHeaders().getFirst("Content-Type");
             JsonNode body = parseBody(rawBody, contentType);
+            if (method.equals("sendaudio") || method.equals("senddocument")) {
+                // Audio is multipart with binary content; keep the raw body so a test can look for its payload.
+                synchronized (this) {
+                    sentAudio.add(new String(rawBody, StandardCharsets.UTF_8));
+                }
+            }
             record(method, body);
             respond(exchange, resultFor(method, body));
         } finally {
@@ -132,7 +146,9 @@ public final class StubTelegramServer implements AutoCloseable {
 
     private Object resultFor(String method, JsonNode body) {
         return switch (method) {
-            case "sendmessage" ->
+            // sendAudio and sendDocument answer with a Message too; without one the SDK treats the call as failed
+            // and the caller's fallback fires, which would look like a bug in the caller rather than in the stub.
+            case "sendmessage", "sendaudio", "senddocument" ->
                 Map.of(
                         "message_id",
                         1,

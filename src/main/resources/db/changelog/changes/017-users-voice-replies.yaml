@@ -1,0 +1,18 @@
+databaseChangeLog:
+  - changeSet:
+      id: 017-users-voice-replies
+      author: komora
+      comment: >-
+        Whether this chat wants the bot to speak as well as write. Off for everyone by default: a voice
+        note nobody asked for is an interruption, and the feature is also disabled deployment-wide when
+        no Respeecher key is configured.
+      changes:
+        - addColumn:
+            tableName: users
+            columns:
+              - column:
+                  name: voice_replies_enabled
+                  type: BOOLEAN
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
