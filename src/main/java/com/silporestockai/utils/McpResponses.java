@@ -30,6 +30,8 @@ public final class McpResponses {
     public static final String[] DELIVERY_TYPE = {"deliveryType", "type"};
     public static final String[] TIMESLOT = {"timeslot", "timeSlot", "slot"};
     public static final String[] TIME_SLOTS = {"timeSlots", "timeslots", "slots"};
+    public static final String[] SLOT_ID = {"id", "slotId", "code"};
+    public static final String[] SLOT_START = {"from", "start", "startTime", "dateTime", "date"};
     public static final String[] PRODUCTS = {"products", "items", "results"};
     public static final String[] ITEMS = {"items", "products", "lines"};
     public static final String[] NAME = {"name", "title", "query", "requestedName"};

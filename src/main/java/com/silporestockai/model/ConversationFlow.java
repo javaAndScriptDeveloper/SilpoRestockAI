@@ -12,5 +12,7 @@ public enum ConversationFlow {
     /** Periodic "what is left in the fridge" exchange (tasks 11 and 12). */
     CHECK_IN,
     /** Reviewing and confirming a proposed cart (task 10). */
-    CART_CONFIRMATION
+    CART_CONFIRMATION,
+    /** Reviewing a delta reorder: substitutes, delivery slot, confirm (task 15). */
+    REORDER_CONFIRMATION
 }

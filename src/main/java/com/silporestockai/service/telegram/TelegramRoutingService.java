@@ -6,6 +6,7 @@ import com.silporestockai.model.TelegramIncomingUpdate;
 import com.silporestockai.service.CartConfirmationService;
 import com.silporestockai.service.CheckinFlowService;
 import com.silporestockai.service.ConversationStateService;
+import com.silporestockai.service.ReorderConfirmationService;
 import com.silporestockai.service.UserAccountService;
 import com.silporestockai.service.onboarding.OnboardingFlowService;
 import java.util.Optional;
@@ -35,6 +36,7 @@ public class TelegramRoutingService {
     private final ConversationStateService conversationStateService;
     private final CartConfirmationService cartConfirmationService;
     private final CheckinFlowService checkinFlowService;
+    private final ReorderConfirmationService reorderConfirmationService;
     private final TelegramOutboundService telegramOutboundService;
 
     public void route(Update update) {
@@ -83,6 +85,10 @@ public class TelegramRoutingService {
             checkinFlowService.handle(user, incoming);
             return;
         }
+        if (flow == ConversationFlow.REORDER_CONFIRMATION) {
+            reorderConfirmationService.handle(user, incoming);
+            return;
+        }
         if (incoming instanceof TelegramIncomingUpdate.ButtonTap tap) {
             // A keyboard left over from a conversation that has already ended — a second tap on confirm, most
             // often. Acknowledge it so Telegram stops spinning and say nothing: answering a button nobody is
@@ -91,7 +97,6 @@ public class TelegramRoutingService {
             log.debug("ignoring stale button tap {} in chat {}", tap.data(), tap.chatId());
             return;
         }
-        // TODO(#14): the reorder cycle answers here.
         telegramOutboundService.sendMessage(
                 incoming.chatId(), "Профіль уже є. Регулярні чек-іни та перезамовлення додам далі.");
     }

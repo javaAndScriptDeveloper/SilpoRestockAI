@@ -77,7 +77,8 @@ public class ReorderService {
         if (needs.isEmpty()) {
             // Not a failure: a household that has everything is the system working.
             log.info("nothing to reorder for user {}", userId);
-            return new DeltaOrder(userId, type, triggerItem, null, List.of(), List.of(), BigDecimal.ZERO, excluded);
+            return new DeltaOrder(
+                    userId, type, triggerItem, null, null, List.of(), List.of(), BigDecimal.ZERO, excluded);
         }
         log.info("reordering {} items for user {}, excluding {}", needs.size(), userId, excluded);
 
@@ -128,7 +129,7 @@ public class ReorderService {
                 reordered.size(),
                 suggestions.size(),
                 savings);
-        return new DeltaOrder(userId, type, triggerItem, cart, reordered, suggestions, savings, excluded);
+        return new DeltaOrder(userId, type, triggerItem, cart, context, reordered, suggestions, savings, excluded);
     }
 
     /**

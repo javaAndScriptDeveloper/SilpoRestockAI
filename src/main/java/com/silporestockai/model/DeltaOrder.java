@@ -1,5 +1,6 @@
 package com.silporestockai.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
@@ -15,6 +16,8 @@ import java.util.UUID;
  *     could not wait
  * @param triggerItem the item that could not wait; null for a scheduled reorder
  * @param cart the verified Silpo cart, or null when there was nothing to order
+ * @param context the cart, branch and company the order is bound to, so task 15 can keep talking to the same cart
+ *     without asking Silpo which one it was again
  * @param reordered names that made it into the cart as asked
  * @param pendingReplacements names Silpo could not supply, with its suggestions
  * @param estimatedSavings rough difference between old and current prices on the promoted lines
@@ -25,12 +28,20 @@ public record DeltaOrder(
         OrderType type,
         String triggerItem,
         CartSummary cart,
+        CartContext context,
         List<String> reordered,
         List<ReplacementSuggestion> pendingReplacements,
         BigDecimal estimatedSavings,
         List<String> excluded) {
 
-    /** Nothing to buy this cycle. A normal outcome, not a failure. */
+    /**
+     * Nothing to buy this cycle. A normal outcome, not a failure.
+     *
+     * <p>Ignored by Jackson: this record makes a round trip through {@code conversation_state.context_json} between
+     * two button taps, and an {@code isX()} method would otherwise be written out as a field the record cannot read
+     * back.
+     */
+    @JsonIgnore
     public boolean isEmpty() {
         return reordered.isEmpty() && pendingReplacements.isEmpty();
     }

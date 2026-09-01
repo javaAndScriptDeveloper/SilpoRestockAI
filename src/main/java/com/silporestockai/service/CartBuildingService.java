@@ -8,9 +8,15 @@ import com.silporestockai.exception.CartBuildException;
 import com.silporestockai.model.BasketItem;
 import com.silporestockai.model.CartContext;
 import com.silporestockai.model.CartSummary;
+import com.silporestockai.model.OfferedSlot;
 import com.silporestockai.model.ResolvedProduct;
 import com.silporestockai.utils.McpResponses;
 import java.math.BigDecimal;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -36,6 +42,9 @@ public class CartBuildingService {
     private static final String TOOL_TIME_SLOTS = "silpo_get_time_slots";
     private static final String TOOL_FIND_PRODUCTS = "silpo_find_products_batch";
     private static final String TOOL_ADD_PRODUCTS = "silpo_add_or_update_cart_products";
+
+    /** Slot times without a zone are the household's, and the household is in Kyiv. */
+    private static final ZoneId KYIV = ZoneId.of("Europe/Kyiv");
 
     /** The documented per-call limit of {@code silpo_find_products_batch}. */
     private static final int SEARCH_BATCH_SIZE = 30;
@@ -96,18 +105,60 @@ public class CartBuildingService {
      * checkout, where it is someone else's problem and nobody's log line.
      */
     public String validateTimeSlot(UUID userId, CartContext context) {
+        List<OfferedSlot> offered = offeredTimeSlots(userId, context);
+        if (offered.isEmpty()) {
+            throw new CartBuildException("Silpo offered no delivery time slot for branch " + context.branchId());
+        }
+        String slot = offered.getFirst().id();
+        log.info("MCP <- {} time slots, taking {}", offered.size(), slot);
+        return slot;
+    }
+
+    /**
+     * Every slot on offer, for a caller that has to let somebody choose.
+     *
+     * <p>Start times are read leniently, like every other MCP field: a slot whose date format defeats parsing keeps a
+     * null {@code startsAt} rather than failing the call, and simply never matches a household's usual day.
+     */
+    public List<OfferedSlot> offeredTimeSlots(UUID userId, CartContext context) {
         JsonNode slots = call(
                 userId,
                 TOOL_TIME_SLOTS,
                 Map.of("branchId", nullSafe(context.branchId()), "deliveryType", nullSafe(context.deliveryType())));
-        List<JsonNode> offered = McpResponses.findArray(slots, McpResponses.TIME_SLOTS);
-        if (offered.isEmpty()) {
-            throw new CartBuildException("Silpo offered no delivery time slot for branch " + context.branchId());
+        List<OfferedSlot> offered = new ArrayList<>();
+        for (JsonNode slot : McpResponses.findArray(slots, McpResponses.TIME_SLOTS)) {
+            String id = McpResponses.findString(slot, McpResponses.SLOT_ID).orElse(null);
+            if (id == null) {
+                log.debug("ignoring a time slot with no identifier");
+                continue;
+            }
+            String start =
+                    McpResponses.findString(slot, McpResponses.SLOT_START).orElse(null);
+            offered.add(new OfferedSlot(id, start == null ? id : start, parseStart(start)));
         }
-        String slot = McpResponses.findString(offered.getFirst(), "id", "slotId", "code")
-                .orElseThrow(() -> new CartBuildException("a time slot came back without an identifier"));
-        log.info("MCP <- {} time slots, taking {}", offered.size(), slot);
-        return slot;
+        return offered;
+    }
+
+    /** Instant, local date-time, or plain date — in that order. Anything else is left unparsed, not guessed at. */
+    private static Instant parseStart(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return Instant.parse(value);
+        } catch (DateTimeParseException ignored) {
+            // fall through
+        }
+        try {
+            return LocalDateTime.parse(value).atZone(KYIV).toInstant();
+        } catch (DateTimeParseException ignored) {
+            // fall through
+        }
+        try {
+            return LocalDate.parse(value).atStartOfDay(KYIV).toInstant();
+        } catch (DateTimeParseException ignored) {
+            return null;
+        }
     }
 
     /** Step 4. Chunked at the documented batch limit; an unmatched item is normal, not an error. */
