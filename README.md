@@ -199,6 +199,28 @@ To smoke-test against the real API, export a key and point the client at product
 ANTHROPIC_API_KEY=sk-ant-... ANTHROPIC_BASE_URL=https://api.anthropic.com make run
 ```
 
+### Speech to text (voice check-ins)
+
+The Anthropic Messages API takes text, images and PDFs — not audio — so a voice check-in needs a
+transcription service of its own. Any OpenAI-compatible `/v1/audio/transcriptions` endpoint works:
+
+| Variable       | Default                                          | Purpose                                                       |
+|----------------|--------------------------------------------------|---------------------------------------------------------------|
+| `STT_API_KEY`  | *(empty)*                                        | Bearer token; blank disables voice, the bot asks for text      |
+| `STT_ENDPOINT` | `https://api.openai.com/v1/audio/transcriptions` | Point at Groq or a local whisper server to change providers    |
+| `STT_MODEL`    | `whisper-1`                                      | Transcription model id                                         |
+| `STT_LANGUAGE` | `uk`                                             | Language hint, so the model does not have to guess Ukrainian   |
+
+Blank is a supported configuration, not a broken one: a voice note is answered with *"Голосові поки не
+розбираю. Напиши, будь ласка, текстом."* and every other path keeps working.
+
+To smoke-test the voice path end to end, export a key, send the bot a voice note while a check-in is
+open, and watch for the `transcribed N bytes of audio` line:
+
+```bash
+STT_API_KEY=sk-... make run
+```
+
 The schema is owned by **Liquibase** (`src/main/resources/db/changelog`). Hibernate is set to `validate`
 only — add your changesets under `db/changelog/changes/`.
 

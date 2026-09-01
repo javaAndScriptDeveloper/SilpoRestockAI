@@ -4,6 +4,7 @@ import com.silporestockai.entity.User;
 import com.silporestockai.model.ConversationFlow;
 import com.silporestockai.model.TelegramIncomingUpdate;
 import com.silporestockai.service.CartConfirmationService;
+import com.silporestockai.service.CheckinFlowService;
 import com.silporestockai.service.ConversationStateService;
 import com.silporestockai.service.UserAccountService;
 import com.silporestockai.service.onboarding.OnboardingFlowService;
@@ -33,6 +34,7 @@ public class TelegramRoutingService {
     private final OnboardingFlowService onboardingFlowService;
     private final ConversationStateService conversationStateService;
     private final CartConfirmationService cartConfirmationService;
+    private final CheckinFlowService checkinFlowService;
     private final TelegramOutboundService telegramOutboundService;
 
     public void route(Update update) {
@@ -77,6 +79,10 @@ public class TelegramRoutingService {
             cartConfirmationService.handle(user, incoming);
             return;
         }
+        if (flow == ConversationFlow.CHECK_IN) {
+            checkinFlowService.handle(user, incoming);
+            return;
+        }
         if (incoming instanceof TelegramIncomingUpdate.ButtonTap tap) {
             // A keyboard left over from a conversation that has already ended — a second tap on confirm, most
             // often. Acknowledge it so Telegram stops spinning and say nothing: answering a button nobody is
@@ -85,7 +91,7 @@ public class TelegramRoutingService {
             log.debug("ignoring stale button tap {} in chat {}", tap.data(), tap.chatId());
             return;
         }
-        // TODO(#11): scheduled check-ins and the reorder cycle answer here.
+        // TODO(#14): the reorder cycle answers here.
         telegramOutboundService.sendMessage(
                 incoming.chatId(), "Профіль уже є. Регулярні чек-іни та перезамовлення додам далі.");
     }

@@ -132,6 +132,15 @@ silpo:
     # startup, which means stored tokens do not survive a restart. Never commit a real key.
     token-encryption-key: ${SILPO_TOKEN_ENCRYPTION_KEY:}
 
+# Speech-to-text for voice check-ins. Any OpenAI-compatible /v1/audio/transcriptions endpoint works —
+# OpenAI, Groq, or a local whisper server. Blank key disables the voice path: the bot asks for text instead.
+stt:
+  api-key: ${STT_API_KEY:}
+  endpoint: ${STT_ENDPOINT:https://api.openai.com/v1/audio/transcriptions}
+  model: ${STT_MODEL:whisper-1}
+  language: ${STT_LANGUAGE:uk}
+  timeout: ${STT_TIMEOUT:60s}
+
 # The check-in cycle: how long after the last contact a household is asked what is left, and how often
 # the sweep looks for someone to ask. Shorten the interval for a demo.
 komora:
