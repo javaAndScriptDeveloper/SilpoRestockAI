@@ -43,6 +43,9 @@ public final class StubMcpServer implements AutoCloseable {
     /** Names of the tools called, in order — this is what a sequence test asserts on. */
     private final List<String> calledTools = Collections.synchronizedList(new ArrayList<>());
 
+    /** The arguments of every {@code tools/call}, in the same order, so a test can assert what was asked for. */
+    private final List<JsonNode> callArguments = Collections.synchronizedList(new ArrayList<>());
+
     private final List<String> seenAuthorizationHeaders = new ArrayList<>();
     private final List<String> seenCookieHeaders = new ArrayList<>();
     private final List<String> toolNames;
@@ -78,6 +81,19 @@ public final class StubMcpServer implements AutoCloseable {
         return List.copyOf(calledTools);
     }
 
+    /** The arguments every call to {@code tool} carried, in order. */
+    public List<JsonNode> callArguments(String tool) {
+        List<JsonNode> arguments = new ArrayList<>();
+        List<String> tools = calledTools();
+        List<JsonNode> all = List.copyOf(callArguments);
+        for (int i = 0; i < tools.size() && i < all.size(); i++) {
+            if (tools.get(i).equals(tool)) {
+                arguments.add(all.get(i));
+            }
+        }
+        return arguments;
+    }
+
     /** Clears counters, injected statuses, scripted responses and recorded headers between tests. */
     public synchronized void reset() {
         injectedStatuses.clear();
@@ -85,6 +101,7 @@ public final class StubMcpServer implements AutoCloseable {
         toolResponses.clear();
         failingTools.clear();
         calledTools.clear();
+        callArguments.clear();
         seenAuthorizationHeaders.clear();
         seenCookieHeaders.clear();
     }
@@ -122,6 +139,7 @@ public final class StubMcpServer implements AutoCloseable {
             callCounts.computeIfAbsent(method, key -> new AtomicInteger()).incrementAndGet();
             if ("tools/call".equals(method)) {
                 calledTools.add(request.path("params").path("name").asText());
+                callArguments.add(request.path("params").path("arguments"));
             }
 
             Deque<Integer> statuses = injectedStatuses.get(method);

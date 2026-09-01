@@ -36,6 +36,9 @@ public final class McpResponses {
     public static final String[] QUANTITY = {"quantity", "amount", "count"};
     public static final String[] UNIT = {"unit", "measure"};
     public static final String[] PRICE = {"price", "sum", "amount"};
+    public static final String[] OLD_PRICE = {"oldPrice", "priceOld", "basePrice", "regularPrice"};
+    public static final String[] REPLACEMENTS = {"replacements", "substitutes", "alternatives", "products"};
+    public static final String[] PROMOTIONS = {"promotions", "promos", "offers", "products"};
     public static final String[] TOTAL = {"total", "totalSum", "sum"};
     public static final String[] VALIDATIONS = {"validations", "errors", "warnings"};
     public static final String[] LOYALTY = {"loyalty"};

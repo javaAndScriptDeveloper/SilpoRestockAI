@@ -47,16 +47,26 @@ public class CartBuildingService {
         CartContext context = getOrCreateCartContext(userId);
         String deliverySlot = validateTimeSlot(userId, context);
         List<ResolvedProduct> resolved = resolveProducts(userId, context, items);
-        List<String> unresolved = items.stream()
-                .map(ShoppingListItem::getName)
-                .filter(name -> resolved.stream()
-                        .noneMatch(product -> product.requestedName().equals(name)))
-                .toList();
+        List<String> unresolved = unresolvedNames(items, resolved);
         if (!unresolved.isEmpty()) {
             log.info("Silpo matched no product for {} of {} items: {}", unresolved.size(), items.size(), unresolved);
         }
         addProductsToCart(userId, context, resolved);
         return getVerifiedCart(userId, context, deliverySlot, unresolved);
+    }
+
+    /**
+     * Names Silpo matched nothing for.
+     *
+     * <p>Public because the reorder in task 14 composes these steps itself and has to ask the same question the same
+     * way; a second copy of this stream is exactly how two answers start disagreeing.
+     */
+    public List<String> unresolvedNames(List<ShoppingListItem> items, List<ResolvedProduct> resolved) {
+        return items.stream()
+                .map(ShoppingListItem::getName)
+                .filter(name -> resolved.stream()
+                        .noneMatch(product -> product.requestedName().equals(name)))
+                .toList();
     }
 
     /** Steps 1 and 2: which cart, and which branch it is bound to. */
