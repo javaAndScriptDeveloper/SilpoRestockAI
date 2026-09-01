@@ -6,6 +6,10 @@ generates a weekly meal plan, builds a real Silpo cart through the official Silp
 loop with state persisted across turns. Built for the [Silpo AI Factory](https://ai-factory.silpo.ua)
 hackathon.
 
+**Testing it by hand:** [`docs/RUNBOOK.md`](docs/RUNBOOK.md) walks from an empty database through every
+feature in dependency order — which keys to gather, what to send the bot, what to expect back, how to
+verify it in the data, and how to reset to any starting point.
+
 Read [`docs/PRODUCT_BRIEF.md`](docs/PRODUCT_BRIEF.md) for the product context — problem, value, feature
 order, and all ten user flows — before implementing anything. `CLAUDE.md` covers the conventions this
 codebase enforces.

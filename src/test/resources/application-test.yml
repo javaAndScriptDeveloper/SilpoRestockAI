@@ -1,3 +1,10 @@
+# A client id is pinned so no test ever performs Dynamic Client Registration against the real Silpo
+# server: a greeting builds an authorization URL, and without this the tests that do not stub the OAuth
+# server reach the live internet and fail whenever it is slow, down, or rate-limiting.
+silpo:
+  mcp:
+    client-id: stub-client-id
+
 spring:
   # Datasource is provided at runtime by Testcontainers via @ServiceConnection (see TestcontainersConfiguration).
   jpa:

@@ -10,6 +10,7 @@ import com.silporestockai.service.CheckinFlowService;
 import com.silporestockai.service.ConversationStateService;
 import com.silporestockai.service.GoogleAuthService;
 import com.silporestockai.service.ReorderConfirmationService;
+import com.silporestockai.service.ReorderService;
 import com.silporestockai.service.UserAccountService;
 import com.silporestockai.service.onboarding.OnboardingFlowService;
 import java.util.List;
@@ -43,6 +44,7 @@ public class TelegramRoutingService {
     private final ReorderConfirmationService reorderConfirmationService;
     private final GoogleAuthService googleAuthService;
     private final BlackoutModeService blackoutModeService;
+    private final ReorderService reorderService;
     private final TelegramOutboundService telegramOutboundService;
 
     public void route(Update update) {
@@ -115,6 +117,14 @@ public class TelegramRoutingService {
         }
         if (flow == ConversationFlow.REORDER_CONFIRMATION) {
             reorderConfirmationService.handle(user, incoming);
+            return;
+        }
+        if (incoming instanceof TelegramIncomingUpdate.Text reorder
+                && reorder.text().strip().startsWith("/reorder")) {
+            // The reorder cycle has no scheduler by design (see task 14's notes), so this is how a person — or a
+            // demo — starts one. It builds the same delta the cycle would and hands it to the same confirmation.
+            telegramOutboundService.sendMessage(incoming.chatId(), "Дивлюсь, що треба докупити.");
+            reorderConfirmationService.present(user, reorderService.buildScheduledDeltaOrder(user.getId()));
             return;
         }
         if (incoming instanceof TelegramIncomingUpdate.Text blackout
