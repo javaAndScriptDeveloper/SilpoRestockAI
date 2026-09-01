@@ -83,7 +83,7 @@ class TelegramOutboundServiceIntegrationTest extends AbstractIntegrationTest {
 
     @Test
     void downloadsAVoiceNoteAsRawBytes() {
-        byte[] audio = telegramOutboundService.downloadVoiceNote("voice-file-id");
+        byte[] audio = telegramOutboundService.downloadFile("voice-file-id");
 
         assertThat(audio).isEqualTo(StubTelegramServer.VOICE_BYTES);
     }

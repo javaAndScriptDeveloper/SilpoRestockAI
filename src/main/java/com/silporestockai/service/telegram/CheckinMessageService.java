@@ -45,6 +45,16 @@ public class CheckinMessageService {
         return text.toString();
     }
 
+    /**
+     * Appended when the reading came from a photo.
+     *
+     * <p>A photo cannot show what is behind the juice, and presenting a guess as a reading is how a wrong basket
+     * arrives next week without anybody noticing why.
+     */
+    public String photoDisclaimerText() {
+        return "Це приблизно — з фото видно не все. Якщо щось не так, просто напиши.";
+    }
+
     /** Same sentence onboarding uses, so a user who sends a voice note twice gets one consistent answer. */
     public String voiceUnsupportedText() {
         return "Голосові поки не розбираю. Напиши, будь ласка, текстом.";

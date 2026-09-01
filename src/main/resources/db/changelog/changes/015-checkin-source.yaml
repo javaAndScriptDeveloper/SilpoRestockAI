@@ -1,0 +1,18 @@
+databaseChangeLog:
+  - changeSet:
+      id: 015-checkin-source
+      author: komora
+      comment: >-
+        How a check-in arrived: typed, spoken, or photographed. A photo reading is rougher than a typed
+        sentence, and without this column nothing downstream could tell a weak parse from a weak input.
+        Defaults to TEXT so existing rows stay valid — every check-in before this changeset was typed.
+      changes:
+        - addColumn:
+            tableName: checkin
+            columns:
+              - column:
+                  name: source
+                  type: VARCHAR(16)
+                  defaultValue: TEXT
+                  constraints:
+                    nullable: false

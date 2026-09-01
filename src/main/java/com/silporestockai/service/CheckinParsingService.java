@@ -1,5 +1,6 @@
 package com.silporestockai.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.silporestockai.client.claude.ClaudeApiClient;
 import com.silporestockai.client.stt.SpeechToTextClient;
 import com.silporestockai.entity.BaselineBasket;
@@ -7,6 +8,7 @@ import com.silporestockai.entity.Checkin;
 import com.silporestockai.model.BasketItem;
 import com.silporestockai.model.CheckinDelta;
 import com.silporestockai.model.CheckinResult;
+import com.silporestockai.model.CheckinSource;
 import com.silporestockai.repository.BaselineBasketRepository;
 import com.silporestockai.repository.CheckinRepository;
 import java.io.IOException;
@@ -39,6 +41,9 @@ import org.springframework.stereotype.Service;
 @Service
 public class CheckinParsingService {
 
+    /** Own mapper, as elsewhere in the app: Boot 4 carries both Jackson 2 and Jackson 3. */
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+
     private final BaselineBasketRepository baselineBasketRepository;
     private final CheckinRepository checkinRepository;
     private final ClaudeApiClient claudeApiClient;
@@ -46,6 +51,7 @@ public class CheckinParsingService {
     private final InventoryTrendService inventoryTrendService;
     private final Clock clock;
     private final String systemPrompt;
+    private final String photoSystemPrompt;
 
     public CheckinParsingService(
             BaselineBasketRepository baselineBasketRepository,
@@ -54,7 +60,8 @@ public class CheckinParsingService {
             SpeechToTextClient speechToTextClient,
             InventoryTrendService inventoryTrendService,
             Clock clock,
-            @Value("classpath:prompts/checkin-system.txt") Resource systemPromptResource) {
+            @Value("classpath:prompts/checkin-system.txt") Resource systemPromptResource,
+            @Value("classpath:prompts/checkin-photo-system.txt") Resource photoSystemPromptResource) {
         this.baselineBasketRepository = baselineBasketRepository;
         this.checkinRepository = checkinRepository;
         this.claudeApiClient = claudeApiClient;
@@ -62,6 +69,7 @@ public class CheckinParsingService {
         this.inventoryTrendService = inventoryTrendService;
         this.clock = clock;
         this.systemPrompt = read(systemPromptResource);
+        this.photoSystemPrompt = read(photoSystemPromptResource);
     }
 
     /** Whether a voice note can be handled at all, which decides what the flow offers the user. */
@@ -71,6 +79,10 @@ public class CheckinParsingService {
 
     /** Parses what the user typed, stores it, and says whether it was understood. */
     public CheckinResult parseText(UUID userId, String rawText) {
+        return parseText(userId, rawText, CheckinSource.TEXT);
+    }
+
+    private CheckinResult parseText(UUID userId, String rawText, CheckinSource source) {
         List<String> baseline = baselineItemNames(userId);
         CheckinDelta delta;
         try {
@@ -78,13 +90,13 @@ public class CheckinParsingService {
         } catch (RuntimeException e) {
             // The raw sentence is still worth keeping: it is the only evidence of what the model choked on.
             log.error("could not parse a check-in for user {}", userId, e);
-            store(userId, rawText, null);
+            store(userId, rawText, null, source);
             return new CheckinResult(empty(), rawText, true);
         }
 
         CheckinDelta filtered = onlyBaselineItems(delta, baseline);
         boolean understood = !isEmpty(filtered);
-        store(userId, rawText, understood ? filtered : null);
+        store(userId, rawText, understood ? filtered : null, source);
         return new CheckinResult(filtered, rawText, !understood);
     }
 
@@ -92,7 +104,42 @@ public class CheckinParsingService {
     public CheckinResult parseVoice(UUID userId, byte[] audio) {
         String transcript = speechToTextClient.transcribe(audio, "checkin.ogg");
         log.info("voice check-in from user {} transcribed", userId);
-        return parseText(userId, transcript);
+        return parseText(userId, transcript, CheckinSource.VOICE);
+    }
+
+    /**
+     * Reads a photo of the fridge.
+     *
+     * <p>The vision call answers with text rather than a schema-checked object — {@code completeStructured} is a
+     * different SDK call and widening the client interface for one stretch feature would cost more than parsing here.
+     * A reply that is not JSON is treated exactly like an unparseable sentence: the raw text is kept, and the user is
+     * asked to say it in words.
+     */
+    public CheckinResult parsePhoto(UUID userId, byte[] image, String mediaType) {
+        List<String> baseline = baselineItemNames(userId);
+        String answer;
+        try {
+            answer =
+                    claudeApiClient.image(photoSystemPrompt, describe(baseline, "Що видно на фото?"), image, mediaType);
+        } catch (RuntimeException e) {
+            log.error("could not read a fridge photo for user {}", userId, e);
+            store(userId, null, null, CheckinSource.PHOTO);
+            return new CheckinResult(empty(), null, true);
+        }
+
+        CheckinDelta delta;
+        try {
+            delta = MAPPER.readValue(answer, CheckinDelta.class);
+        } catch (Exception e) {
+            log.warn("fridge photo answer for user {} was not JSON: {}", userId, e.getMessage());
+            store(userId, answer, null, CheckinSource.PHOTO);
+            return new CheckinResult(empty(), answer, true);
+        }
+
+        CheckinDelta filtered = onlyBaselineItems(delta, baseline);
+        boolean understood = !isEmpty(filtered);
+        store(userId, answer, understood ? filtered : null, CheckinSource.PHOTO);
+        return new CheckinResult(filtered, answer, !understood);
     }
 
     /** The names the model is allowed to use — the current baseline, in its own spelling. */
@@ -165,12 +212,13 @@ public class CheckinParsingService {
      * <p>Both together, here, rather than in the Telegram flow: every stored check-in updates the trend, whichever
      * channel it arrived through — including the fridge-photo path of task 17.
      */
-    private void store(UUID userId, String rawText, CheckinDelta delta) {
+    private void store(UUID userId, String rawText, CheckinDelta delta, CheckinSource source) {
         checkinRepository.save(Checkin.builder()
                 .id(UUID.randomUUID())
                 .userId(userId)
                 .rawInputText(rawText)
                 .parsedDelta(delta)
+                .source(source)
                 .receivedAt(clock.instant())
                 .build());
         inventoryTrendService.recordCheckin(userId, delta);

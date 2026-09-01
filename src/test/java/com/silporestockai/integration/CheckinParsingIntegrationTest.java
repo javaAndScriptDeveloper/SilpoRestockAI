@@ -11,6 +11,7 @@ import com.silporestockai.entity.UserProfile;
 import com.silporestockai.model.BasketItem;
 import com.silporestockai.model.CheckinDelta;
 import com.silporestockai.model.CheckinResult;
+import com.silporestockai.model.CheckinSource;
 import com.silporestockai.model.ConversationFlow;
 import com.silporestockai.repository.BaselineBasketRepository;
 import com.silporestockai.repository.CheckinRepository;
@@ -170,6 +171,17 @@ class CheckinParsingIntegrationTest extends AbstractIntegrationTest {
                                 {"update_id":%d,"message":{"message_id":%d,"date":1,\
                                 "chat":{"id":%d,"type":"private"},"from":{"id":5,"is_bot":false,"first_name":"Тест"},\
                                 "text":"%s"}}""".formatted(updateId, updateId, CHAT_ID, text)))
+                .andExpect(status().isOk());
+    }
+
+    private void sendPhoto(int updateId) throws Exception {
+        mockMvc.perform(post("/telegram/webhook")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"update_id":%d,"message":{"message_id":%d,"date":1,\
+                                "chat":{"id":%d,"type":"private"},"from":{"id":5,"is_bot":false,"first_name":"Тест"},\
+                                "photo":[{"file_id":"small-1","file_unique_id":"u1","width":90,"height":90},\
+                                {"file_id":"large-1","file_unique_id":"u2","width":1280,"height":1280}]}}""".formatted(updateId, updateId, CHAT_ID)))
                 .andExpect(status().isOk());
     }
 
@@ -342,6 +354,85 @@ class CheckinParsingIntegrationTest extends AbstractIntegrationTest {
         assertThat(TELEGRAM.sentMessages()).isEmpty();
         assertThat(TELEGRAM.callbackAnswers()).hasSize(1);
         assertThat(checkinRepository.count()).isZero();
+    }
+
+    @Test
+    void aFridgePhotoProducesTheSameDeltaShapeAsTypingIt() throws Exception {
+        User user = awaitingCheckin();
+        CLAUDE.respondWithText(delta("\"Молоко 2.5%\"", "\"Гречка\"", ""));
+
+        sendPhoto(1);
+
+        Checkin stored = checkinRepository
+                .findFirstByUserIdOrderByReceivedAtDesc(user.getId())
+                .orElseThrow();
+        assertThat(stored.getSource()).isEqualTo(CheckinSource.PHOTO);
+        assertThat(stored.getParsedDelta().stillHave()).containsExactly("Молоко 2.5%");
+        assertThat(stored.getParsedDelta().runningLow()).containsExactly("Гречка");
+        assertThat(conversationStateService.load(CHAT_ID).getCurrentFlow()).isEqualTo(ConversationFlow.NONE);
+    }
+
+    @Test
+    void aPhotoReadingSaysThatItIsApproximate() throws Exception {
+        awaitingCheckin();
+        CLAUDE.respondWithText(delta("\"Молоко 2.5%\"", "", ""));
+
+        sendPhoto(1);
+
+        assertThat(lastMessageText()).contains("Записав").contains("приблизно");
+    }
+
+    @Test
+    void aPhotoCannotIntroduceAnItemTheBaselineNeverHad() throws Exception {
+        User user = awaitingCheckin();
+        CLAUDE.respondWithText(delta("\"Молоко 2.5%\", \"Ікра чорна\"", "", ""));
+
+        sendPhoto(1);
+
+        assertThat(checkinRepository
+                        .findFirstByUserIdOrderByReceivedAtDesc(user.getId())
+                        .orElseThrow()
+                        .getParsedDelta()
+                        .stillHave())
+                .containsExactly("Молоко 2.5%");
+    }
+
+    @Test
+    void aPhotoAnswerThatIsNotJsonAsksForWords() throws Exception {
+        User user = awaitingCheckin();
+        CLAUDE.respondWithText("на фото я бачу холодильник");
+
+        sendPhoto(1);
+
+        assertThat(lastMessageText()).contains("Не розібрав");
+        Checkin stored = checkinRepository
+                .findFirstByUserIdOrderByReceivedAtDesc(user.getId())
+                .orElseThrow();
+        // The raw answer is kept: a parse that failed is still evidence of what the model said.
+        assertThat(stored.getRawInputText()).isEqualTo("на фото я бачу холодильник");
+        assertThat(stored.getParsedDelta()).isNull();
+        assertThat(conversationStateService.load(CHAT_ID).getCurrentFlow()).isEqualTo(ConversationFlow.CHECK_IN);
+    }
+
+    @Test
+    void typedAndSpokenCheckinsKeepTheirOwnSourceMarker() throws Exception {
+        User user = awaitingCheckin();
+        CLAUDE.respondWithText(delta("\"Гречка\"", "", ""));
+
+        checkinParsingService.parseText(user.getId(), "гречки повно");
+        assertThat(checkinRepository
+                        .findFirstByUserIdOrderByReceivedAtDesc(user.getId())
+                        .orElseThrow()
+                        .getSource())
+                .isEqualTo(CheckinSource.TEXT);
+
+        STT.respondWith("гречки повно");
+        checkinParsingService.parseVoice(user.getId(), "ogg".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        assertThat(checkinRepository
+                        .findFirstByUserIdOrderByReceivedAtDesc(user.getId())
+                        .orElseThrow()
+                        .getSource())
+                .isEqualTo(CheckinSource.VOICE);
     }
 
     @Test

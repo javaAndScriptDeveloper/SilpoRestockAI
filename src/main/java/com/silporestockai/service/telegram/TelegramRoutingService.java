@@ -51,6 +51,11 @@ public class TelegramRoutingService {
             if (message.hasText()) {
                 return Optional.of(new TelegramIncomingUpdate.Text(chatId, userId, message.getText()));
             }
+            if (message.hasPhoto()) {
+                // Telegram sends the same picture in several sizes, smallest first. The model wants the pixels.
+                var largest = message.getPhoto().getLast();
+                return Optional.of(new TelegramIncomingUpdate.Photo(chatId, userId, largest.getFileId(), "image/jpeg"));
+            }
             if (message.hasVoice()) {
                 var voice = message.getVoice();
                 int duration = voice.getDuration() == null ? 0 : voice.getDuration();

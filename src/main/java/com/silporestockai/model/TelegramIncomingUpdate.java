@@ -17,6 +17,12 @@ public sealed interface TelegramIncomingUpdate {
     record Voice(long chatId, long telegramUserId, String fileId, int durationSeconds)
             implements TelegramIncomingUpdate {}
 
+    /**
+     * A photo. Telegram sends several sizes of the same picture; the router keeps the largest, because a model
+     * reading a fridge needs the pixels.
+     */
+    record Photo(long chatId, long telegramUserId, String fileId, String mediaType) implements TelegramIncomingUpdate {}
+
     /** An inline keyboard button tap. {@code data} is the {@code callbackData} the button was built with. */
     record ButtonTap(long chatId, long telegramUserId, String callbackQueryId, String data)
             implements TelegramIncomingUpdate {}

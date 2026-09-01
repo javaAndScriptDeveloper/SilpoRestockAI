@@ -1,8 +1,11 @@
 package com.silporestockai.entity;
 
 import com.silporestockai.model.CheckinDelta;
+import com.silporestockai.model.CheckinSource;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
@@ -45,6 +48,12 @@ public class Checkin {
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "parsed_delta_json")
     private CheckinDelta parsedDelta;
+
+    /** Typed, spoken or photographed. Rows written before this column existed are all typed. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "source", nullable = false, length = 16)
+    @Builder.Default
+    private CheckinSource source = CheckinSource.TEXT;
 
     @Column(name = "received_at", nullable = false)
     private Instant receivedAt;

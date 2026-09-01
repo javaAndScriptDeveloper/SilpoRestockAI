@@ -85,13 +85,14 @@ public class TelegramOutboundService {
     }
 
     /**
-     * Raw bytes of a voice note. Transcription is task 12; this only fetches.
+     * Raw bytes of any file Telegram is holding — a voice note, a fridge photo. This only fetches; what the bytes
+     * mean is the caller's business.
      *
      * <p>The download deliberately does not go through the SDK: {@code File.getFileUrl(token)} hardcodes
      * {@code https://api.telegram.org} and ignores the configured {@link TelegramUrl}, so the SDK's own
      * {@code downloadFileAsStream} cannot be pointed anywhere else.
      */
-    public byte[] downloadVoiceNote(String fileId) {
+    public byte[] downloadFile(String fileId) {
         try {
             File file = client.execute(GetFile.builder().fileId(fileId).build());
             URI uri = URI.create("%s/file/bot%s/%s".formatted(apiUrl, botToken, file.getFilePath()));
@@ -103,9 +104,9 @@ public class TelegramOutboundService {
             return response.body();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new TelegramApiFailureException("interrupted while downloading a Telegram voice note", e);
+            throw new TelegramApiFailureException("interrupted while downloading a Telegram file", e);
         } catch (TelegramApiException | IOException e) {
-            throw new TelegramApiFailureException("could not download the Telegram voice note", e);
+            throw new TelegramApiFailureException("could not download the Telegram file", e);
         }
     }
 

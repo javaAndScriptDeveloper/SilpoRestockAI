@@ -6,6 +6,7 @@ import com.silporestockai.model.ConversationFlow;
 import com.silporestockai.model.TelegramIncomingUpdate;
 import com.silporestockai.service.telegram.CheckinMessageService;
 import com.silporestockai.service.telegram.TelegramOutboundService;
+import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -34,6 +35,7 @@ public class CheckinFlowService {
             case TelegramIncomingUpdate.Text text ->
                 respond(user, chatId, checkinParsingService.parseText(user.getId(), text.text()));
             case TelegramIncomingUpdate.Voice voice -> handleVoice(user, chatId, voice);
+            case TelegramIncomingUpdate.Photo photo -> handlePhoto(user, chatId, photo);
             case TelegramIncomingUpdate.ButtonTap tap -> {
                 // Nothing in a check-in has buttons; this is a leftover keyboard from another flow.
                 telegramOutboundService.answerCallback(tap.callbackQueryId());
@@ -48,12 +50,23 @@ public class CheckinFlowService {
             return;
         }
         try {
-            byte[] audio = telegramOutboundService.downloadVoiceNote(voice.fileId());
+            byte[] audio = telegramOutboundService.downloadFile(voice.fileId());
             respond(user, chatId, checkinParsingService.parseVoice(user.getId(), audio));
         } catch (RuntimeException e) {
             // Transcription is the one step with no partial result to keep: without text there is nothing to store.
             log.error("could not handle a voice check-in from user {}", user.getId(), e);
             telegramOutboundService.sendMessage(chatId, checkinMessageService.voiceUnsupportedText());
+        }
+    }
+
+    /** A fridge photo is a third way to answer the same question; everything after the model call is shared. */
+    private void handlePhoto(User user, long chatId, TelegramIncomingUpdate.Photo photo) {
+        try {
+            byte[] image = telegramOutboundService.downloadFile(photo.fileId());
+            respond(user, chatId, checkinParsingService.parsePhoto(user.getId(), image, photo.mediaType()), true);
+        } catch (RuntimeException e) {
+            log.error("could not read a fridge photo from user {}", user.getId(), e);
+            telegramOutboundService.sendMessage(chatId, checkinMessageService.clarificationText(List.of()));
         }
     }
 
@@ -64,13 +77,20 @@ public class CheckinFlowService {
      * is still an answer to the same question, and the alternative is treating silence as "nothing changed".
      */
     private void respond(User user, long chatId, CheckinResult result) {
+        respond(user, chatId, result, false);
+    }
+
+    private void respond(User user, long chatId, CheckinResult result, boolean fromPhoto) {
         if (result.needsClarification()) {
             telegramOutboundService.sendMessage(
                     chatId,
                     checkinMessageService.clarificationText(checkinParsingService.baselineItemNames(user.getId())));
             return;
         }
-        telegramOutboundService.sendMessage(chatId, checkinMessageService.acknowledgementText(result.delta()));
+        String acknowledgement = checkinMessageService.acknowledgementText(result.delta());
+        telegramOutboundService.sendMessage(
+                chatId,
+                fromPhoto ? acknowledgement + "\n" + checkinMessageService.photoDisclaimerText() : acknowledgement);
         conversationStateService.save(chatId, ConversationFlow.NONE, null, Map.of());
         log.info("check-in recorded for user {}", user.getId());
     }

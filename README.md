@@ -199,6 +199,21 @@ To smoke-test against the real API, export a key and point the client at product
 ANTHROPIC_API_KEY=sk-ant-... ANTHROPIC_BASE_URL=https://api.anthropic.com make run
 ```
 
+### Fridge photos (vision check-ins)
+
+A photo sent while a check-in is open is read by Claude and becomes the same three-bucket delta a typed
+answer produces. It needs no configuration beyond `ANTHROPIC_API_KEY`, and it is deliberately rough:
+the prompt forbids putting anything into "gone" that is merely not visible, and the reply carries a
+disclaimer so the user can correct it.
+
+To try it end to end, with a key exported and the bot running:
+
+1. wait for a check-in prompt, or force one — `komora.checkin.interval` accepts `1m` for a demo;
+2. send two or three photos of an open fridge or a shelf, one per check-in;
+3. read the acknowledgement and the `checkin` rows — `source = PHOTO` marks this path.
+
+Photos of a mostly-empty shelf and of a full one make the difference legible in a recording.
+
 ### Speech to text (voice check-ins)
 
 The Anthropic Messages API takes text, images and PDFs — not audio — so a voice check-in needs a
