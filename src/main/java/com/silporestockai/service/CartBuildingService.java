@@ -54,7 +54,7 @@ public class CartBuildingService {
     /** Steps 1 to 6, in the documented order. Unresolved items are reported, not fatal. */
     public CartSummary buildCart(UUID userId, List<ShoppingListItem> items) {
         CartContext context = getOrCreateCartContext(userId);
-        String deliverySlot = validateTimeSlot(userId, context);
+        OfferedSlot deliverySlot = firstDeliverableSlot(userId, context);
         List<ResolvedProduct> resolved = resolveProducts(userId, context, items);
         List<String> unresolved = unresolvedNames(items, resolved);
         if (!unresolved.isEmpty()) {
@@ -105,12 +105,17 @@ public class CartBuildingService {
      * checkout, where it is someone else's problem and nobody's log line.
      */
     public String validateTimeSlot(UUID userId, CartContext context) {
+        return firstDeliverableSlot(userId, context).id();
+    }
+
+    /** The slot itself, not just its id: a calendar event needs the instant the window starts. */
+    public OfferedSlot firstDeliverableSlot(UUID userId, CartContext context) {
         List<OfferedSlot> offered = offeredTimeSlots(userId, context);
         if (offered.isEmpty()) {
             throw new CartBuildException("Silpo offered no delivery time slot for branch " + context.branchId());
         }
-        String slot = offered.getFirst().id();
-        log.info("MCP <- {} time slots, taking {}", offered.size(), slot);
+        OfferedSlot slot = offered.getFirst();
+        log.info("MCP <- {} time slots, taking {}", offered.size(), slot.id());
         return slot;
     }
 
@@ -225,7 +230,8 @@ public class CartBuildingService {
     }
 
     /** Step 6: read the cart back rather than trusting the write. */
-    public CartSummary getVerifiedCart(UUID userId, CartContext context, String deliverySlot, List<String> unresolved) {
+    public CartSummary getVerifiedCart(
+            UUID userId, CartContext context, OfferedSlot deliverySlot, List<String> unresolved) {
         JsonNode cart = call(userId, TOOL_CART_BY_ID, Map.of("cartId", context.cartId()));
 
         List<BasketItem> items = McpResponses.findArray(cart, McpResponses.ITEMS).stream()
@@ -252,7 +258,8 @@ public class CartBuildingService {
 
         CartSummary summary = new CartSummary(
                 context.cartId(),
-                deliverySlot,
+                deliverySlot == null ? null : deliverySlot.id(),
+                deliverySlot == null ? null : deliverySlot.startsAt(),
                 items,
                 McpResponses.findNumber(cart, McpResponses.TOTAL).orElse(BigDecimal.ZERO),
                 McpResponses.findArray(cart, McpResponses.VALIDATIONS).stream()

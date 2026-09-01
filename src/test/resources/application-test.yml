@@ -22,3 +22,10 @@ komora:
     interval: 3d
     sweep-cron: "0 0 0 31 2 ?"
     removal-threshold: 3
+
+# Feign clients need a URL at startup even when the integration is off; the tests that use it point these
+# at a stub instead. A blank client id keeps the calendar listener inert everywhere else.
+google:
+  calendar:
+    token-endpoint: http://localhost:1/token
+    api-url: http://localhost:1

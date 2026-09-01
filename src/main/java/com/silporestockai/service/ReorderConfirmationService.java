@@ -15,6 +15,7 @@ import com.silporestockai.model.CartSummary;
 import com.silporestockai.model.ConversationFlow;
 import com.silporestockai.model.DeltaOrder;
 import com.silporestockai.model.OfferedSlot;
+import com.silporestockai.model.OrderConfirmedEvent;
 import com.silporestockai.model.OrderStatus;
 import com.silporestockai.model.ReplacementOption;
 import com.silporestockai.model.ReplacementSuggestion;
@@ -39,6 +40,7 @@ import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 /**
@@ -86,6 +88,7 @@ public class ReorderConfirmationService {
     private final ReorderMessageService reorderMessageService;
     private final TelegramOutboundService telegramOutboundService;
     private final SilpoMcpClient silpoMcpClient;
+    private final ApplicationEventPublisher events;
     private final Clock clock;
 
     /** Chooses a slot, writes the draft, and shows the order. */
@@ -231,13 +234,12 @@ public class ReorderConfirmationService {
             Map<Integer, Boolean> decisions) {
         long chatId = user.getTelegramChatId();
         CartContext context = MAPPER.convertValue(state.getContext().get(KEY_CONTEXT), CartContext.class);
-        String slotId = state.getContext().get(KEY_SLOT) == null
-                ? null
-                : state.getContext().get(KEY_SLOT).toString();
+        OfferedSlot slot = slotOf(state);
+        String slotId = slot == null ? null : slot.id();
 
         addAcceptedReplacements(user.getId(), context, delta, decisions);
         boolean slotFixed = slotId != null && bookSlot(user.getId(), context.cartId(), slotId);
-        CartSummary cart = cartBuildingService.getVerifiedCart(user.getId(), context, slotId, List.of());
+        CartSummary cart = cartBuildingService.getVerifiedCart(user.getId(), context, slot, List.of());
 
         order.setItems(cart.items());
         order.setDeliverySlot(slotId);
@@ -251,6 +253,12 @@ public class ReorderConfirmationService {
             supersedeBaseline(user.getId(), cart);
         }
         recordTrust(user.getId(), edited);
+        events.publishEvent(new OrderConfirmedEvent(
+                user.getId(),
+                order.getId(),
+                slot == null ? null : slot.startsAt(),
+                slot == null ? null : slot.label(),
+                cart.items().size()));
         conversationStateService.save(chatId, ConversationFlow.NONE, null, Map.of());
 
         telegramOutboundService.sendMessageWithButtons(

@@ -1,0 +1,44 @@
+databaseChangeLog:
+  - changeSet:
+      id: 016-google-oauth-token
+      author: komora
+      comment: >-
+        Google Calendar OAuth tokens, in their own table rather than behind a provider discriminator on
+        mcp_oauth_token: that table keys on user_id, so a discriminator would mean a composite key and a
+        migration over the one table whose contents nobody can re-derive. Same encryption as Silpo's —
+        both token columns hold AES-GCM ciphertext produced by TokenCipher, never plaintext.
+      changes:
+        - createTable:
+            tableName: google_oauth_token
+            columns:
+              - column:
+                  name: user_id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_google_oauth_token
+                    nullable: false
+                    foreignKeyName: fk_google_oauth_token_user
+                    references: users(id)
+                    deleteCascade: true
+              - column:
+                  name: access_token
+                  type: VARCHAR(4096)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: refresh_token
+                  type: VARCHAR(4096)
+              - column:
+                  name: expires_at
+                  type: TIMESTAMP WITH TIME ZONE
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  constraints:
+                    nullable: false

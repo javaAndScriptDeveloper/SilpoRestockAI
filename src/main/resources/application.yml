@@ -134,6 +134,21 @@ silpo:
 
 # Speech-to-text for voice check-ins. Any OpenAI-compatible /v1/audio/transcriptions endpoint works —
 # OpenAI, Groq, or a local whisper server. Blank key disables the voice path: the bot asks for text instead.
+# Optional Google Calendar integration: a confirmed delivery slot becomes an event. A blank client id
+# disables it entirely — /calendar says so, and every confirmation behaves exactly as before.
+google:
+  calendar:
+    client-id: ${GOOGLE_CLIENT_ID:}
+    client-secret: ${GOOGLE_CLIENT_SECRET:}
+    redirect-uri: ${GOOGLE_REDIRECT_URI:http://localhost:8080/auth/google/callback}
+    authorization-endpoint: ${GOOGLE_AUTHORIZATION_ENDPOINT:https://accounts.google.com/o/oauth2/v2/auth}
+    token-endpoint: ${GOOGLE_TOKEN_ENDPOINT:https://oauth2.googleapis.com/token}
+    api-url: ${GOOGLE_CALENDAR_API_URL:https://www.googleapis.com/calendar/v3}
+    calendar-id: ${GOOGLE_CALENDAR_ID:primary}
+    # Writing events only. This application never reads anybody's calendar.
+    scope: ${GOOGLE_CALENDAR_SCOPE:https://www.googleapis.com/auth/calendar.events}
+    event-duration: ${GOOGLE_CALENDAR_EVENT_DURATION:2h}
+
 stt:
   api-key: ${STT_API_KEY:}
   endpoint: ${STT_ENDPOINT:https://api.openai.com/v1/audio/transcriptions}

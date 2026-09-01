@@ -9,6 +9,7 @@ import com.silporestockai.model.BasketItem;
 import com.silporestockai.model.CartContext;
 import com.silporestockai.model.CartSummary;
 import com.silporestockai.model.DeltaOrder;
+import com.silporestockai.model.OfferedSlot;
 import com.silporestockai.model.OrderType;
 import com.silporestockai.model.ReplacementOption;
 import com.silporestockai.model.ReplacementSuggestion;
@@ -97,8 +98,9 @@ public class ReorderService {
 
         cartBuildingService.addProductsToCart(userId, context, toAdd);
         // No time slot: choosing one is task 15's job, and asking for one here would pick it twice.
+        OfferedSlot slotChosenLater = null;
         CartSummary cart = cartBuildingService.getVerifiedCart(
-                userId, context, null, cartBuildingService.unresolvedNames(items, resolved));
+                userId, context, slotChosenLater, cartBuildingService.unresolvedNames(items, resolved));
 
         // Matching on product id, not on name: the cart comes back with Silpo's own names, and "Молоко 2.5% 900мл"
         // is the same line as the "молоко" that was asked for only if the id says so.

@@ -10,6 +10,7 @@ import com.silporestockai.entity.ShoppingListItem;
 import com.silporestockai.entity.User;
 import com.silporestockai.model.CartSummary;
 import com.silporestockai.model.ConversationFlow;
+import com.silporestockai.model.OrderConfirmedEvent;
 import com.silporestockai.model.OrderStatus;
 import com.silporestockai.model.OrderType;
 import com.silporestockai.model.TelegramIncomingUpdate;
@@ -25,6 +26,7 @@ import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 /**
@@ -59,6 +61,7 @@ public class CartConfirmationService {
     private final CartMessageService cartMessageService;
     private final TelegramOutboundService telegramOutboundService;
     private final SilpoMcpClient silpoMcpClient;
+    private final ApplicationEventPublisher events;
 
     /**
      * Builds the cart from a shopping list and puts it in front of the user.
@@ -139,6 +142,13 @@ public class CartConfirmationService {
         order.setConfirmedAt(Instant.now());
         customerOrderRepository.save(order);
         storeBaseline(user.getId(), order);
+        // Optional integrations listen for this; nothing here depends on any of them existing.
+        events.publishEvent(new OrderConfirmedEvent(
+                user.getId(),
+                order.getId(),
+                summary.deliverySlotStartsAt(),
+                summary.deliverySlot(),
+                summary.items().size()));
         conversationStateService.save(chatId, ConversationFlow.NONE, null, Map.of());
 
         if (spendBonuses && !bonusesApplied) {

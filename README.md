@@ -199,6 +199,30 @@ To smoke-test against the real API, export a key and point the client at product
 ANTHROPIC_API_KEY=sk-ant-... ANTHROPIC_BASE_URL=https://api.anthropic.com make run
 ```
 
+### Google Calendar (optional)
+
+After an order is confirmed, the delivery window can be written into the user's calendar. It is opt-in
+per user and optional per deployment:
+
+| Variable               | Default                                          | Purpose                                            |
+|------------------------|--------------------------------------------------|----------------------------------------------------|
+| `GOOGLE_CLIENT_ID`     | *(empty)*                                        | Blank disables the whole integration                |
+| `GOOGLE_CLIENT_SECRET` | *(empty)*                                        | Web-application client secret; stays server-side    |
+| `GOOGLE_REDIRECT_URI`  | `http://localhost:8080/auth/google/callback`     | Must match the console's authorized redirect URI    |
+| `GOOGLE_CALENDAR_ID`   | `primary`                                        | Which calendar to write to                          |
+
+The requested scope is `calendar.events` — writing only. This application never reads a calendar, and it
+never updates or deletes an event it created.
+
+Smoke test against a real account:
+
+```bash
+GOOGLE_CLIENT_ID=... GOOGLE_CLIENT_SECRET=... make run
+```
+
+then send `/calendar` to the bot, follow the consent link, and confirm an order. A «Доставка «Сільпо»»
+block appears at the delivery slot, with the order id in its description.
+
 ### Fridge photos (vision check-ins)
 
 A photo sent while a check-in is open is read by Claude and becomes the same three-bucket delta a typed

@@ -1,6 +1,7 @@
 package com.silporestockai.model;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 
 /**
@@ -11,6 +12,8 @@ import java.util.List;
  *
  * @param cartId the Silpo cart
  * @param deliverySlot the slot the cart was validated against, which the confirmed order records
+ * @param deliverySlotStartsAt when that slot begins, or null when the server's date format defeated parsing; a
+ *     calendar event needs the instant, not the identifier
  * @param items what is in it now
  * @param total what it costs
  * @param validations warnings Silpo attached to the cart, e.g. an item that went out of stock
@@ -23,6 +26,7 @@ import java.util.List;
 public record CartSummary(
         String cartId,
         String deliverySlot,
+        Instant deliverySlotStartsAt,
         List<BasketItem> items,
         BigDecimal total,
         List<String> validations,

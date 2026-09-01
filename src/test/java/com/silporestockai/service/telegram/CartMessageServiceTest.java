@@ -6,6 +6,7 @@ import com.silporestockai.model.BasketItem;
 import com.silporestockai.model.CartSummary;
 import com.silporestockai.model.TelegramButton;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -20,6 +21,7 @@ class CartMessageServiceTest {
         return new CartSummary(
                 "cart-1",
                 "slot-1",
+                Instant.parse("2026-09-03T15:00:00Z"),
                 items,
                 total,
                 List.of(),

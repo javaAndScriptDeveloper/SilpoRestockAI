@@ -2,13 +2,16 @@ package com.silporestockai.service.telegram;
 
 import com.silporestockai.entity.User;
 import com.silporestockai.model.ConversationFlow;
+import com.silporestockai.model.TelegramButton;
 import com.silporestockai.model.TelegramIncomingUpdate;
 import com.silporestockai.service.CartConfirmationService;
 import com.silporestockai.service.CheckinFlowService;
 import com.silporestockai.service.ConversationStateService;
+import com.silporestockai.service.GoogleAuthService;
 import com.silporestockai.service.ReorderConfirmationService;
 import com.silporestockai.service.UserAccountService;
 import com.silporestockai.service.onboarding.OnboardingFlowService;
+import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -37,10 +40,28 @@ public class TelegramRoutingService {
     private final CartConfirmationService cartConfirmationService;
     private final CheckinFlowService checkinFlowService;
     private final ReorderConfirmationService reorderConfirmationService;
+    private final GoogleAuthService googleAuthService;
     private final TelegramOutboundService telegramOutboundService;
 
     public void route(Update update) {
         toIncoming(update).ifPresentOrElse(this::handle, () -> log.debug("ignoring unsupported Telegram update"));
+    }
+
+    /** Opt-in, and only ever opt-in: a calendar nobody connected is never touched. */
+    private void offerCalendar(User user, long chatId) {
+        if (!googleAuthService.configured()) {
+            telegramOutboundService.sendMessage(chatId, "Календар зараз не налаштований на сервері.");
+            return;
+        }
+        if (googleAuthService.isConnected(user.getId())) {
+            telegramOutboundService.sendMessage(chatId, "Календар уже підключено — додаю туди слоти доставки.");
+            return;
+        }
+        telegramOutboundService.sendMessageWithButtons(
+                chatId,
+                "Підключи Google Календар — і я вноситиму туди вікна доставки.",
+                List.of(TelegramButton.link(
+                        "Підключити календар", googleAuthService.buildAuthorizationUrl(user.getId()))));
     }
 
     private Optional<TelegramIncomingUpdate> toIncoming(Update update) {
@@ -92,6 +113,11 @@ public class TelegramRoutingService {
         }
         if (flow == ConversationFlow.REORDER_CONFIRMATION) {
             reorderConfirmationService.handle(user, incoming);
+            return;
+        }
+        if (incoming instanceof TelegramIncomingUpdate.Text text
+                && text.text().strip().startsWith("/calendar")) {
+            offerCalendar(user, incoming.chatId());
             return;
         }
         if (incoming instanceof TelegramIncomingUpdate.ButtonTap tap) {
