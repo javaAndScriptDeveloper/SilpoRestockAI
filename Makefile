@@ -8,10 +8,10 @@ help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
 
 run: ## Run the app (auto-starts docker-compose DB)
-	./gradlew bootRun
+	set -a; . ./$(ENV_FILE); set +a; ./gradlew bootRun
 
 dev: ## Run with a throwaway Testcontainers DB (no docker-compose needed)
-	./gradlew bootTestRun
+	set -a; . ./$(ENV_FILE); set +a; ./gradlew bootTestRun
 
 test: ## Run unit + integration tests (needs Docker for Testcontainers)
 	./gradlew test

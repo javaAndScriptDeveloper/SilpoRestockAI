@@ -87,11 +87,15 @@ restart the app.
 **Terminal 2 — the app:**
 
 ```bash
-set -a; source .env; set +a
 make run
 ```
 
-`make run` starts Postgres through docker-compose automatically. `make dev` is the alternative — a
+`make run` loads `.env` itself, inside its own throwaway subshell, and starts Postgres through
+docker-compose automatically. It deliberately does **not** ask you to `source .env` in your own
+terminal first — an exported secret lives in a shell for as long as that shell stays open, and
+anything else you later launch from the same terminal (an editor, a background tool, another
+script) inherits it. That is exactly how a real API key ended up loaded into an unrelated
+background process and ran up a bill nobody could explain. `make dev` is the alternative — a
 throwaway Testcontainers database that vanishes on exit, which is the fastest possible clean slate.
 
 **Terminal 3 — the database**, kept open for verification:
