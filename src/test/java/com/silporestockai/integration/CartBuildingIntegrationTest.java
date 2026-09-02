@@ -169,6 +169,43 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
         assertThat(slot).isEqualTo("slot-1");
     }
 
+    /**
+     * The exact failure a live account hit: real slots carry no {@code id} of their own, only {@code start}/
+     * {@code end}/{@code available} — the old id-required check skipped every slot Silpo actually offered and
+     * failed with "no delivery time slot" even though slots existed.
+     */
+    @Test
+    void usesTheSlotsStartAsItsIdentityWhenSilpoGivesNoSeparateOne() {
+        UUID userId = connectedUser(8415L);
+        scriptCartTools();
+        MCP.respondToTool(
+                "silpo_get_time_slots",
+                "{\"timeSlots\":[{\"start\":\"2026-09-03T10:00:00Z\",\"end\":\"2026-09-03T12:00:00Z\","
+                        + "\"available\":true}]}");
+        CartContext context = cartBuildingService.getOrCreateCartContext(userId);
+
+        String slot = cartBuildingService.validateTimeSlot(userId, context);
+
+        assertThat(slot).isEqualTo("2026-09-03T10:00:00Z");
+    }
+
+    /** {@code available=false} is Silpo's own signal that a slot is not really offered, not just listed. */
+    @Test
+    void skipsSlotsSilpoMarksUnavailable() {
+        UUID userId = connectedUser(8416L);
+        scriptCartTools();
+        MCP.respondToTool(
+                "silpo_get_time_slots",
+                "{\"timeSlots\":["
+                        + "{\"start\":\"2026-09-03T09:00:00Z\",\"end\":\"2026-09-03T10:00:00Z\",\"available\":false},"
+                        + "{\"start\":\"2026-09-03T10:00:00Z\",\"end\":\"2026-09-03T12:00:00Z\",\"available\":true}]}");
+        CartContext context = cartBuildingService.getOrCreateCartContext(userId);
+
+        String slot = cartBuildingService.validateTimeSlot(userId, context);
+
+        assertThat(slot).isEqualTo("2026-09-03T10:00:00Z");
+    }
+
     @Test
     void refusesToBuildACartThatCannotBeDelivered() {
         UUID userId = connectedUser(8403L);

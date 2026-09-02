@@ -275,13 +275,21 @@ public class CartBuildingService {
         JsonNode slots = call(userId, TOOL_TIME_SLOTS, arguments);
         List<OfferedSlot> offered = new ArrayList<>();
         for (JsonNode slot : McpResponses.findArray(slots, McpResponses.TIME_SLOTS)) {
-            String id = McpResponses.findString(slot, McpResponses.SLOT_ID).orElse(null);
-            if (id == null) {
-                log.debug("ignoring a time slot with no identifier");
+            boolean available = McpResponses.findNode(slot, McpResponses.SLOT_AVAILABLE)
+                    .map(JsonNode::asBoolean)
+                    .orElse(true);
+            if (!available) {
                 continue;
             }
-            String start =
-                    McpResponses.findString(slot, McpResponses.SLOT_START).orElse(null);
+            // Real slots carry no id of their own — only start/end/available — so start doubles as this
+            // application's own handle for "which slot was picked", falling back to a documented id field only
+            // if one is ever present.
+            String start = McpResponses.findString(slot, McpResponses.SLOT_START).orElse(null);
+            String id = McpResponses.findString(slot, McpResponses.SLOT_ID).orElse(start);
+            if (id == null) {
+                log.debug("ignoring a time slot with no start and no identifier");
+                continue;
+            }
             offered.add(new OfferedSlot(id, start == null ? id : start, parseStart(start)));
         }
         return offered;
