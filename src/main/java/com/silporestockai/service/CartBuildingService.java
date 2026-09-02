@@ -13,6 +13,7 @@ import com.silporestockai.model.OfferedSlot;
 import com.silporestockai.model.ResolvedProduct;
 import com.silporestockai.utils.McpResponses;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -21,9 +22,13 @@ import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -364,13 +369,109 @@ public class CartBuildingService {
                                             .orElse(context.companyId()),
                                     McpResponses.findString(product, McpResponses.BRANCH_ID)
                                             .orElse(context.branchId()),
-                                    quantityOf(item),
+                                    cartQuantity(item, product),
                                     item.getUnit()));
                         });
             }
         }
         log.info("MCP <- resolved {} of {} shopping list lines", resolved.size(), items.size());
         return resolved;
+    }
+
+    /** A weight (grams), a volume (millilitres) or a count — the three kinds {@code displayRatio} comes in. */
+    private enum UnitKind {
+        WEIGHT,
+        VOLUME,
+        COUNT
+    }
+
+    private record UnitAmount(BigDecimal amount, UnitKind kind) {}
+
+    /**
+     * {@code displayRatio}, e.g. {@code "5*70г"}, {@code "1л"}, {@code "100шт"}, or bare {@code "шт"} with no
+     * number at all.
+     */
+    private static final Pattern DISPLAY_RATIO_PATTERN =
+            Pattern.compile("^(?:(\\d+)\\s*[*×]\\s*)?(\\d+(?:[.,]\\d+)?)\\s*(г|мл|л|шт)?");
+
+    private static Optional<UnitAmount> parseDisplayRatio(String raw) {
+        String trimmed = raw.strip();
+        if ("шт".equalsIgnoreCase(trimmed)) {
+            return Optional.of(new UnitAmount(BigDecimal.ONE, UnitKind.COUNT));
+        }
+        Matcher matcher = DISPLAY_RATIO_PATTERN.matcher(trimmed);
+        if (!matcher.find()) {
+            return Optional.empty();
+        }
+        BigDecimal multiplier = matcher.group(1) == null ? BigDecimal.ONE : new BigDecimal(matcher.group(1));
+        BigDecimal value = new BigDecimal(matcher.group(2).replace(',', '.'));
+        String unit = matcher.group(3);
+        BigDecimal amount = multiplier.multiply(value);
+        return switch (unit == null ? "" : unit) {
+            case "г" -> Optional.of(new UnitAmount(amount, UnitKind.WEIGHT));
+            case "мл" -> Optional.of(new UnitAmount(amount, UnitKind.VOLUME));
+            case "л" -> Optional.of(new UnitAmount(amount.multiply(BigDecimal.valueOf(1000)), UnitKind.VOLUME));
+            case "шт" -> Optional.of(new UnitAmount(amount, UnitKind.COUNT));
+            // A bare number with no unit letter, e.g. "1" or "12" — always a piece count in what has been seen.
+            default -> Optional.of(new UnitAmount(amount, UnitKind.COUNT));
+        };
+    }
+
+    private static Optional<UnitAmount> shoppingListAmount(ShoppingListItem item) {
+        BigDecimal quantity = quantityOf(item);
+        String unit = item.getUnit() == null ? "" : item.getUnit().strip().toLowerCase(Locale.ROOT);
+        return switch (unit) {
+            case "г", "грам", "грами" -> Optional.of(new UnitAmount(quantity, UnitKind.WEIGHT));
+            case "кг" -> Optional.of(new UnitAmount(quantity.multiply(BigDecimal.valueOf(1000)), UnitKind.WEIGHT));
+            case "мл" -> Optional.of(new UnitAmount(quantity, UnitKind.VOLUME));
+            case "л" -> Optional.of(new UnitAmount(quantity.multiply(BigDecimal.valueOf(1000)), UnitKind.VOLUME));
+            case "шт", "упаковка", "уп" -> Optional.of(new UnitAmount(quantity, UnitKind.COUNT));
+            default -> Optional.empty();
+        };
+    }
+
+    /** Never less than one step, and always a whole multiple of it — Silpo rejects anything else. */
+    private static BigDecimal roundToStep(BigDecimal amount, BigDecimal step) {
+        BigDecimal safeStep = step == null || step.signum() <= 0 ? BigDecimal.ONE : step;
+        BigDecimal multiples = amount.divide(safeStep, 0, RoundingMode.HALF_UP);
+        BigDecimal rounded = multiples.multiply(safeStep);
+        return rounded.signum() > 0 ? rounded : safeStep;
+    }
+
+    /**
+     * How much to actually send as {@code quantity}: a count of {@code displayRatio}-sized units, not the household's
+     * own grams or millilitres. Sending "800" as the unit count for a product whose own {@code displayRatio} is
+     * "50г" does not ask for 800 grams — it asks for eight hundred 50g packages. Silpo's own documentation says as
+     * much ("use displayRatio together with step to compute how many units to add"); this is the computation.
+     *
+     * <p>When the shopping list's unit and {@code displayRatio}'s unit are different kinds of measurement — a plan
+     * asking for "2 шт" of something Silpo prices as "100г" — there is no safe conversion to guess at, so this falls
+     * back to the smallest valid amount, {@code step}, rather than a number that might silently order far more or
+     * far less than intended.
+     */
+    private static BigDecimal cartQuantity(ShoppingListItem item, JsonNode product) {
+        BigDecimal step = McpResponses.findNumber(product, McpResponses.STEP).orElse(BigDecimal.ONE);
+        Optional<String> displayRatio = McpResponses.findString(product, McpResponses.DISPLAY_RATIO);
+        if (displayRatio.isEmpty()) {
+            return roundToStep(quantityOf(item), step);
+        }
+        Optional<UnitAmount> packageAmount = parseDisplayRatio(displayRatio.get());
+        Optional<UnitAmount> wanted = shoppingListAmount(item);
+        if (packageAmount.isEmpty()
+                || wanted.isEmpty()
+                || packageAmount.get().kind() != wanted.get().kind()
+                || packageAmount.get().amount().signum() <= 0) {
+            log.warn(
+                    "could not relate \"{}\" {} to Silpo's displayRatio \"{}\" for product match — sending the "
+                            + "minimum step instead of guessing",
+                    item.getQuantity(),
+                    item.getUnit(),
+                    displayRatio.get());
+            return step;
+        }
+        BigDecimal unitsWanted =
+                wanted.get().amount().divide(packageAmount.get().amount(), 4, RoundingMode.HALF_UP);
+        return roundToStep(unitsWanted, step);
     }
 
     /**

@@ -704,7 +704,7 @@ bug in `utils/SecretRedactor`, not a green light to keep quiet about it.
 
 ## Automated tests, for comparison
 
-Everything above is also covered by 256 automated tests against stub servers:
+Everything above is also covered by 259 automated tests against stub servers:
 
 ```bash
 make test          # unit + integration, needs Docker

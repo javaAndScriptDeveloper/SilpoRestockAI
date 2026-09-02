@@ -253,17 +253,78 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
         scriptCartTools();
         MCP.respondToTool("silpo_find_products_batch", """
                 {"queries":[\
-                {"query":"курка ціла","products":[{"name":"Курка","productId":"p-1","companyId":"company-3","branchId":"branch-7"}]},\
-                {"query":"курка гомілка","products":[{"name":"Курка","productId":"p-1","companyId":"company-3","branchId":"branch-7"}]}]}""");
+                {"query":"курка ціла","products":[{"name":"Курка","productId":"p-1","companyId":"company-3",\
+                "branchId":"branch-7","step":1,"displayRatio":"100г"}]},\
+                {"query":"курка гомілка","products":[{"name":"Курка","productId":"p-1","companyId":"company-3",\
+                "branchId":"branch-7","step":1,"displayRatio":"100г"}]}]}""");
         MCP.respondToTool("silpo_add_or_update_cart_products", "{\"ok\":true}");
 
+        // 800г and 400г of a product sold in 100г units — 8 units plus 4, not the raw kilogram numbers.
         cartBuildingService.buildCart(
                 userId,
                 List.of(item("курка ціла", "0.8", "кг"), item("курка гомілка", "0.4", "кг")));
 
         JsonNode added = MCP.callArguments("silpo_add_or_update_cart_products").getFirst();
         assertThat(added.path("products")).hasSize(1);
-        assertThat(added.path("products").get(0).path("quantity").asDouble()).isEqualTo(1.2);
+        assertThat(added.path("products").get(0).path("quantity").asInt()).isEqualTo(12);
+    }
+
+    /**
+     * The exact failure a live account hit: "800" sent as the unit count for a product whose own {@code displayRatio}
+     * is "50г" does not ask for 800 grams of beef — it asks for eight hundred 50-gram packages. Silpo's own API
+     * refused a request built that way with a bare 400 and no further detail.
+     */
+    @Test
+    void convertsGramsToAWholeNumberOfDisplayRatioSizedUnits() {
+        UUID userId = connectedUser(8418L);
+        scriptCartTools();
+        MCP.respondToTool("silpo_find_products_batch", """
+                {"queries":[{"query":"яловичина","products":[{"name":"Яловичина","productId":"p-1",\
+                "companyId":"company-3","branchId":"branch-7","step":1,"displayRatio":"50г"}]}]}""");
+        MCP.respondToTool("silpo_add_or_update_cart_products", "{\"ok\":true}");
+
+        cartBuildingService.buildCart(userId, List.of(item("яловичина", "800", "г")));
+
+        JsonNode added = MCP.callArguments("silpo_add_or_update_cart_products").getFirst();
+        assertThat(added.path("products").get(0).path("quantity").asInt()).isEqualTo(16);
+    }
+
+    /** A fractional unit count is rounded to the nearest whole multiple of {@code step}, never sent as-is. */
+    @Test
+    void roundsToTheNearestMultipleOfStep() {
+        UUID userId = connectedUser(8419L);
+        scriptCartTools();
+        MCP.respondToTool("silpo_find_products_batch", """
+                {"queries":[{"query":"сир","products":[{"name":"Сир","productId":"p-1","companyId":"company-3",\
+                "branchId":"branch-7","step":0.5,"displayRatio":"100г"}]}]}""");
+        MCP.respondToTool("silpo_add_or_update_cart_products", "{\"ok\":true}");
+
+        // 210г of a 100г unit, step 0.5: 2.1 units rounds to the nearest half-unit, 2.0.
+        cartBuildingService.buildCart(userId, List.of(item("сир", "210", "г")));
+
+        JsonNode added = MCP.callArguments("silpo_add_or_update_cart_products").getFirst();
+        assertThat(added.path("products").get(0).path("quantity").asDouble()).isEqualTo(2.0);
+    }
+
+    /**
+     * The list's unit and {@code displayRatio}'s unit can be different kinds of measurement entirely — nothing here
+     * can safely convert "2 шт" into an amount of something Silpo prices as "100г". The safe answer is the smallest
+     * valid amount, not a number invented for the mismatch.
+     */
+    @Test
+    void fallsBackToTheMinimumStepWhenTheUnitsDoNotCorrespond() {
+        UUID userId = connectedUser(8420L);
+        scriptCartTools();
+        MCP.respondToTool("silpo_find_products_batch", """
+                {"queries":[{"query":"щось","products":[{"name":"Щось","productId":"p-1","companyId":"company-3",\
+                "branchId":"branch-7","step":3,"displayRatio":"100г"}]}]}""");
+        MCP.respondToTool("silpo_add_or_update_cart_products", "{\"ok\":true}");
+
+        cartBuildingService.buildCart(userId, List.of(item("щось", "2", "шт")));
+
+        // Falls back to the smallest valid amount (step), not the "2" the list asked for in an incompatible unit.
+        JsonNode added = MCP.callArguments("silpo_add_or_update_cart_products").getFirst();
+        assertThat(added.path("products").get(0).path("quantity").asInt()).isEqualTo(3);
     }
 
     @Test
