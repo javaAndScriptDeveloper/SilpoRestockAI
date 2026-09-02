@@ -84,13 +84,21 @@ public class ShoppingListBuilderService {
         telegramOutboundService.sendMessage(chatId, messages.askForInputText());
     }
 
-    /** Shows a list somebody else produced — the weekly plan uses this instead of building a cart on its own. */
+    /**
+     * Shows a list somebody else produced — the weekly plan uses this instead of building a cart on its own.
+     *
+     * <p>Whatever is shown becomes the only live list for this user, regardless of which flow produced it or the one
+     * before it. Without this, an ad-hoc {@code /list} answer and a weekly plan's derived list can both sit in
+     * {@code shopping_list_item} at once — invisible right up until an order merges both, sends the same product to
+     * Silpo twice in one call, and the whole cart is refused with a bare 400.
+     */
     public void present(User user, List<ShoppingListItem> items) {
         long chatId = user.getTelegramChatId();
         if (items.isEmpty()) {
             telegramOutboundService.sendMessage(chatId, messages.couldNotBuildText());
             return;
         }
+        shoppingListService.keepOnly(user.getId(), items.stream().map(ShoppingListItem::getId).toList());
         conversationStateService.save(chatId, ConversationFlow.LIST_BUILDING, STEP_AWAITING_APPROVAL, Map.of());
         telegramOutboundService.sendMessageWithButtons(chatId, messages.listText(items), messages.listButtons());
     }

@@ -80,6 +80,17 @@ public class ShoppingListService {
     }
 
     /**
+     * Whatever is on screen replaces whatever the user had before, ad-hoc or plan-derived: there is only ever one
+     * live list per user. Without this, a weekly plan's list and a later {@code /list} answer can both sit in
+     * {@code shopping_list_item} at once — invisible right up until an order merges both, sends the same product to
+     * Silpo twice in one call, and the cart is refused outright.
+     */
+    @Transactional
+    public void keepOnly(UUID userId, List<UUID> idsToKeep) {
+        shoppingListItemRepository.deleteByUserIdAndIdNotIn(userId, idsToKeep);
+    }
+
+    /**
      * One line per ingredient and unit, quantities summed, original order and spelling kept.
      *
      * <p>Two lines of the same ingredient in different units — 2 шт цибулі and 200 г цибулі — stay two lines. Guessing

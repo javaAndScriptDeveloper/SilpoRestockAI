@@ -270,6 +270,37 @@ class ShoppingListBuilderIntegrationTest extends AbstractIntegrationTest {
         assertThat(lastMessageText()).doesNotContain("Не вдалось скласти список");
     }
 
+    /**
+     * The exact failure a live account hit next: a weekly plan's list and a later {@code /list} answer both stayed
+     * in {@code shopping_list_item} — one tagged with a {@code mealPlanId}, one not — invisible until an order
+     * merged both, sent the same product to Silpo twice in one call, and the whole cart came back a bare 400.
+     */
+    @Test
+    void showingANewListDeletesWhateverAnEarlierFlowLeftBehind() throws Exception {
+        MealPlan plan = mealPlanRepository.save(MealPlan.builder()
+                .id(UUID.randomUUID())
+                .userId(user.getId())
+                .weekStartDate(java.time.LocalDate.now())
+                .createdAt(java.time.Instant.now())
+                .build());
+        shoppingListItemRepository.save(ShoppingListItem.builder()
+                .id(UUID.randomUUID())
+                .userId(user.getId())
+                .mealPlanId(plan.getId())
+                .name("Гречка")
+                .quantity(new BigDecimal("1"))
+                .unit("кг")
+                .build());
+
+        sendText(1, "/list");
+        CLAUDE.respondWithText(list("{\"name\":\"Молоко\",\"quantity\":1,\"unit\":\"л\"}"));
+        sendText(2, "молоко на тиждень");
+
+        assertThat(shoppingListItemRepository.findByUserId(user.getId()))
+                .extracting(ShoppingListItem::getName)
+                .containsExactly("Молоко");
+    }
+
     @Test
     void anUnreadableAnswerAsksAgainRatherThanOrderingSomething() throws Exception {
         sendText(1, "/list");

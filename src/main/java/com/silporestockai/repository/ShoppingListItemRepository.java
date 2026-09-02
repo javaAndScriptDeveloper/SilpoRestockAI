@@ -1,6 +1,7 @@
 package com.silporestockai.repository;
 
 import com.silporestockai.entity.ShoppingListItem;
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -18,4 +19,7 @@ public interface ShoppingListItemRepository extends JpaRepository<ShoppingListIt
 
     /** Regenerating a plan replaces its list wholesale rather than diffing it. */
     void deleteByMealPlanId(UUID mealPlanId);
+
+    /** Whatever is being shown replaces whatever the user had before, regardless of which flow produced either. */
+    void deleteByUserIdAndIdNotIn(UUID userId, Collection<UUID> ids);
 }
