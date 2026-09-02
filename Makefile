@@ -7,8 +7,9 @@ ENV_FILE := $(if $(wildcard .env),.env,.env.example)
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
 
-run: ## Run the app (auto-starts docker-compose DB)
-	set -a; . ./$(ENV_FILE); set +a; ./gradlew bootRun
+run: ## Run the app (auto-starts docker-compose DB), full log at logs/app.log
+	@mkdir -p logs
+	set -a; . ./$(ENV_FILE); set +a; ./gradlew bootRun 2>&1 | tee logs/app.log
 
 dev: ## Run with a throwaway Testcontainers DB (no docker-compose needed)
 	set -a; . ./$(ENV_FILE); set +a; ./gradlew bootTestRun
