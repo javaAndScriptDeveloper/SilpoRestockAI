@@ -242,6 +242,30 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
         assertThat(added.has("shoppingCartId")).isTrue();
     }
 
+    /**
+     * The exact failure a live account hit: "Курка (ціла)" and "Курка (гомілка)" both matched the same Silpo
+     * product — a fuzzy-search collision, not a mistake in the list — and sending that productId twice in one
+     * silpo_add_or_update_cart_products call got the whole cart refused with a bare 400.
+     */
+    @Test
+    void mergesTwoRequestedLinesThatMatchedTheSameProduct() {
+        UUID userId = connectedUser(8417L);
+        scriptCartTools();
+        MCP.respondToTool("silpo_find_products_batch", """
+                {"queries":[\
+                {"query":"курка ціла","products":[{"name":"Курка","productId":"p-1","companyId":"company-3","branchId":"branch-7"}]},\
+                {"query":"курка гомілка","products":[{"name":"Курка","productId":"p-1","companyId":"company-3","branchId":"branch-7"}]}]}""");
+        MCP.respondToTool("silpo_add_or_update_cart_products", "{\"ok\":true}");
+
+        cartBuildingService.buildCart(
+                userId,
+                List.of(item("курка ціла", "0.8", "кг"), item("курка гомілка", "0.4", "кг")));
+
+        JsonNode added = MCP.callArguments("silpo_add_or_update_cart_products").getFirst();
+        assertThat(added.path("products")).hasSize(1);
+        assertThat(added.path("products").get(0).path("quantity").asDouble()).isEqualTo(1.2);
+    }
+
     @Test
     void chunksAtThirtyItemsPerSearchCall() {
         UUID userId = connectedUser(8405L);

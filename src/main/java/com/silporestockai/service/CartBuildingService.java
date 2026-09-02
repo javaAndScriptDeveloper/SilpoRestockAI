@@ -373,11 +373,36 @@ public class CartBuildingService {
         return resolved;
     }
 
-    /** Step 5. Adds and updates our own lines; whatever the guest already had stays untouched. */
+    /**
+     * Step 5. Adds and updates our own lines; whatever the guest already had stays untouched.
+     *
+     * <p>Two different requested names can both match the same physical product — "Курка (ціла)" and "Курка
+     * (гомілка)" landing on the same catalogue entry is a fuzzy-search collision, not a mistake anywhere in this
+     * list. Silpo's own API refuses a request that lists one {@code productId} twice, so lines sharing one are merged
+     * here, quantities summed, rather than sent as two competing lines for the same product.
+     */
     public void addProductsToCart(UUID userId, CartContext context, List<ResolvedProduct> products) {
         if (products.isEmpty()) {
             log.info("nothing resolved, so nothing to add to cart {}", context.cartId());
             return;
+        }
+        Map<String, ResolvedProduct> merged = new LinkedHashMap<>();
+        for (ResolvedProduct product : products) {
+            merged.merge(
+                    product.productId(),
+                    product,
+                    (existing, incoming) -> new ResolvedProduct(
+                            existing.requestedName() + " + " + incoming.requestedName(),
+                            existing.productId(),
+                            existing.companyId(),
+                            existing.branchId(),
+                            existing.quantity().add(incoming.quantity()),
+                            existing.unit()));
+        }
+        if (merged.size() < products.size()) {
+            log.info(
+                    "{} requested lines matched the same Silpo product as another; quantities merged",
+                    products.size() - merged.size());
         }
         call(
                 userId,
@@ -386,7 +411,7 @@ public class CartBuildingService {
                         "shoppingCartId",
                         context.cartId(),
                         "products",
-                        products.stream()
+                        merged.values().stream()
                                 .map(product -> Map.of(
                                         "productId", product.productId(),
                                         "companyId", nullSafe(product.companyId()),
