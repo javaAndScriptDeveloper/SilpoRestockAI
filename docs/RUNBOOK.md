@@ -507,6 +507,14 @@ bot says «Календар зараз не налаштований на сер
 Needs `RESPEECHER_API_KEY` (Space API key from the Respeecher playground) and `ANTHROPIC_API_KEY` — the
 message is rewritten for speech before it is synthesised.
 
+> **Cost:** this combination — `/voice` on plus a fast `CHECKIN_INTERVAL` — is what actually burned a
+> real API budget once, and the console showed why: input tokens outweighing output about 160 to 1, from
+> a full system prompt repeated on trivial one-line confirmations nobody was reading. Two things soften
+> it now — the rewrite runs on the cheap model (`ANTHROPIC_FAST_MODEL`), and a message with no digit, no
+> link and no second line skips the rewrite entirely — but it is still a real call on anything that does
+> need it. Turn `/voice` back off once you are done with this step, and do not leave a two-minute
+> `CHECKIN_INTERVAL` running unattended for hours.
+
 **Send:** `/voice`
 
 **Expect:** «Тепер відповідатиму ще й голосом…» *and* an audio message saying roughly the same thing —
@@ -679,7 +687,7 @@ bug in `utils/SecretRedactor`, not a green light to keep quiet about it.
 
 ## Automated tests, for comparison
 
-Everything above is also covered by 238 automated tests against stub servers:
+Everything above is also covered by 246 automated tests against stub servers:
 
 ```bash
 make test          # unit + integration, needs Docker

@@ -12,6 +12,17 @@ public interface ClaudeApiClient {
     String complete(String systemPrompt, String userPrompt);
 
     /**
+     * The same call, on {@code claude.fast-model} rather than {@code claude.model}.
+     *
+     * <p>For a task with no judgement call to make — turning an already-written sentence into a spoken one is the
+     * only caller today. Meal planning, check-in parsing and list building stay on the flagship model: those exist
+     * because a weaker model got a nuanced Ukrainian instruction wrong, and downgrading them would risk exactly that
+     * again. A style rewrite carries no such risk, and it runs on every outbound message once a chat turns voice
+     * replies on — the one call in this application cheap enough to be worth pricing separately.
+     */
+    String completeFast(String systemPrompt, String userPrompt);
+
+    /**
      * Completion constrained to {@code responseType}. The SDK derives a JSON schema from the class, sends it as the
      * request's output config and deserialises the reply, so a malformed answer fails inside the SDK rather than at a
      * later parse.

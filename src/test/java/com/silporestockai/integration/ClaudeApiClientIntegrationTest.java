@@ -68,6 +68,20 @@ class ClaudeApiClientIntegrationTest extends AbstractIntegrationTest {
     }
 
     /**
+     * A call on every outbound message once a chat turns voice replies on must not cost what meal planning costs —
+     * that is the entire reason {@code completeFast} exists rather than reusing {@code complete}.
+     */
+    @Test
+    void completeFastUsesTheCheapModelRatherThanTheReasoningOne() {
+        STUB.respondWithText("Кошик готовий.");
+
+        String answer = claudeApiClient.completeFast("Перепиши для голосу.", "Разом: 73.50 грн");
+
+        assertThat(answer).isEqualTo("Кошик готовий.");
+        assertThat(STUB.requests().getFirst().path("model").asText()).isEqualTo("claude-haiku-4-5-20251001");
+    }
+
+    /**
      * The bananas bug and the invented-items bug were both "the model said something we did not expect", diagnosed
      * only by asking the user to paste a chat transcript back. The prompt and the completion are now in the log on
      * every call, so that question no longer needs a live conversation to answer.

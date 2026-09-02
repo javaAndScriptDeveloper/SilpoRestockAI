@@ -8,7 +8,13 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *
  * @param apiKey Anthropic API key; blank in tests and CI, which makes every call fail with a clear message rather than
  *     stopping the application from booting
- * @param model model id, e.g. {@code claude-sonnet-5}
+ * @param model model id for calls that need real reasoning — meal planning, check-in parsing, the shopping list
+ *     builder. All of them exist because a cheaper model got a nuanced Ukrainian instruction wrong (the bananas and
+ *     invented-items bugs), so this stays a flagship-tier model.
+ * @param fastModel model id for calls that do not: today, only the voice-style rewrite, which turns an existing
+ *     sentence into a spoken one and needs no judgement calls the way meal planning or list building do. Defaults to
+ *     Haiku, priced for exactly this — a call on every outbound message once a chat turns voice on must not cost
+ *     what a meal plan costs.
  * @param maxTokens output token ceiling for a single call
  * @param timeout per-request timeout; high because meal plan generation is a long call
  * @param baseUrl API base URL; overridden by tests to reach a local stub
@@ -18,7 +24,13 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  */
 @ConfigurationProperties(prefix = "claude")
 public record ClaudeProperties(
-        String apiKey, String model, long maxTokens, Duration timeout, String baseUrl, String workspaceId) {
+        String apiKey,
+        String model,
+        String fastModel,
+        long maxTokens,
+        Duration timeout,
+        String baseUrl,
+        String workspaceId) {
 
     public boolean workspaceIdConfigured() {
         return workspaceId != null && !workspaceId.isBlank();

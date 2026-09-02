@@ -273,6 +273,24 @@ Claude under Silpo's voice guidance — `resources/prompts/voice-style-system.tx
 tuning the voice is a text edit. Messages carrying inline buttons are never spoken: a cart is something
 you tap, and "two items maximum" read aloud is worse than a list.
 
+**Cost, explicitly — this burned a real budget.** A two-minute `CHECKIN_INTERVAL` left running for hours
+with `/voice` on turned every automatic check-in prompt and every one-line reply into a Claude call, each
+paying the full style-guide system prompt for a handful of words of output. The symptom in the Anthropic
+console was stark: input tokens outweighing output roughly 160 to 1 — a fixed, largely pointless system
+prompt repeated on trivial calls, not real usage. Two fixes:
+
+- The rewrite runs on `claude.fast-model` (`ANTHROPIC_FAST_MODEL`, a Haiku-tier model by default), never
+  the flagship model everything else uses — a call on every outbound message must not be priced like a
+  meal plan.
+- `VoiceReplyService` skips the rewrite entirely for a message that is already speakable as written — no
+  digit, no link, no markdown character, one line, under 120 characters — and speaks it directly. Most of
+  this application's own confirmations qualify; the calls that actually need the style guide (a cart with
+  prices, a checkout link) still get it.
+
+Still turn `/voice` off (send it again) when you are not demoing the voice path, and keep
+`CHECKIN_INTERVAL` at a sane value outside a check-in demo — the fixes above cut the cost of the pattern,
+they do not make an unattended fast loop free.
+
 Respeecher returns WAV and Telegram's `sendVoice` does not accept it, so audio goes out through
 `sendAudio` with a `sendDocument` fallback. Transcoding to Opus would mean a native encoder.
 

@@ -78,11 +78,22 @@ public class ClaudeApiClientImpl implements ClaudeApiClient {
     @CircuitBreaker(name = "claude")
     @Retry(name = "claude")
     public String complete(String systemPrompt, String userPrompt) {
-        logPrompt("complete", systemPrompt, userPrompt);
+        return complete("complete", properties.model(), systemPrompt, userPrompt);
+    }
+
+    @Override
+    @CircuitBreaker(name = "claude")
+    @Retry(name = "claude")
+    public String completeFast(String systemPrompt, String userPrompt) {
+        return complete("completeFast", properties.fastModel(), systemPrompt, userPrompt);
+    }
+
+    private String complete(String callName, String model, String systemPrompt, String userPrompt) {
+        logPrompt(callName, systemPrompt, userPrompt);
         MessageCreateParams params =
-                baseParams(systemPrompt).addUserMessage(userPrompt).build();
+                baseParams(systemPrompt, model).addUserMessage(userPrompt).build();
         String text = textOf(call(() -> client().messages().create(params)));
-        logCompletion("complete", text);
+        logCompletion(callName, text);
         return text;
     }
 
@@ -91,7 +102,7 @@ public class ClaudeApiClientImpl implements ClaudeApiClient {
     @Retry(name = "claude")
     public <T> T completeStructured(String systemPrompt, String userPrompt, Class<T> responseType) {
         logPrompt("completeStructured " + responseType.getSimpleName(), systemPrompt, userPrompt);
-        StructuredMessageCreateParams<T> params = baseParams(systemPrompt)
+        StructuredMessageCreateParams<T> params = baseParams(systemPrompt, properties.model())
                 .addUserMessage(userPrompt)
                 .outputConfig(responseType, JsonSchemaLocalValidation.YES)
                 .build();
@@ -129,7 +140,7 @@ public class ClaudeApiClientImpl implements ClaudeApiClient {
                 .data(Base64.getEncoder().encodeToString(imageBytes))
                 .mediaType(Base64ImageSource.MediaType.of(mediaType))
                 .build();
-        MessageCreateParams params = baseParams(systemPrompt)
+        MessageCreateParams params = baseParams(systemPrompt, properties.model())
                 .addUserMessageOfBlockParams(List.of(
                         ContentBlockParam.ofImage(
                                 ImageBlockParam.builder().source(source).build()),
@@ -158,9 +169,9 @@ public class ClaudeApiClientImpl implements ClaudeApiClient {
         log.debug("Claude <- {}: {}", call, SecretRedactor.truncate(text, 2000));
     }
 
-    private MessageCreateParams.Builder baseParams(String systemPrompt) {
+    private MessageCreateParams.Builder baseParams(String systemPrompt, String model) {
         return MessageCreateParams.builder()
-                .model(Model.of(properties.model()))
+                .model(Model.of(model))
                 .maxTokens(properties.maxTokens())
                 .system(systemPrompt);
     }

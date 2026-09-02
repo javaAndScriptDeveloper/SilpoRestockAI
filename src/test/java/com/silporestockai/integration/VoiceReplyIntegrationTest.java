@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.silporestockai.entity.User;
 import com.silporestockai.entity.UserProfile;
 import com.silporestockai.model.TelegramButton;
@@ -159,8 +160,25 @@ class VoiceReplyIntegrationTest extends AbstractIntegrationTest {
         assertThat(RESPEECHER.spokenTranscripts())
                 .containsExactly("Кошик готовий. Дві позиції, разом сімдесят три гривні.");
         // The style guide is what was asked for, and the raw message is what was asked about.
-        String rewriteRequest = CLAUDE.requests().getLast().toString();
-        assertThat(rewriteRequest).contains("NEVER READ ALOUD").contains("73.50");
+        JsonNode rewriteRequest = CLAUDE.requests().getLast();
+        assertThat(rewriteRequest.toString()).contains("NEVER READ ALOUD").contains("73.50");
+        // This call runs on every outbound message once voice is on; it must not be priced like a meal plan.
+        assertThat(rewriteRequest.path("model").asText()).isEqualTo("claude-haiku-4-5-20251001");
+    }
+
+    /**
+     * The pattern behind a real incident: a two-minute check-in loop with voice left on turned trivial one-line
+     * confirmations into the majority of a day's Claude calls, each paying the full style-guide system prompt for a
+     * handful of words back. A message that is already speakable must not reach Claude at all.
+     */
+    @Test
+    void aTrivialConfirmationIsSpokenDirectlyWithoutCallingClaude() {
+        userRepository.save(withVoiceOn());
+
+        telegramOutboundService.sendMessage(CHAT_ID, "Записав.");
+
+        assertThat(CLAUDE.requests()).isEmpty();
+        assertThat(RESPEECHER.spokenTranscripts()).containsExactly("Записав.");
     }
 
     @Test
