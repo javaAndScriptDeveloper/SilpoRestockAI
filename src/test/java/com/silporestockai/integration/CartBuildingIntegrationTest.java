@@ -279,4 +279,32 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
                 .anyMatch(line -> line.contains("silpo_find_products_batch"))
                 .anyMatch(line -> line.contains("silpo_add_or_update_cart_products"));
     }
+
+    /**
+     * The exact failure a live account hit: {@code silpo_get_my_shopping_cart} answered without error, but the
+     * response carried none of the key names in {@code McpResponses.CART_ID}. Guessing another key name blind would
+     * only trade one wrong guess for another, so what has to survive is the raw response reaching the log — that is
+     * what turns the next occurrence into a one-line fix instead of a repeat of this one.
+     */
+    @Test
+    void logsTheRawResponseWhenNoCartIdCanBeFound() {
+        UUID userId = connectedUser(8410L);
+        MCP.respondToTool("silpo_get_my_shopping_cart", "{\"somethingElse\":\"cart-1\"}");
+
+        Logger logger = (Logger) LoggerFactory.getLogger(CartBuildingService.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            assertThatThrownBy(() -> cartBuildingService.getOrCreateCartContext(userId))
+                    .isInstanceOf(CartBuildException.class);
+        } finally {
+            logger.detachAppender(appender);
+        }
+
+        assertThat(appender.list)
+                .filteredOn(event -> event.getLevel() == Level.ERROR)
+                .anyMatch(event -> event.getFormattedMessage().contains("somethingElse")
+                        && event.getFormattedMessage().contains("cart-1"));
+    }
 }

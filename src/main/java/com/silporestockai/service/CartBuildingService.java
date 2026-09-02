@@ -81,8 +81,16 @@ public class CartBuildingService {
     /** Steps 1 and 2: which cart, and which branch it is bound to. */
     public CartContext getOrCreateCartContext(UUID userId) {
         JsonNode myCart = call(userId, TOOL_MY_CART, Map.of());
-        String cartId = McpResponses.findString(myCart, McpResponses.CART_ID)
-                .orElseThrow(() -> new CartBuildException("Silpo returned no cart id for user " + userId));
+        String cartId = McpResponses.findString(myCart, McpResponses.CART_ID).orElseThrow(() -> {
+            // None of the key names in McpResponses.CART_ID matched — the live server disagrees with the
+            // documented shape. Logging the raw answer is what turns this from a dead end into a one-line
+            // fix: add whatever field name shows up here to CART_ID.
+            log.error(
+                    "silpo_get_my_shopping_cart answered but no field named {} was found. Raw response: {}",
+                    String.join("/", McpResponses.CART_ID),
+                    myCart);
+            return new CartBuildException("Silpo returned no cart id for user " + userId);
+        });
 
         JsonNode cart = call(userId, TOOL_CART_BY_ID, Map.of("cartId", cartId));
         CartContext context = new CartContext(

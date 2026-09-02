@@ -54,6 +54,11 @@ public final class McpResponses {
 
     private McpResponses() {}
 
+    /** Keeps a log line readable when a tool answers with something unexpectedly large. */
+    private static String truncate(String text) {
+        return text.length() > 2000 ? text.substring(0, 2000) + "…(truncated)" : text;
+    }
+
     /** The response as a tree: structured content when the server sent it, otherwise the text block parsed as JSON. */
     public static JsonNode tree(McpToolResponse response) {
         if (response == null) {
@@ -68,7 +73,7 @@ public final class McpResponses {
         try {
             return MAPPER.readTree(response.text());
         } catch (Exception e) {
-            log.debug("MCP response was not JSON: {}", e.getMessage());
+            log.warn("MCP response was not JSON ({}): {}", e.getMessage(), truncate(response.text()));
             return MissingNode.getInstance();
         }
     }
