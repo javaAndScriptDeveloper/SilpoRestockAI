@@ -58,13 +58,18 @@ public class ClaudeApiClientImpl implements ClaudeApiClient {
             log.warn("ANTHROPIC_API_KEY is not set — Claude calls will fail until it is configured");
             this.client = null;
         } else {
-            this.client = AnthropicOkHttpClient.builder()
+            var builder = AnthropicOkHttpClient.builder()
                     .apiKey(properties.apiKey())
                     .baseUrl(properties.baseUrl())
                     .timeout(properties.timeout())
                     // Backoff is Resilience4j's job; two retry policies stacked would multiply the wait.
-                    .maxRetries(0)
-                    .build();
+                    .maxRetries(0);
+            if (properties.workspaceIdConfigured()) {
+                // An identity-linked key belongs to a person rather than to a workspace, so every request has to
+                // name the workspace it acts in. An ordinary workspace key carries that itself and needs no header.
+                builder.putHeader("anthropic-workspace-id", properties.workspaceId());
+            }
+            this.client = builder.build();
         }
     }
 

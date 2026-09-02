@@ -132,8 +132,6 @@ silpo:
     # startup, which means stored tokens do not survive a restart. Never commit a real key.
     token-encryption-key: ${SILPO_TOKEN_ENCRYPTION_KEY:}
 
-# Speech-to-text for voice check-ins. Any OpenAI-compatible /v1/audio/transcriptions endpoint works —
-# OpenAI, Groq, or a local whisper server. Blank key disables the voice path: the bot asks for text instead.
 # Optional spoken replies through Respeecher's Space API (text-to-speech). A blank key disables them
 # deployment-wide: /voice says so and every reply stays written. Per chat they are off until /voice.
 # Note this is TTS only — voice check-ins are transcribed by the `stt` block above, not by Respeecher.
@@ -161,6 +159,8 @@ google:
     scope: ${GOOGLE_CALENDAR_SCOPE:https://www.googleapis.com/auth/calendar.events}
     event-duration: ${GOOGLE_CALENDAR_EVENT_DURATION:2h}
 
+# Speech-to-text for voice check-ins. Any OpenAI-compatible /v1/audio/transcriptions endpoint works —
+# OpenAI, Groq, or a local whisper server. Blank key disables the voice path: the bot asks for text instead.
 stt:
   api-key: ${STT_API_KEY:}
   endpoint: ${STT_ENDPOINT:https://api.openai.com/v1/audio/transcriptions}
@@ -203,3 +203,6 @@ claude:
   timeout: ${ANTHROPIC_TIMEOUT:120s}
   # Overridden by tests to point the SDK at a local stub. Not a production knob.
   base-url: ${ANTHROPIC_BASE_URL:https://api.anthropic.com}
+  # Only for an identity-linked key, which belongs to a person rather than a workspace and is rejected
+  # without naming the workspace it acts in. An ordinary workspace key needs nothing here.
+  workspace-id: ${ANTHROPIC_WORKSPACE_ID:}
