@@ -33,7 +33,7 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class MealPlanHandoffService {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = new ObjectMapper().findAndRegisterModules();
 
     private final MealPlanService mealPlanService;
     private final ShoppingListService shoppingListService;

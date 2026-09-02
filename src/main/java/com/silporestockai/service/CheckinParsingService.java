@@ -42,7 +42,7 @@ import org.springframework.stereotype.Service;
 public class CheckinParsingService {
 
     /** Own mapper, as elsewhere in the app: Boot 4 carries both Jackson 2 and Jackson 3. */
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = new ObjectMapper().findAndRegisterModules();
 
     private final BaselineBasketRepository baselineBasketRepository;
     private final CheckinRepository checkinRepository;

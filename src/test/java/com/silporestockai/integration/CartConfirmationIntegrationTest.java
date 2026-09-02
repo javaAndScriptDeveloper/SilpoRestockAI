@@ -134,7 +134,12 @@ class CartConfirmationIntegrationTest extends AbstractIntegrationTest {
     /** The whole six-call sequence, ending in a cart with two lines, a total and 120 spendable bonuses. */
     private void scriptSilpo() {
         MCP.respondToTool("silpo_get_my_shopping_cart", "{\"cartId\":\"cart-1\"}");
-        MCP.respondToTool("silpo_get_time_slots", "{\"timeSlots\":[{\"id\":\"slot-1\",\"from\":\"18:00\"}]}");
+        // A real, parseable instant, not "18:00" alone: CartSummary.deliverySlotStartsAt only carries a value —
+        // and only then risks the "no JavaTimeModule" serialization crash asMap() once hit — when this actually
+        // parses to one.
+        MCP.respondToTool(
+                "silpo_get_time_slots",
+                "{\"timeSlots\":[{\"id\":\"slot-1\",\"from\":\"2026-09-03T18:00:00Z\"}]}");
         MCP.respondToTool("silpo_find_products_batch", """
                 {"queries":[\
                 {"query":"цибуля","products":[{"name":"цибуля","productId":"p-1","companyId":"company-3","branchId":"branch-7"}]},\

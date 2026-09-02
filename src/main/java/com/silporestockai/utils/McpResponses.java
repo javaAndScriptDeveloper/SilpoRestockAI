@@ -68,7 +68,7 @@ public final class McpResponses {
     public static final String[] SLOT_END = {"to", "end", "endTime"};
     public static final String[] SLOT_AVAILABLE = {"available"};
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = new ObjectMapper().findAndRegisterModules();
 
     private McpResponses() {}
 

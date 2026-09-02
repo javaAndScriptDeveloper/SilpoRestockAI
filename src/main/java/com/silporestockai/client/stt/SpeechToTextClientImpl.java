@@ -30,7 +30,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class SpeechToTextClientImpl implements SpeechToTextClient {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = new ObjectMapper().findAndRegisterModules();
 
     private final SttProperties properties;
     private final HttpClient http;

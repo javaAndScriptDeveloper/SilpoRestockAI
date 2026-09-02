@@ -46,7 +46,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class MealPlanService {
 
     /** Own mapper, as in {@code TelegramWebhookController}: Boot 4 carries both Jackson 2 and Jackson 3. */
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = new ObjectMapper().findAndRegisterModules();
 
     private static final int MINIMUM_MEALS_PER_DAY = 3;
 
