@@ -185,7 +185,10 @@ Answer the questions as they come:
 | «Що вдома точно не їдять?» | `печінка` | or `нема` |
 | «Який бюджет на тиждень, у гривнях?» | `2500` | |
 
-**Expect:** «Записав. Готую перший план на тиждень.»
+**Expect:** «Записав. Готую перший план на тиждень.» — and, under the text box, a persistent keyboard:
+📝 Список, 🔁 Замовити ще, 🎙 Голосові, 🌙 Блекаут, 📅 Календар. It stays there for the rest of the chat.
+Every `/command` this runbook tells you to **Send** from here on can be tapped instead — the button sends
+the exact same text the slash command does, so both keep working.
 
 **Verify:**
 
@@ -704,7 +707,7 @@ bug in `utils/SecretRedactor`, not a green light to keep quiet about it.
 
 ## Automated tests, for comparison
 
-Everything above is also covered by 259 automated tests against stub servers:
+Everything above is also covered by 261 automated tests against stub servers:
 
 ```bash
 make test          # unit + integration, needs Docker

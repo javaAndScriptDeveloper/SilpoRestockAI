@@ -159,17 +159,17 @@ public class TelegramRoutingService {
             return;
         }
         if (incoming instanceof TelegramIncomingUpdate.Text list
-                && list.text().strip().startsWith("/list")) {
+                && matches(list.text(), "/list", MainMenuKeyboard.LIST)) {
             shoppingListBuilderService.askForInput(user);
             return;
         }
         if (incoming instanceof TelegramIncomingUpdate.Text voice
-                && voice.text().strip().startsWith("/voice")) {
+                && matches(voice.text(), "/voice", MainMenuKeyboard.VOICE)) {
             toggleVoice(user, incoming.chatId());
             return;
         }
         if (incoming instanceof TelegramIncomingUpdate.Text reorder
-                && reorder.text().strip().startsWith("/reorder")) {
+                && matches(reorder.text(), "/reorder", MainMenuKeyboard.REORDER)) {
             // The reorder cycle has no scheduler by design (see task 14's notes), so this is how a person — or a
             // demo — starts one. It builds the same delta the cycle would and hands it to the same confirmation.
             telegramOutboundService.sendMessage(incoming.chatId(), "Дивлюсь, що треба докупити.");
@@ -177,7 +177,7 @@ public class TelegramRoutingService {
             return;
         }
         if (incoming instanceof TelegramIncomingUpdate.Text blackout
-                && blackout.text().strip().startsWith("/blackout")) {
+                && matches(blackout.text(), "/blackout", MainMenuKeyboard.BLACKOUT)) {
             // Explicit only. Inferring an outage from a sentence and sending an unwanted order would land at the
             // worst possible moment, which is the one this mode exists for.
             telegramOutboundService.sendMessage(incoming.chatId(), "Збираю щось на поїсти без плити й холодильника.");
@@ -185,7 +185,7 @@ public class TelegramRoutingService {
             return;
         }
         if (incoming instanceof TelegramIncomingUpdate.Text text
-                && text.text().strip().startsWith("/calendar")) {
+                && matches(text.text(), "/calendar", MainMenuKeyboard.CALENDAR)) {
             offerCalendar(user, incoming.chatId());
             return;
         }
@@ -197,7 +197,14 @@ public class TelegramRoutingService {
             log.debug("ignoring stale button tap {} in chat {}", tap.data(), tap.chatId());
             return;
         }
-        telegramOutboundService.sendMessage(
-                incoming.chatId(), "Профіль уже є. Регулярні чек-іни та перезамовлення додам далі.");
+        telegramOutboundService.sendMessageWithMainMenu(
+                incoming.chatId(),
+                "Профіль уже є. Обери дію нижче або напиши /list, /reorder, /voice, /blackout чи /calendar.");
+    }
+
+    /** A command matches whether it was typed as a slash command or tapped as its own main-menu button. */
+    private static boolean matches(String text, String command, String buttonLabel) {
+        String stripped = text.strip();
+        return stripped.startsWith(command) || stripped.equals(buttonLabel);
     }
 }

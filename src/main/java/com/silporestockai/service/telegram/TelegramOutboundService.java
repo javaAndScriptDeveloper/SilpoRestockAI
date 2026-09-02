@@ -117,6 +117,25 @@ public class TelegramOutboundService {
         }
     }
 
+    /**
+     * Sends a message and, with it, the persistent bottom keyboard — Telegram keeps that keyboard showing under the
+     * text box for the rest of the chat from here on, so this is meant to be called once, right when the commands it
+     * offers first become usable, not on every message.
+     */
+    public void sendMessageWithMainMenu(long chatId, String text) {
+        SendMessage message = SendMessage.builder()
+                .chatId(chatId)
+                .text(text)
+                .replyMarkup(MainMenuKeyboard.markup())
+                .build();
+        try {
+            client.execute(message);
+        } catch (TelegramApiException e) {
+            throw failure("sendMessage", e);
+        }
+        speakIfWanted(chatId, text);
+    }
+
     public void sendMessageWithButtons(long chatId, String text, List<TelegramButton> buttons) {
         InlineKeyboardRow row = new InlineKeyboardRow(
                 buttons.stream().map(TelegramOutboundService::toInlineButton).toList());

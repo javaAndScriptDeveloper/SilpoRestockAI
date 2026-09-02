@@ -313,7 +313,7 @@ public class OnboardingFlowService {
         userProfileRepository.save(profile);
 
         conversationStateService.save(chatId, ConversationFlow.NONE, null, Map.of());
-        telegramOutboundService.sendMessage(chatId, "Записав. Готую перший план на тиждень.");
+        telegramOutboundService.sendMessageWithMainMenu(chatId, "Записав. Готую перший план на тиждень.");
         events.publishEvent(new OnboardingCompletedEvent(user.getId()));
         log.info("onboarding completed for user {}", user.getId());
     }

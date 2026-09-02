@@ -165,6 +165,15 @@ class ShoppingListBuilderIntegrationTest extends AbstractIntegrationTest {
         assertThat(conversationStateService.load(CHAT_ID).getCurrentFlow()).isEqualTo(ConversationFlow.LIST_BUILDING);
     }
 
+    /** Tapping the main-menu button does exactly what typing the slash command does — same text, same route. */
+    @Test
+    void theMainMenuButtonDoesTheSameThingAsTheSlashCommand() throws Exception {
+        sendText(1, com.silporestockai.service.telegram.MainMenuKeyboard.LIST);
+
+        assertThat(lastMessageText()).contains("фото").contains("чека").contains("напиши");
+        assertThat(conversationStateService.load(CHAT_ID).getCurrentFlow()).isEqualTo(ConversationFlow.LIST_BUILDING);
+    }
+
     @Test
     void aDescriptionBecomesAListShownForApproval() throws Exception {
         sendText(1, "/list");

@@ -73,6 +73,21 @@ class TelegramOutboundServiceIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void sendsThePersistentMainMenuKeyboard() {
+        telegramOutboundService.sendMessageWithMainMenu(777L, "Записав. Готую перший план на тиждень.");
+
+        var keyboard = STUB.sentMessages().getFirst().path("reply_markup").path("keyboard");
+        assertThat(keyboard).hasSize(3);
+        assertThat(keyboard.get(0).get(0).path("text").asText()).isEqualTo("📝 Список");
+        assertThat(keyboard.get(0).get(1).path("text").asText()).isEqualTo("🔁 Замовити ще");
+        assertThat(keyboard.get(1).get(0).path("text").asText()).isEqualTo("🎙 Голосові");
+        assertThat(keyboard.get(1).get(1).path("text").asText()).isEqualTo("🌙 Блекаут");
+        assertThat(keyboard.get(2).get(0).path("text").asText()).isEqualTo("📅 Календар");
+        assertThat(STUB.sentMessages().getFirst().path("reply_markup").path("resize_keyboard").asBoolean())
+                .isTrue();
+    }
+
+    @Test
     void answersACallbackQuery() {
         telegramOutboundService.answerCallback("callback-1");
 
