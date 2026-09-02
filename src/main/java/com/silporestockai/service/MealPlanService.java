@@ -192,12 +192,14 @@ public class MealPlanService {
                                     : profile.getKidsAges())
                     .append('\n');
         }
-        text.append("Обмеження та алергії: ")
-                .append(joinOr(profile.getDietaryRestrictions(), "немає"))
-                .append('\n');
-        text.append("Не їдять: ")
-                .append(joinOr(profile.getDislikedFoods(), "немає"))
-                .append('\n');
+        // Quoted, never presented as a parsed list. «Все окрім молочки та бананів» read as a list says the
+        // opposite of what was meant, and once produced a week of nothing but bananas.
+        text.append("Про алергії та обмеження людина сказала: «")
+                .append(joinOr(profile.getDietaryRestrictions(), "нема"))
+                .append("»\n");
+        text.append("Про те, чого вдома не їдять, людина сказала: «")
+                .append(joinOr(profile.getDislikedFoods(), "нема"))
+                .append("»\n");
         if (profile.getWeeklyBudget() != null) {
             text.append("Орієнтовний бюджет на тиждень: ")
                     .append(profile.getWeeklyBudget().toPlainString())

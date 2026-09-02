@@ -12,6 +12,7 @@ import com.silporestockai.service.ConversationStateService;
 import com.silporestockai.service.GoogleAuthService;
 import com.silporestockai.service.ReorderConfirmationService;
 import com.silporestockai.service.ReorderService;
+import com.silporestockai.service.ShoppingListBuilderService;
 import com.silporestockai.service.UserAccountService;
 import com.silporestockai.service.onboarding.OnboardingFlowService;
 import java.util.List;
@@ -46,6 +47,7 @@ public class TelegramRoutingService {
     private final GoogleAuthService googleAuthService;
     private final BlackoutModeService blackoutModeService;
     private final ReorderService reorderService;
+    private final ShoppingListBuilderService shoppingListBuilderService;
     private final VoiceReplyService voiceReplyService;
     private final UserRepository userRepository;
     private final TelegramOutboundService telegramOutboundService;
@@ -139,8 +141,17 @@ public class TelegramRoutingService {
             checkinFlowService.handle(user, incoming);
             return;
         }
+        if (flow == ConversationFlow.LIST_BUILDING) {
+            shoppingListBuilderService.handle(user, incoming);
+            return;
+        }
         if (flow == ConversationFlow.REORDER_CONFIRMATION) {
             reorderConfirmationService.handle(user, incoming);
+            return;
+        }
+        if (incoming instanceof TelegramIncomingUpdate.Text list
+                && list.text().strip().startsWith("/list")) {
+            shoppingListBuilderService.askForInput(user);
             return;
         }
         if (incoming instanceof TelegramIncomingUpdate.Text voice

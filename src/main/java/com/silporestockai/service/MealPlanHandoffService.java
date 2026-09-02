@@ -37,7 +37,7 @@ public class MealPlanHandoffService {
 
     private final MealPlanService mealPlanService;
     private final ShoppingListService shoppingListService;
-    private final CartConfirmationService cartConfirmationService;
+    private final ShoppingListBuilderService shoppingListBuilderService;
     private final UserRepository userRepository;
     private final TelegramOutboundService telegramOutboundService;
 
@@ -65,9 +65,9 @@ public class MealPlanHandoffService {
                                 List<ShoppingListItem> list = shoppingListService.deriveFromMealPlan(plan.getId());
                                 telegramOutboundService.sendMessage(
                                         user.getTelegramChatId(), summarise(plan, list.size()));
-                                // The list is only half the answer: flow #1 ends at a cart the user confirmed,
-                                // and present() reports its own failures rather than throwing.
-                                cartConfirmationService.present(user, list);
+                                // Never straight to a cart. Eighty-four bananas went through unseen once; the
+                                // list is shown and ordered only after somebody agrees to it.
+                                shoppingListBuilderService.present(user, list);
                             } catch (RuntimeException e) {
                                 log.error("could not generate the first plan for user {}", userId, e);
                                 telegramOutboundService.sendMessage(

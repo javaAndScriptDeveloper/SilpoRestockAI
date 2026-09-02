@@ -14,5 +14,7 @@ public enum ConversationFlow {
     /** Reviewing and confirming a proposed cart (task 10). */
     CART_CONFIRMATION,
     /** Reviewing a delta reorder: substitutes, delivery slot, confirm (task 15). */
-    REORDER_CONFIRMATION
+    REORDER_CONFIRMATION,
+    /** Building a shopping list from a photo, a receipt or a description, and getting it approved. */
+    LIST_BUILDING
 }

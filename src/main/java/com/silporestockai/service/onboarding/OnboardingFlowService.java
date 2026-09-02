@@ -62,6 +62,14 @@ public class OnboardingFlowService {
 
     private static final Pattern FIRST_NUMBER = Pattern.compile("\\d+(?:[.,]\\d+)?");
 
+    /**
+     * A thousands suffix immediately after the number: «3к», «3 тис», «3 тисячі».
+     *
+     * <p>Without this «3к» parsed as three, and the household got a weekly budget of three hryvnia — which the meal
+     * planner then dutifully tried to respect.
+     */
+    private static final Pattern THOUSANDS = Pattern.compile("\\d[\\d.,]*\\s*(к|k|тис|тыс)", Pattern.CASE_INSENSITIVE);
+
     /** Enough Ukrainian numerals to cover a realistic answer to "how many of you are there". */
     private static final Map<String, Integer> WORD_NUMBERS = Map.ofEntries(
             Map.entry("один", 1),
@@ -304,6 +312,11 @@ public class OnboardingFlowService {
     }
 
     private static void putIfPresent(Map<String, Object> context, String key, Object value) {
+        // Zero people is not an answer, it is an enrichment that found nothing — and storing it would skip the
+        // question that fills the gap.
+        if (value instanceof Number number && number.intValue() <= 0) {
+            return;
+        }
         if (value != null && !(value instanceof List<?> list && list.isEmpty())) {
             context.put(key, value);
         }
@@ -335,9 +348,14 @@ public class OnboardingFlowService {
                 .findFirst();
     }
 
+    /** «2500», «2500 грн», «3к», «3 тис» — all of them are the amount somebody meant. */
     private static Optional<BigDecimal> parseAmount(String answer) {
         Matcher matcher = FIRST_NUMBER.matcher(answer);
-        return matcher.find() ? Optional.of(new BigDecimal(matcher.group().replace(',', '.'))) : Optional.empty();
+        if (!matcher.find()) {
+            return Optional.empty();
+        }
+        BigDecimal amount = new BigDecimal(matcher.group().replace(',', '.'));
+        return Optional.of(THOUSANDS.matcher(answer).find() ? amount.multiply(new BigDecimal(1000)) : amount);
     }
 
     private static List<String> splitAnswer(String answer) {

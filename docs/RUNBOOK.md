@@ -195,6 +195,36 @@ than store nonsense.
 
 ---
 
+## 4a. Build a list from a photo, a receipt, or a sentence
+
+The fastest way to see the product work, and the one that does not depend on the weekly planner.
+
+**Send:** `/list`
+
+**Expect:** an offer of three ways in — a photo of your fridge, a photo of a receipt, or a description.
+
+**Then send any one of:**
+
+- a photo of an open fridge or a shelf,
+- a photo of a supermarket receipt,
+- a sentence: `звичайна їжа на тиждень, без молочки`.
+
+**Expect:** a list of twelve to twenty-five items with quantities, and three buttons — «Замовити»,
+«Змінити», «Скасувати».
+
+**Verify nothing was ordered yet** — this gate is the point of the step:
+
+```sql
+SELECT name, quantity, unit FROM shopping_list_item WHERE meal_plan_id IS NULL ORDER BY name;
+SELECT count(*) FROM customer_order;   -- 0
+```
+
+**Editing is a sentence, not a keyboard.** Tap «Змінити» (or just type) and say
+`прибери банани, додай хліб і яйця`. The list is rebuilt and shown again; the old one is replaced, not
+added to.
+
+**Then tap «Замовити»** — from here it is the ordinary cart confirmation of step 6 and 7.
+
 ## 5. The weekly plan and the shopping list
 
 Needs `ANTHROPIC_API_KEY`. This happens automatically, seconds after step 4 — plan generation is a long
