@@ -5,6 +5,7 @@ import com.silporestockai.client.mcp.McpToolResponse;
 import com.silporestockai.client.mcp.SilpoMcpClient;
 import com.silporestockai.entity.ShoppingListItem;
 import com.silporestockai.exception.CartBuildException;
+import com.silporestockai.exception.NoSilpoDeliveryAddressException;
 import com.silporestockai.model.BasketItem;
 import com.silporestockai.model.CartContext;
 import com.silporestockai.model.CartSummary;
@@ -144,7 +145,7 @@ public class CartBuildingService {
                             "user {} has no saved Silpo delivery address to create a cart from. Raw response: {}",
                             userId,
                             addressesResponse);
-                    return new CartBuildException(
+                    return new NoSilpoDeliveryAddressException(
                             "User " + userId + " has no Silpo cart and no saved delivery address to create one from");
                 });
         BigDecimal latitude = requireNumber(address, McpResponses.LATITUDE, userId, "a saved address had no latitude");

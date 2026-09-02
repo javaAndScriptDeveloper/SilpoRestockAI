@@ -8,6 +8,7 @@ import com.silporestockai.entity.ConversationState;
 import com.silporestockai.entity.CustomerOrder;
 import com.silporestockai.entity.ShoppingListItem;
 import com.silporestockai.entity.User;
+import com.silporestockai.exception.NoSilpoDeliveryAddressException;
 import com.silporestockai.model.CartSummary;
 import com.silporestockai.model.ConversationFlow;
 import com.silporestockai.model.OrderConfirmedEvent;
@@ -84,6 +85,13 @@ public class CartConfirmationService {
         CartSummary summary;
         try {
             summary = cartBuildingService.buildCart(user.getId(), items);
+        } catch (NoSilpoDeliveryAddressException e) {
+            log.error("could not build a cart for user {}", user.getId(), e);
+            telegramOutboundService.sendMessage(
+                    chatId,
+                    "У «Сільпо» немає збереженої адреси доставки, тому я не можу створити кошик. Додай адресу "
+                            + "в застосунку «Сільпо» (Профіль → Мої адреси доставки) і напиши мені ще раз.");
+            return;
         } catch (RuntimeException e) {
             log.error("could not build a cart for user {}", user.getId(), e);
             telegramOutboundService.sendMessage(chatId, "Кошик зібрати не вдалось. Спробую ще раз трохи пізніше.");

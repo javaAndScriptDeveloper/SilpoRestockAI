@@ -342,4 +342,21 @@ class CartConfirmationIntegrationTest extends AbstractIntegrationTest {
         assertThat(TELEGRAM.sentMessages()).isEmpty();
         assertThat(TELEGRAM.callbackAnswers()).hasSize(1);
     }
+
+    /**
+     * The one cart failure with an actual fix a person can perform themselves. Everything else says "try again
+     * later"; this one says what to go and do, because "try again later" would never resolve it on its own.
+     */
+    @Test
+    void aGuestWithNoSavedAddressIsToldToAddOneRatherThanToTryAgainLater() {
+        MCP.respondToTool("silpo_get_my_shopping_cart", "{\"success\":true,\"shoppingCartId\":null,\"exists\":false}");
+        MCP.respondToTool("silpo_get_my_delivery_addresses", "{\"addresses\":[]}");
+        User user = onboardedUser();
+
+        cartConfirmationService.present(user, shoppingList());
+
+        assertThat(lastMessageText()).contains("адрес").contains("Сільпо");
+        assertThat(lastMessageText()).doesNotContain("Спробую ще раз трохи пізніше");
+        assertThat(customerOrderRepository.findAll()).isEmpty();
+    }
 }

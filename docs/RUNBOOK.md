@@ -663,7 +663,7 @@ SELECT id, telegram_chat_id FROM users;
 | Bot answers `/start` but not buttons | webhook secret mismatch | `TELEGRAM_WEBHOOK_SECRET` matches what was registered; restart re-registers |
 | «План скласти не вдалось» | Claude key missing or rate-limited | app log, `ANTHROPIC_API_KEY` |
 | «Кошик зібрати не вдалось» | Silpo not connected, or no delivery slot at your branch | `mcp_oauth_token` has a row; log shows `silpo_get_time_slots` returning none |
-| «...» + log says `exists=false`, then `no saved delivery address` | a guest with no cart also has no saved Silpo delivery address to create one from | this account needs at least one address saved in the Silpo app first — nothing here can invent one |
+| «У «Сільпо» немає збереженої адреси доставки...» | a guest with no cart also has no saved Silpo delivery address to create one from | told directly in the chat now — add one in the Silpo app (Профіль → Мої адреси доставки), no log-reading needed |
 | Silpo login worked, later calls 401 | ephemeral encryption key across a restart | set `SILPO_TOKEN_ENCRYPTION_KEY`, reconnect |
 | No check-in ever arrives | interval not reached, or no current baseline | `last_checkin_prompt_sent_at`, `baseline_basket.is_current` |
 | Check-in arrives every minute | `CHECKIN_INTERVAL` too short | that is your test setting; raise it |
@@ -704,7 +704,7 @@ bug in `utils/SecretRedactor`, not a green light to keep quiet about it.
 
 ## Automated tests, for comparison
 
-Everything above is also covered by 251 automated tests against stub servers:
+Everything above is also covered by 252 automated tests against stub servers:
 
 ```bash
 make test          # unit + integration, needs Docker
