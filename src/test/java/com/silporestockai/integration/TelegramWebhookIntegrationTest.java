@@ -115,6 +115,22 @@ class TelegramWebhookIntegrationTest extends AbstractIntegrationTest {
         assertThat(userRepository.count()).isEqualTo(1);
     }
 
+    /**
+     * The failure mode this guards against: Telegram redelivers an update it never got a fast response for — a slow
+     * vision call was the one path most likely to trigger that — and a redelivered update must not be reprocessed as
+     * though it were a second, genuine message. Same {@code update_id} both times, on purpose.
+     */
+    @Test
+    void aRedeliveredUpdateIdIsIgnoredRatherThanReprocessed() throws Exception {
+        deliver(textUpdate(1, "привіт"));
+        int messagesAfterFirstDelivery = STUB.sentMessages().size();
+
+        deliver(textUpdate(1, "привіт"));
+
+        assertThat(STUB.sentMessages()).hasSize(messagesAfterFirstDelivery);
+        assertThat(conversationStateRepository.count()).isEqualTo(1);
+    }
+
     @Test
     void rejectsAWrongSecretTokenWithoutRoutingAnything() throws Exception {
         mockMvc.perform(post("/telegram/webhook")

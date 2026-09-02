@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.telegram.telegrambots.meta.api.objects.CallbackQuery;
 import org.telegram.telegrambots.meta.api.objects.Update;
@@ -52,6 +53,14 @@ public class TelegramRoutingService {
     private final UserRepository userRepository;
     private final TelegramOutboundService telegramOutboundService;
 
+    /**
+     * Off the webhook thread on purpose. A fridge photo means a vision call — the slowest and most expensive kind
+     * of call this application makes — and Telegram redelivers an update it does not get a fast response for.
+     * Without this, a slow photo reply was the one path most likely to trigger that redelivery, and this codebase
+     * tracks no update id anywhere: a redelivered update was a second full vision call for the same photo, silently.
+     * The controller now gets its 200 back in milliseconds regardless of how long the actual work takes.
+     */
+    @Async("applicationTaskExecutor")
     public void route(Update update) {
         toIncoming(update).ifPresentOrElse(this::handle, () -> log.debug("ignoring unsupported Telegram update"));
     }

@@ -327,6 +327,21 @@ Base config is profile-agnostic; two overlays ship out of the box, selected via 
 - **`prod`** (`application-prod.yml`) — Hikari timeouts and leak detection, trimmed actuator exposure, `INFO`
   logging. The Compose `app` service sets `SPRING_PROFILES_ACTIVE=prod`.
 
+### Webhook processing is asynchronous, and redeliveries are deduplicated
+
+`TelegramWebhookController` used to route an update on the request thread itself, so Telegram's 200
+came back only once every downstream call finished. A fridge photo means a vision call — the slowest and
+most expensive kind of call this application makes — and Telegram redelivers an update it does not get a
+fast response for. Nothing tracked `update_id`, so a redelivery was a second full vision call for the
+same picture, at full price, with no visible sign anything had gone wrong.
+
+Two changes: `TelegramRoutingService.route` is now `@Async`, so the controller answers in milliseconds
+regardless of how long the actual work takes; and the controller keeps a small bounded, time-limited
+memory of recently seen `update_id`s (`config/TelegramConfig#telegramUpdateDedupCache`, a plain Caffeine
+cache, not the `spring.cache` abstraction) so a genuine redelivery — from this or any other cause — is a
+no-op instead of a reprocess. Per-process rather than persisted: a real `update_id` never repeats except
+close to the original delivery, and `conversation_state` remains the only durable memory anywhere else.
+
 ### Diagnostic logging
 
 Every incident hit debugging this application so far — "what did Silpo's cart tool actually send",

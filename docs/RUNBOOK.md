@@ -402,6 +402,13 @@ SELECT source, raw_input_text, parsed_delta_json FROM checkin ORDER BY received_
 in `goneCompletely`; anything merely *not visible* lands nowhere. Try two photos — a full shelf and a
 nearly empty one — and compare. That contrast is the demo.
 
+> **A photo used to be the most expensive way to hit "budget wasted."** A vision call is the slowest
+> and priciest call this app makes, and a slow synchronous webhook is exactly what makes Telegram
+> redeliver an update — turning one photo into two (or more) full vision calls with no visible sign of
+> it. Fixed: the webhook now answers instantly and redeliveries are ignored (`config/TelegramConfig`).
+> If you send one photo and the log shows `MCP -> ...` or `Claude -> ...` lines for it more than once,
+> that guard has a bug — say so.
+
 ---
 
 ## 12. Trends: what the household never eats
@@ -687,7 +694,7 @@ bug in `utils/SecretRedactor`, not a green light to keep quiet about it.
 
 ## Automated tests, for comparison
 
-Everything above is also covered by 246 automated tests against stub servers:
+Everything above is also covered by 247 automated tests against stub servers:
 
 ```bash
 make test          # unit + integration, needs Docker

@@ -2,6 +2,7 @@ package com.silporestockai.controller.telegram;
 
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.benmanes.caffeine.cache.Cache;
 import com.silporestockai.config.TelegramProperties;
 import com.silporestockai.service.telegram.TelegramRoutingService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -27,6 +28,15 @@ import org.telegram.telegrambots.meta.api.objects.Update;
  *
  * <p>Except for a failed secret-token check the endpoint always answers {@code 200}. Telegram retries any non-2xx
  * response indefinitely, so a single update the router cannot handle would otherwise loop forever.
+ *
+ * <p>Telegram also retries a slow one — {@code route} runs off this thread precisely so that never happens, but a
+ * redelivery caused by anything else (a network blip on either side, this process restarting mid-update) is still
+ * possible, and {@code TelegramRoutingService} has no way to tell a genuine second message from a duplicate of the
+ * first. {@code update_id} is unique and strictly increasing per bot, so a small bounded memory of recently seen
+ * ones is what turns a redelivered update into a no-op instead of reprocessing it — a fridge photo reprocessed is a
+ * second full vision call for the same picture, silently. Per-process rather than persisted: Telegram's own retries
+ * happen close together, not across a restart, and {@code conversation_state} is this application's only durable
+ * memory for everything else.
  */
 @Slf4j
 @RestController
@@ -40,10 +50,15 @@ public class TelegramWebhookController {
 
     private final TelegramProperties properties;
     private final TelegramRoutingService telegramRoutingService;
+    private final Cache<Integer, Boolean> recentlySeenUpdateIds;
 
-    public TelegramWebhookController(TelegramProperties properties, TelegramRoutingService telegramRoutingService) {
+    public TelegramWebhookController(
+            TelegramProperties properties,
+            TelegramRoutingService telegramRoutingService,
+            Cache<Integer, Boolean> telegramUpdateDedupCache) {
         this.properties = properties;
         this.telegramRoutingService = telegramRoutingService;
+        this.recentlySeenUpdateIds = telegramUpdateDedupCache;
     }
 
     @Operation(summary = "Telegram webhook", description = "Receives Bot API updates. Called only by Telegram.")
@@ -56,6 +71,10 @@ public class TelegramWebhookController {
         }
         try {
             Update update = updateMapper.readValue(body, Update.class);
+            if (recentlySeenUpdateIds.asMap().putIfAbsent(update.getUpdateId(), Boolean.TRUE) != null) {
+                log.debug("ignoring a redelivered Telegram update {}", update.getUpdateId());
+                return ResponseEntity.ok().build();
+            }
             telegramRoutingService.route(update);
         } catch (Exception e) {
             // Never propagate: Telegram retries a non-2xx forever, so one bad update would loop.
