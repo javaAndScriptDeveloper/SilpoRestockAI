@@ -663,7 +663,7 @@ SELECT id, telegram_chat_id FROM users;
 | Bot answers `/start` but not buttons | webhook secret mismatch | `TELEGRAM_WEBHOOK_SECRET` matches what was registered; restart re-registers |
 | «План скласти не вдалось» | Claude key missing or rate-limited | app log, `ANTHROPIC_API_KEY` |
 | «Кошик зібрати не вдалось» | Silpo not connected, or no delivery slot at your branch | `mcp_oauth_token` has a row; log shows `silpo_get_time_slots` returning none |
-| «Кошик зібрати не вдалось» + log says `exists=false` | this guest's Silpo account has never had a cart — the documented six-call sequence has no step that creates one from nothing | set `logging.level.com.silporestockai=DEBUG` and read the `Silpo MCP tool ...` lines logged at connect for the full live tool catalogue; that is the only authority on whether Silpo exposes a create-cart call we have not wired up yet |
+| «...» + log says `exists=false`, then `no saved delivery address` | a guest with no cart also has no saved Silpo delivery address to create one from | this account needs at least one address saved in the Silpo app first — nothing here can invent one |
 | Silpo login worked, later calls 401 | ephemeral encryption key across a restart | set `SILPO_TOKEN_ENCRYPTION_KEY`, reconnect |
 | No check-in ever arrives | interval not reached, or no current baseline | `last_checkin_prompt_sent_at`, `baseline_basket.is_current` |
 | Check-in arrives every minute | `CHECKIN_INTERVAL` too short | that is your test setting; raise it |
@@ -684,8 +684,10 @@ something looks wrong, the raw wire content is already in terminal 2 — nothing
   not filtered through `McpResponses`'s guessed key names. This is what would have shown, immediately,
   what field name a live account's `silpo_get_my_shopping_cart` actually used.
 - **`Silpo MCP tool <name> — <description> — schema {...}`**, one line per tool, logged once when a
-  session opens — the full live catalogue this codebase has never hardcoded. The one place to look when
-  a cart step needs a call nobody has wired up yet (see the `exists=false` row above).
+  session opens — the full live catalogue this codebase has never hardcoded. This is how
+  `silpo_create_shopping_cart` and its documented address → delivery-type → time-slot workflow were
+  found; the one place to look when a cart step needs a call nobody has wired up yet. With `make run`,
+  these lines land in `logs/app.log` — no copy-pasting needed.
 - **`Claude -> ...` / `Claude <-`** — the exact prompt sent and the exact completion received, on every
   call. This is the line that shows a bananas-shaped or invented-items-shaped answer directly, instead
   of needing you to paste the chat back here.
@@ -702,7 +704,7 @@ bug in `utils/SecretRedactor`, not a green light to keep quiet about it.
 
 ## Automated tests, for comparison
 
-Everything above is also covered by 249 automated tests against stub servers:
+Everything above is also covered by 251 automated tests against stub servers:
 
 ```bash
 make test          # unit + integration, needs Docker

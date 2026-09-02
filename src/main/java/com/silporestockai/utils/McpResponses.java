@@ -51,6 +51,20 @@ public final class McpResponses {
     public static final String[] CHECKOUT_WEB = {"checkoutWebLink", "webLink"};
     public static final String[] CHECKOUT_MOBILE = {"checkoutMobileLink", "mobileLink"};
 
+    // Cart creation for a guest with no cart yet (silpo_create_shopping_cart's own documented workflow).
+    public static final String[] ADDRESSES = {"addresses", "items", "results"};
+    public static final String[] ADDRESS_TYPE = {"addressType", "type"};
+    public static final String[] LATITUDE = {"latitude", "lat"};
+    public static final String[] LONGITUDE = {"longitude", "lng", "lon"};
+    public static final String[] CITY = {"city"};
+    public static final String[] STREET = {"street"};
+    public static final String[] HOUSE = {"houseNumber", "house"};
+    public static final String[] DISTRICT = {"district"};
+    public static final String[] DELIVERY_TYPE_OPTIONS = {"deliveryTypes", "types", "results", "options"};
+    public static final String[] BRANCHES = {"branches", "items", "results"};
+    public static final String[] SLOT_END = {"to", "end", "endTime"};
+    public static final String[] SLOT_AVAILABLE = {"available"};
+
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private McpResponses() {}

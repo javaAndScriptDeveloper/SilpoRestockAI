@@ -18,8 +18,10 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -42,6 +44,13 @@ public class CartBuildingService {
     private static final String TOOL_TIME_SLOTS = "silpo_get_time_slots";
     private static final String TOOL_FIND_PRODUCTS = "silpo_find_products_batch";
     private static final String TOOL_ADD_PRODUCTS = "silpo_add_or_update_cart_products";
+    private static final String TOOL_MY_ADDRESSES = "silpo_get_my_delivery_addresses";
+    private static final String TOOL_DELIVERY_TYPES = "silpo_get_available_delivery_types";
+    private static final String TOOL_LIST_BRANCHES = "silpo_list_branches";
+    private static final String TOOL_CREATE_CART = "silpo_create_shopping_cart";
+
+    /** {@code silpo_get_available_delivery_types} hands back a branch directly for these; the rest need resolving. */
+    private static final Set<String> DELIVERY_TYPES_WITH_A_BRANCH_ALREADY = Set.of("DeliveryHome", "WideAssortDelivery", "B2B");
 
     /** Slot times without a zone are the household's, and the household is in Kyiv. */
     private static final ZoneId KYIV = ZoneId.of("Europe/Kyiv");
@@ -78,24 +87,18 @@ public class CartBuildingService {
                 .toList();
     }
 
-    /** Steps 1 and 2: which cart, and which branch it is bound to. */
+    /** Steps 1 and 2: which cart, and which branch it is bound to. Creates one first if this guest has none yet. */
     public CartContext getOrCreateCartContext(UUID userId) {
         JsonNode myCart = call(userId, TOOL_MY_CART, Map.of());
-        String cartId = McpResponses.findString(myCart, McpResponses.CART_ID).orElseThrow(() -> {
+        String cartId = McpResponses.findString(myCart, McpResponses.CART_ID).orElseGet(() -> {
             boolean serverSaysNoCartYet = McpResponses.findNode(myCart, McpResponses.CART_EXISTS)
                     .map(node -> !node.asBoolean(true))
                     .orElse(false);
             if (serverSaysNoCartYet) {
                 // Silpo's own answer, not a field-name mismatch: exists=false for a guest that has never had a
-                // cart. The documented six-step sequence has no "create a cart" step and none of this
-                // codebase's tools appear to offer one — see the DEBUG tool catalogue logged on connect
-                // (SilpoMcpClientImpl) for what is actually callable before wiring one up here.
-                log.error(
-                        "silpo_get_my_shopping_cart reports exists=false for user {} — this account has no cart yet"
-                                + " and nothing in the documented sequence creates one. Raw response: {}",
-                        userId,
-                        myCart);
-                return new CartBuildException("User " + userId + " has no Silpo cart yet");
+                // cart. silpo_create_shopping_cart is documented to create one from the guest's own saved
+                // delivery address, resolving a branch and a time slot along the way.
+                return createCart(userId);
             }
             // None of the key names in McpResponses.CART_ID matched — the live server disagrees with the
             // documented shape. Logging the raw answer is what turns this from a dead end into a one-line
@@ -104,7 +107,7 @@ public class CartBuildingService {
                     "silpo_get_my_shopping_cart answered but no field named {} was found. Raw response: {}",
                     String.join("/", McpResponses.CART_ID),
                     myCart);
-            return new CartBuildException("Silpo returned no cart id for user " + userId);
+            throw new CartBuildException("Silpo returned no cart id for user " + userId);
         });
 
         JsonNode cart = call(userId, TOOL_CART_BY_ID, Map.of("cartId", cartId));
@@ -121,6 +124,118 @@ public class CartBuildingService {
                 context.companyId(),
                 context.deliveryType());
         return context;
+    }
+
+    /**
+     * {@code silpo_create_shopping_cart}'s own documented workflow, for a guest {@code silpo_get_my_shopping_cart}
+     * reports {@code exists=false} for: a saved address gives coordinates, coordinates resolve a delivery type and
+     * branch, the branch's time slots give a window, and only then can a cart exist at all.
+     *
+     * <p>Scoped to home delivery and self-pickup — the two shapes a household grocery order actually takes. Nova
+     * Poshta and the rest need settlement/office resolution nothing here has a use for; a guest offered only one of
+     * those fails loudly instead of being handled by chance.
+     */
+    private String createCart(UUID userId) {
+        JsonNode addressesResponse = call(userId, TOOL_MY_ADDRESSES, Map.of());
+        JsonNode address = McpResponses.findArray(addressesResponse, McpResponses.ADDRESSES).stream()
+                .findFirst()
+                .orElseThrow(() -> {
+                    log.error(
+                            "user {} has no saved Silpo delivery address to create a cart from. Raw response: {}",
+                            userId,
+                            addressesResponse);
+                    return new CartBuildException(
+                            "User " + userId + " has no Silpo cart and no saved delivery address to create one from");
+                });
+        BigDecimal latitude = requireNumber(address, McpResponses.LATITUDE, userId, "a saved address had no latitude");
+        BigDecimal longitude =
+                requireNumber(address, McpResponses.LONGITUDE, userId, "a saved address had no longitude");
+        String addressType = McpResponses.findString(address, McpResponses.ADDRESS_TYPE).orElse("house");
+
+        JsonNode deliveryTypesResponse =
+                call(userId, TOOL_DELIVERY_TYPES, Map.of("latitude", latitude, "longitude", longitude));
+        List<JsonNode> options = McpResponses.findArray(deliveryTypesResponse, McpResponses.DELIVERY_TYPE_OPTIONS);
+        JsonNode chosen = options.stream()
+                .filter(option -> McpResponses.findString(option, McpResponses.DELIVERY_TYPE)
+                        .map(type -> DELIVERY_TYPES_WITH_A_BRANCH_ALREADY.contains(type) || "SelfPickup".equals(type))
+                        .orElse(false))
+                .findFirst()
+                .orElseThrow(() -> {
+                    log.error(
+                            "no home-delivery or self-pickup option for user {} at {},{}. Raw response: {}",
+                            userId,
+                            latitude,
+                            longitude,
+                            deliveryTypesResponse);
+                    return new CartBuildException(
+                            "Silpo offered no home-delivery or self-pickup option for user " + userId);
+                });
+        String deliveryType = McpResponses.findString(chosen, McpResponses.DELIVERY_TYPE)
+                .orElseThrow(() -> new CartBuildException("delivery type option had no deliveryType for user " + userId));
+        String branchId = McpResponses.findString(chosen, McpResponses.BRANCH_ID)
+                .orElseGet(() -> resolvePickupBranch(userId));
+
+        JsonNode timeSlotsResponse =
+                call(userId, TOOL_TIME_SLOTS, Map.of("branchId", branchId, "deliveryTypes", List.of(deliveryType)));
+        JsonNode slot = McpResponses.findArray(timeSlotsResponse, McpResponses.TIME_SLOTS).stream()
+                .filter(candidate -> McpResponses.findNode(candidate, McpResponses.SLOT_AVAILABLE)
+                        .map(JsonNode::asBoolean)
+                        .orElse(true))
+                .findFirst()
+                .orElseThrow(() -> {
+                    log.error(
+                            "no available time slot for branch {} to create a cart for user {}. Raw response: {}",
+                            branchId,
+                            userId,
+                            timeSlotsResponse);
+                    return new CartBuildException("Silpo offered no delivery time slot for branch " + branchId);
+                });
+        String start = McpResponses.findString(slot, McpResponses.SLOT_START)
+                .orElseThrow(() -> new CartBuildException("chosen time slot had no start for user " + userId));
+        String end = McpResponses.findString(slot, McpResponses.SLOT_END)
+                .orElseThrow(() -> new CartBuildException("chosen time slot had no end for user " + userId));
+
+        Map<String, Object> createArgs = new LinkedHashMap<>();
+        createArgs.put("addressType", addressType);
+        createArgs.put("latitude", latitude);
+        createArgs.put("longitude", longitude);
+        McpResponses.findString(address, McpResponses.CITY).ifPresent(v -> createArgs.put("city", v));
+        McpResponses.findString(address, McpResponses.STREET).ifPresent(v -> createArgs.put("street", v));
+        McpResponses.findString(address, McpResponses.HOUSE).ifPresent(v -> createArgs.put("house", v));
+        McpResponses.findString(address, McpResponses.DISTRICT).ifPresent(v -> createArgs.put("district", v));
+        createArgs.put("deliveryType", deliveryType);
+        createArgs.put("branchId", branchId);
+        createArgs.put("timeslot", Map.of("start", start, "end", end));
+
+        JsonNode created = call(userId, TOOL_CREATE_CART, createArgs);
+        String cartId = McpResponses.findString(created, McpResponses.CART_ID).orElseThrow(() -> {
+            log.error("silpo_create_shopping_cart answered but no cart id for user {}. Raw response: {}", userId, created);
+            return new CartBuildException("Silpo created no cart id for user " + userId);
+        });
+        log.info("MCP <- created cart {} for user {} at branch {}", cartId, userId, branchId);
+        return cartId;
+    }
+
+    /** {@code SelfPickup} comes back with no branch of its own — the guest has to be resolved one from the list. */
+    private String resolvePickupBranch(UUID userId) {
+        JsonNode branchesResponse = call(userId, TOOL_LIST_BRANCHES, Map.of("hasPickup", true));
+        return McpResponses.findArray(branchesResponse, McpResponses.BRANCHES).stream()
+                .findFirst()
+                .flatMap(branch -> McpResponses.findString(branch, McpResponses.BRANCH_ID))
+                .orElseThrow(() -> {
+                    log.error(
+                            "silpo_list_branches(hasPickup=true) returned no pickup branch for user {}. Raw response: {}",
+                            userId,
+                            branchesResponse);
+                    return new CartBuildException("Silpo offered no self-pickup branch for user " + userId);
+                });
+    }
+
+    private BigDecimal requireNumber(JsonNode node, String[] keys, UUID userId, String problem) {
+        return McpResponses.findNumber(node, keys).orElseThrow(() -> {
+            log.error("{} for user {}. Raw response: {}", problem, userId, node);
+            return new CartBuildException(problem + " for user " + userId);
+        });
     }
 
     /**
