@@ -6,6 +6,7 @@ import com.silporestockai.config.SilpoMcpProperties;
 import com.silporestockai.entity.SilpoOAuthToken;
 import com.silporestockai.exception.ApplicationException;
 import com.silporestockai.exception.SilpoNotConnectedException;
+import com.silporestockai.model.SilpoConnectedEvent;
 import com.silporestockai.model.SilpoLoginState;
 import com.silporestockai.repository.SilpoOAuthTokenRepository;
 import com.silporestockai.utils.TokenCipher;
@@ -23,6 +24,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -52,6 +54,7 @@ public class SilpoAuthService implements SilpoAccessTokenProvider {
     private final SilpoOAuthApiClient oauthApiClient;
     private final SilpoOAuthTokenRepository tokenRepository;
     private final TokenCipher tokenCipher;
+    private final ApplicationEventPublisher events;
 
     private final Map<String, SilpoLoginState> pendingLogins = new ConcurrentHashMap<>();
     private final AtomicReference<String> registeredClientId = new AtomicReference<>();
@@ -106,6 +109,9 @@ public class SilpoAuthService implements SilpoAccessTokenProvider {
         SilpoOAuthApiClient.TokenResponse response = oauthApiClient.token(form);
         store(login.userId(), response);
         log.info("user {} connected their Silpo account", login.userId());
+        // The browser is where this finishes, and the chat is where the person is waiting. Telegram sends no
+        // callback for a URL button, so nothing else would ever tell the conversation to carry on.
+        events.publishEvent(new SilpoConnectedEvent(login.userId()));
         return login.userId();
     }
 

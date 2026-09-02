@@ -6,10 +6,12 @@ import com.silporestockai.entity.UserProfile;
 import com.silporestockai.model.ConversationFlow;
 import com.silporestockai.model.OnboardingCompletedEvent;
 import com.silporestockai.model.OnboardingStep;
+import com.silporestockai.model.SilpoConnectedEvent;
 import com.silporestockai.model.SilpoProfileSnapshot;
 import com.silporestockai.model.TelegramButton;
 import com.silporestockai.model.TelegramIncomingUpdate;
 import com.silporestockai.repository.UserProfileRepository;
+import com.silporestockai.repository.UserRepository;
 import com.silporestockai.service.ConversationStateService;
 import com.silporestockai.service.SilpoAuthService;
 import com.silporestockai.service.telegram.TelegramOutboundService;
@@ -27,6 +29,8 @@ import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.event.EventListener;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 /**
@@ -77,11 +81,40 @@ public class OnboardingFlowService {
             Map.entry("сім", 7));
 
     private final UserProfileRepository userProfileRepository;
+    private final UserRepository userRepository;
     private final ConversationStateService conversationStateService;
     private final ProfileEnrichmentService profileEnrichmentService;
     private final TelegramOutboundService telegramOutboundService;
     private final SilpoAuthService silpoAuthService;
     private final ApplicationEventPublisher events;
+
+    /**
+     * Carries the conversation on after the guest finishes the Silpo login in their browser.
+     *
+     * <p>Asynchronous because enrichment calls four Silpo tools and then a model, and the thread this arrives on is
+     * answering the guest's browser. The listener does nothing but leave that thread; everything it would otherwise
+     * do lives in {@link #resumeAfterSilpoConnect(UUID)}, which a test can call directly.
+     */
+    @Async("applicationTaskExecutor")
+    @EventListener
+    public void onSilpoConnected(SilpoConnectedEvent event) {
+        resumeAfterSilpoConnect(event.userId());
+    }
+
+    /** Picks the conversation back up at the step the connect button left it on. Runs on the caller's thread. */
+    public void resumeAfterSilpoConnect(UUID userId) {
+        userRepository.findById(userId).ifPresent(user -> {
+            long chatId = user.getTelegramChatId();
+            ConversationState state = conversationStateService.load(chatId);
+            if (state.getCurrentFlow() != ConversationFlow.ONBOARDING
+                    || !OnboardingStep.AWAITING_CONNECT.name().equals(state.getCurrentStep())) {
+                // Connected again later, from the settings rather than mid-onboarding. Nothing to resume.
+                log.debug("user {} connected Silpo outside onboarding; not resuming a conversation", userId);
+                return;
+            }
+            enrichThenConfirm(user, chatId, new LinkedHashMap<>(state.getContext()));
+        });
+    }
 
     public boolean isOnboarded(UUID userId) {
         return userProfileRepository.findByUserId(userId).isPresent();

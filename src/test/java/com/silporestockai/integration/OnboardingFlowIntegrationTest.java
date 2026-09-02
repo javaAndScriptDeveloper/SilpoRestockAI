@@ -65,6 +65,9 @@ class OnboardingFlowIntegrationTest extends AbstractIntegrationTest {
     private ConversationStateService conversationStateService;
 
     @Autowired
+    private com.silporestockai.service.onboarding.OnboardingFlowService onboardingFlowService;
+
+    @Autowired
     private SilpoOAuthTokenRepository tokenRepository;
 
     @Autowired
@@ -158,6 +161,36 @@ class OnboardingFlowIntegrationTest extends AbstractIntegrationTest {
 
     private String lastMessageText() {
         return TELEGRAM.sentMessages().getLast().path("text").asText();
+    }
+
+    @Test
+    void theBrowserLoginCarriesTheConversationOnByItself() throws Exception {
+        sendText(1, "привіт");
+        connectSilpo();
+        CLAUDE.respondWithText("""
+                {"householdSize":4,"hasKids":true,"kidsAges":[3,7],\
+                "dietaryRestrictions":["без горіхів"],"frequentItems":["молоко"]}""");
+        UUID userId = userRepository.findByTelegramChatId(CHAT_ID).orElseThrow().getId();
+
+        // What the OAuth callback does when the browser comes back. Telegram sends nothing for a URL button, so
+        // without this the conversation would wait at AWAITING_CONNECT forever with the tokens already stored.
+        onboardingFlowService.resumeAfterSilpoConnect(userId);
+
+        assertThat(lastMessageText()).contains("4");
+        assertThat(conversationStateService.load(CHAT_ID).getCurrentStep())
+                .isEqualTo(OnboardingStep.CONFIRM_PROFILE.name());
+    }
+
+    @Test
+    void connectingOutsideOnboardingResumesNothing() {
+        User user = userAccountService.findOrCreate(CHAT_ID);
+        connectSilpo();
+        TELEGRAM.reset();
+
+        onboardingFlowService.resumeAfterSilpoConnect(user.getId());
+
+        // No conversation was waiting; reconnecting from settings must not start one.
+        assertThat(TELEGRAM.sentMessages()).isEmpty();
     }
 
     @Test
