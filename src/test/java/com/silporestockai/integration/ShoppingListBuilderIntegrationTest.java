@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.silporestockai.entity.MealPlan;
 import com.silporestockai.entity.ShoppingListItem;
 import com.silporestockai.entity.User;
 import com.silporestockai.entity.UserProfile;
@@ -11,6 +12,7 @@ import com.silporestockai.model.ConversationFlow;
 import com.silporestockai.repository.BaselineBasketRepository;
 import com.silporestockai.repository.ConversationStateRepository;
 import com.silporestockai.repository.CustomerOrderRepository;
+import com.silporestockai.repository.MealPlanRepository;
 import com.silporestockai.repository.ShoppingListItemRepository;
 import com.silporestockai.repository.UserProfileRepository;
 import com.silporestockai.repository.UserRepository;
@@ -68,6 +70,9 @@ class ShoppingListBuilderIntegrationTest extends AbstractIntegrationTest {
     @Autowired
     private UserRepository userRepository;
 
+    @Autowired
+    private MealPlanRepository mealPlanRepository;
+
     private User user;
 
     private static StubTelegramServer startTelegram() {
@@ -105,6 +110,7 @@ class ShoppingListBuilderIntegrationTest extends AbstractIntegrationTest {
         TELEGRAM.reset();
         CLAUDE.reset();
         shoppingListItemRepository.deleteAll();
+        mealPlanRepository.deleteAll();
         baselineBasketRepository.deleteAll();
         customerOrderRepository.deleteAll();
         conversationStateRepository.deleteAll();
@@ -231,6 +237,37 @@ class ShoppingListBuilderIntegrationTest extends AbstractIntegrationTest {
 
         assertThat(customerOrderRepository.findAll()).isEmpty();
         assertThat(conversationStateService.load(CHAT_ID).getCurrentFlow()).isEqualTo(ConversationFlow.NONE);
+    }
+
+    /**
+     * The exact failure a live account hit: a weekly meal plan hands its list to the same approval screen via
+     * {@code present()}, but those lines carry a {@code mealPlanId} — {@code order()} looked only at ad-hoc lines
+     * ({@code mealPlanId IS NULL}), found none, and told the person their list could not be built even though it was
+     * sitting right there on screen.
+     */
+    @Test
+    void tappingOrderWorksOnAListHandedOverFromAMealPlanNotJustAnAdHocOne() throws Exception {
+        MealPlan plan = mealPlanRepository.save(MealPlan.builder()
+                .id(UUID.randomUUID())
+                .userId(user.getId())
+                .weekStartDate(java.time.LocalDate.now())
+                .createdAt(java.time.Instant.now())
+                .build());
+        ShoppingListItem fromPlan = ShoppingListItem.builder()
+                .id(UUID.randomUUID())
+                .userId(user.getId())
+                .mealPlanId(plan.getId())
+                .name("Гречка")
+                .quantity(new BigDecimal("1"))
+                .unit("кг")
+                .build();
+        shoppingListItemRepository.save(fromPlan);
+        conversationStateService.save(
+                CHAT_ID, ConversationFlow.LIST_BUILDING, "AWAITING_APPROVAL", java.util.Map.of());
+
+        tapButton(1, ShoppingListMessageService.CALLBACK_ORDER);
+
+        assertThat(lastMessageText()).doesNotContain("Не вдалось скласти список");
     }
 
     @Test

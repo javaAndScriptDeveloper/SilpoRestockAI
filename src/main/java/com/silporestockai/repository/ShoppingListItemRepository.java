@@ -13,6 +13,9 @@ public interface ShoppingListItemRepository extends JpaRepository<ShoppingListIt
     /** The user's ad-hoc lines: everything they asked for outside a weekly plan. */
     List<ShoppingListItem> findByUserIdAndMealPlanIdIsNull(UUID userId);
 
+    /** Whatever list is currently on screen, ad-hoc or derived from a weekly plan — there is only ever one live. */
+    List<ShoppingListItem> findByUserId(UUID userId);
+
     /** Regenerating a plan replaces its list wholesale rather than diffing it. */
     void deleteByMealPlanId(UUID mealPlanId);
 }

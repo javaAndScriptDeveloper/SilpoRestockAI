@@ -186,8 +186,15 @@ public class ShoppingListBuilderService {
         cartConfirmationService.present(user, items, type);
     }
 
+    /**
+     * Whatever list {@link #present} last put in front of this user — ad-hoc or derived from a weekly plan.
+     * {@code order()} and the edit prompt both need "the list on screen right now", not one origin of it: a list
+     * {@link com.silporestockai.service.MealPlanHandoffService} handed over carries a {@code mealPlanId}, so filtering
+     * it out here made tapping «Замовити» right after a weekly plan fail with "could not build a list" — nothing was
+     * wrong, the query just never looked at the right rows.
+     */
     private List<ShoppingListItem> currentItems(UUID userId) {
-        return shoppingListItemRepository.findByUserIdAndMealPlanIdIsNull(userId);
+        return shoppingListItemRepository.findByUserId(userId);
     }
 
     /**
