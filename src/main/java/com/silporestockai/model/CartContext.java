@@ -7,6 +7,8 @@ package com.silporestockai.model;
  * @param branchId the store the cart is bound to; product search needs it
  * @param companyId Silpo's company identifier for that branch
  * @param deliveryType delivery or pickup, as the cart already has it
- * @param timeslot the slot the cart already carries, null when none is chosen yet
+ * @param timeslotStart the cart's chosen delivery window start, ISO format, null when none is chosen yet
+ * @param timeslotEnd the cart's chosen delivery window end, ISO format, null when none is chosen yet
  */
-public record CartContext(String cartId, String branchId, String companyId, String deliveryType, String timeslot) {}
+public record CartContext(
+        String cartId, String branchId, String companyId, String deliveryType, String timeslotStart, String timeslotEnd) {}

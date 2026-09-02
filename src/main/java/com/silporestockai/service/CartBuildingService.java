@@ -111,13 +111,14 @@ public class CartBuildingService {
             throw new CartBuildException("Silpo returned no cart id for user " + userId);
         });
 
-        JsonNode cart = call(userId, TOOL_CART_BY_ID, Map.of("cartId", cartId));
+        JsonNode cart = call(userId, TOOL_CART_BY_ID, Map.of("shoppingCartId", cartId));
         CartContext context = new CartContext(
                 cartId,
                 McpResponses.findString(cart, McpResponses.BRANCH_ID).orElse(null),
                 McpResponses.findString(cart, McpResponses.COMPANY_ID).orElse(null),
                 McpResponses.findString(cart, McpResponses.DELIVERY_TYPE).orElse(null),
-                McpResponses.findString(cart, McpResponses.TIMESLOT).orElse(null));
+                McpResponses.findString(cart, McpResponses.SLOT_START).orElse(null),
+                McpResponses.findString(cart, McpResponses.SLOT_END).orElse(null));
         log.info(
                 "MCP <- cart {} branch {} company {} delivery {}",
                 context.cartId(),
@@ -265,10 +266,13 @@ public class CartBuildingService {
      * null {@code startsAt} rather than failing the call, and simply never matches a household's usual day.
      */
     public List<OfferedSlot> offeredTimeSlots(UUID userId, CartContext context) {
-        JsonNode slots = call(
-                userId,
-                TOOL_TIME_SLOTS,
-                Map.of("branchId", nullSafe(context.branchId()), "deliveryType", nullSafe(context.deliveryType())));
+        Map<String, Object> arguments = new LinkedHashMap<>();
+        arguments.put("branchId", nullSafe(context.branchId()));
+        if (context.deliveryType() != null && !context.deliveryType().isBlank()) {
+            // deliveryTypes, plural, an array — sending the wrong enum value is worse than sending none at all.
+            arguments.put("deliveryTypes", List.of(context.deliveryType()));
+        }
+        JsonNode slots = call(userId, TOOL_TIME_SLOTS, arguments);
         List<OfferedSlot> offered = new ArrayList<>();
         for (JsonNode slot : McpResponses.findArray(slots, McpResponses.TIME_SLOTS)) {
             String id = McpResponses.findString(slot, McpResponses.SLOT_ID).orElse(null);
@@ -305,7 +309,14 @@ public class CartBuildingService {
         }
     }
 
-    /** Step 4. Chunked at the documented batch limit; an unmatched item is normal, not an error. */
+    /**
+     * Step 4. Chunked at the documented batch limit; an unmatched item is normal, not an error.
+     *
+     * <p>One search term per requested item, not a name-plus-quantity object: {@code silpo_find_products_batch}'s
+     * {@code products} field is an array of plain search strings, and the answer comes back as one {@code queries[]}
+     * entry per term — each carrying its own {@code query} text and its own {@code products[]} matches — not a single
+     * flat product list. The best match for a term is whichever product its own query entry lists first.
+     */
     public List<ResolvedProduct> resolveProducts(UUID userId, CartContext context, List<ShoppingListItem> items) {
         List<ResolvedProduct> resolved = new ArrayList<>();
         for (int start = 0; start < items.size(); start += SEARCH_BATCH_SIZE) {
@@ -314,32 +325,40 @@ public class CartBuildingService {
                     userId,
                     TOOL_FIND_PRODUCTS,
                     Map.of(
-                            "branchId",
-                            nullSafe(context.branchId()),
-                            "items",
-                            chunk.stream()
-                                    .map(item -> Map.of("name", item.getName(), "quantity", quantityOf(item)))
-                                    .toList()));
-            for (JsonNode product : McpResponses.findArray(found, McpResponses.PRODUCTS)) {
-                String name =
-                        McpResponses.findString(product, McpResponses.NAME).orElse(null);
-                String productId = McpResponses.findString(product, McpResponses.PRODUCT_ID)
-                        .orElse(null);
-                if (name == null || productId == null) {
+                            "branchId", nullSafe(context.branchId()),
+                            "deliveryType", nullSafe(context.deliveryType()),
+                            "timeslotStart", nullSafe(context.timeslotStart()),
+                            "timeslotEnd", nullSafe(context.timeslotEnd()),
+                            "products", chunk.stream().map(ShoppingListItem::getName).toList()));
+            for (JsonNode query : McpResponses.findArray(found, McpResponses.QUERIES)) {
+                String queryText = McpResponses.findString(query, McpResponses.NAME).orElse(null);
+                ShoppingListItem item = queryText == null
+                        ? null
+                        : chunk.stream()
+                                .filter(candidate -> candidate.getName().equalsIgnoreCase(queryText))
+                                .findFirst()
+                                .orElse(null);
+                if (item == null) {
                     continue;
                 }
-                chunk.stream()
-                        .filter(item -> item.getName().equalsIgnoreCase(name))
+                McpResponses.findArray(query, McpResponses.PRODUCTS).stream()
                         .findFirst()
-                        .ifPresent(item -> resolved.add(new ResolvedProduct(
-                                item.getName(),
-                                productId,
-                                McpResponses.findString(product, McpResponses.COMPANY_ID)
-                                        .orElse(context.companyId()),
-                                McpResponses.findString(product, McpResponses.BRANCH_ID)
-                                        .orElse(context.branchId()),
-                                quantityOf(item),
-                                item.getUnit())));
+                        .ifPresent(product -> {
+                            String productId = McpResponses.findString(product, McpResponses.PRODUCT_ID)
+                                    .orElse(null);
+                            if (productId == null) {
+                                return;
+                            }
+                            resolved.add(new ResolvedProduct(
+                                    item.getName(),
+                                    productId,
+                                    McpResponses.findString(product, McpResponses.COMPANY_ID)
+                                            .orElse(context.companyId()),
+                                    McpResponses.findString(product, McpResponses.BRANCH_ID)
+                                            .orElse(context.branchId()),
+                                    quantityOf(item),
+                                    item.getUnit()));
+                        });
             }
         }
         log.info("MCP <- resolved {} of {} shopping list lines", resolved.size(), items.size());
@@ -356,7 +375,7 @@ public class CartBuildingService {
                 userId,
                 TOOL_ADD_PRODUCTS,
                 Map.of(
-                        "cartId",
+                        "shoppingCartId",
                         context.cartId(),
                         "products",
                         products.stream()
@@ -371,7 +390,7 @@ public class CartBuildingService {
     /** Step 6: read the cart back rather than trusting the write. */
     public CartSummary getVerifiedCart(
             UUID userId, CartContext context, OfferedSlot deliverySlot, List<String> unresolved) {
-        JsonNode cart = call(userId, TOOL_CART_BY_ID, Map.of("cartId", context.cartId()));
+        JsonNode cart = call(userId, TOOL_CART_BY_ID, Map.of("shoppingCartId", context.cartId()));
 
         List<BasketItem> items = McpResponses.findArray(cart, McpResponses.ITEMS).stream()
                 .map(node -> new BasketItem(

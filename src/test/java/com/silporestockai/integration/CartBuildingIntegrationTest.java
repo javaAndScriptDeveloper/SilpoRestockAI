@@ -7,6 +7,7 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.silporestockai.entity.ShoppingListItem;
 import com.silporestockai.entity.SilpoOAuthToken;
 import com.silporestockai.entity.User;
@@ -120,9 +121,9 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
 
     private void scriptProductTools() {
         MCP.respondToTool("silpo_find_products_batch", """
-                {"products":[\
-                {"name":"цибуля","productId":"p-1","companyId":"company-3","branchId":"branch-7"},\
-                {"name":"гречка","productId":"p-2","companyId":"company-3","branchId":"branch-7"}]}""");
+                {"queries":[\
+                {"query":"цибуля","products":[{"name":"цибуля","productId":"p-1","companyId":"company-3","branchId":"branch-7"}]},\
+                {"query":"гречка","products":[{"name":"гречка","productId":"p-2","companyId":"company-3","branchId":"branch-7"}]}]}""");
         MCP.respondToTool("silpo_add_or_update_cart_products", "{\"ok\":true}");
     }
 
@@ -150,6 +151,11 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
         assertThat(context.companyId()).isEqualTo("company-3");
         assertThat(context.deliveryType()).isEqualTo("delivery");
         assertThat(MCP.calledTools()).containsExactly("silpo_get_my_shopping_cart", "silpo_get_shopping_cart_by_id");
+        // The live account this was checked against: the tool's own schema requires shoppingCartId, not cartId —
+        // sending the wrong key answered with "Invalid input: expected string, received undefined" every time.
+        JsonNode sent = MCP.callArguments("silpo_get_shopping_cart_by_id").getFirst();
+        assertThat(sent.has("shoppingCartId")).isTrue();
+        assertThat(sent.has("cartId")).isFalse();
     }
 
     @Test
@@ -191,6 +197,12 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
                         "silpo_find_products_batch",
                         "silpo_add_or_update_cart_products",
                         "silpo_get_shopping_cart_by_id");
+        // silpo_find_products_batch's own schema: products is an array of plain search-term strings, not objects.
+        JsonNode search = MCP.callArguments("silpo_find_products_batch").getFirst();
+        assertThat(search.path("products").get(0).isTextual()).isTrue();
+        assertThat(search.path("products").get(0).asText()).isEqualTo("цибуля");
+        JsonNode added = MCP.callArguments("silpo_add_or_update_cart_products").getFirst();
+        assertThat(added.has("shoppingCartId")).isTrue();
     }
 
     @Test

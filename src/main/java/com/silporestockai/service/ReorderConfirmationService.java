@@ -297,7 +297,10 @@ public class ReorderConfirmationService {
         if (products.isEmpty()) {
             return;
         }
-        call(userId, "silpo_add_or_update_cart_products", Map.of("cartId", context.cartId(), "products", products));
+        call(
+                userId,
+                "silpo_add_or_update_cart_products",
+                Map.of("shoppingCartId", context.cartId(), "products", products));
     }
 
     /** Books the chosen window. A refusal is reported, not fatal: checkout can still fix it. */

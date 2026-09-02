@@ -194,7 +194,8 @@ class ReorderConfirmationIntegrationTest extends AbstractIntegrationTest {
         MCP.respondToTool("silpo_get_promotions", "{\"promotions\":[]}");
         MCP.respondToTool(
                 "silpo_find_products_batch",
-                "{\"products\":[{\"name\":\"Молоко\",\"productId\":\"p-1\",\"branchId\":\"branch-7\"}]}");
+                "{\"queries\":[{\"query\":\"Молоко\",\"products\":[{\"name\":\"Молоко\",\"productId\":\"p-1\","
+                        + "\"branchId\":\"branch-7\"}]}]}");
         MCP.respondToTool(
                 "silpo_get_replacements",
                 "{\"replacements\":[{\"productId\":\"p-77\",\"name\":\"Хліб житній\",\"price\":27}]}");

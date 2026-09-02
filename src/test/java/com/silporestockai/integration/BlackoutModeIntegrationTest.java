@@ -27,6 +27,7 @@ import com.silporestockai.utils.TokenCipher;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
@@ -150,7 +151,8 @@ class BlackoutModeIntegrationTest extends AbstractIntegrationTest {
         MCP.respondToTool("silpo_add_or_update_cart_products", "{\"ok\":true}");
         MCP.respondToTool(
                 "silpo_find_products_batch",
-                "{\"products\":[{\"name\":\"консерви рибні\",\"productId\":\"p-77\",\"branchId\":\"branch-7\"}]}");
+                "{\"queries\":[{\"query\":\"консерви рибні\",\"products\":[{\"name\":\"консерви рибні\","
+                        + "\"productId\":\"p-77\",\"branchId\":\"branch-7\"}]}]}");
         MCP.respondToTool("silpo_get_shopping_cart_by_id", """
                 {"cartId":"cart-b","branchId":"branch-7","companyId":"company-3","deliveryType":"delivery",\
                 "items":[{"productId":"p-77","name":"Шпроти","unit":"шт","quantity":1,"price":72}],\
@@ -183,7 +185,8 @@ class BlackoutModeIntegrationTest extends AbstractIntegrationTest {
         sendText(1, "/blackout");
 
         JsonNode search = MCP.callArguments("silpo_find_products_batch").getFirst();
-        List<String> searched = search.path("items").findValuesAsText("name");
+        List<String> searched = new ArrayList<>();
+        search.path("products").forEach(term -> searched.add(term.asText()));
         assertThat(searched).contains("консерви рибні", "вода питна негазована", "готова страва");
         // Nothing that has to be cooked or kept cold.
         assertThat(searched).doesNotContain("пельмені", "молоко", "м'ясо");

@@ -34,6 +34,7 @@ public final class McpResponses {
     public static final String[] SLOT_ID = {"id", "slotId", "code"};
     public static final String[] SLOT_START = {"from", "start", "startTime", "dateTime", "date"};
     public static final String[] PRODUCTS = {"products", "items", "results"};
+    public static final String[] QUERIES = {"queries", "results"};
     public static final String[] ITEMS = {"items", "products", "lines"};
     public static final String[] NAME = {"name", "title", "query", "requestedName"};
     public static final String[] QUANTITY = {"quantity", "amount", "count"};

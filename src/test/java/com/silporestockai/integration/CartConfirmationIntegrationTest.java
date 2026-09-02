@@ -136,9 +136,9 @@ class CartConfirmationIntegrationTest extends AbstractIntegrationTest {
         MCP.respondToTool("silpo_get_my_shopping_cart", "{\"cartId\":\"cart-1\"}");
         MCP.respondToTool("silpo_get_time_slots", "{\"timeSlots\":[{\"id\":\"slot-1\",\"from\":\"18:00\"}]}");
         MCP.respondToTool("silpo_find_products_batch", """
-                {"products":[\
-                {"name":"цибуля","productId":"p-1","companyId":"company-3","branchId":"branch-7"},\
-                {"name":"гречка","productId":"p-2","companyId":"company-3","branchId":"branch-7"}]}""");
+                {"queries":[\
+                {"query":"цибуля","products":[{"name":"цибуля","productId":"p-1","companyId":"company-3","branchId":"branch-7"}]},\
+                {"query":"гречка","products":[{"name":"гречка","productId":"p-2","companyId":"company-3","branchId":"branch-7"}]}]}""");
         MCP.respondToTool("silpo_add_or_update_cart_products", "{\"ok\":true}");
         MCP.respondToTool("silpo_update_shopping_cart", "{\"ok\":true}");
         MCP.respondToTool("silpo_get_shopping_cart_by_id", """

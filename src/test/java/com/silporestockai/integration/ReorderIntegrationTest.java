@@ -24,6 +24,7 @@ import com.silporestockai.utils.TokenCipher;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
@@ -132,7 +133,8 @@ class ReorderIntegrationTest extends AbstractIntegrationTest {
         MCP.respondToTool("silpo_get_promotions", "{\"promotions\":[]}");
         MCP.respondToTool(
                 "silpo_find_products_batch",
-                "{\"products\":[{\"name\":\"Молоко\",\"productId\":\"p-1\",\"branchId\":\"branch-7\"}]}");
+                "{\"queries\":[{\"query\":\"Молоко\",\"products\":[{\"name\":\"Молоко\",\"productId\":\"p-1\","
+                        + "\"branchId\":\"branch-7\"}]}]}");
     }
 
     private void needs(List<String> runningLow, List<String> gone) {
@@ -156,7 +158,9 @@ class ReorderIntegrationTest extends AbstractIntegrationTest {
     }
 
     private static List<String> searchedNames(JsonNode arguments) {
-        return arguments.path("items").findValuesAsText("name");
+        List<String> names = new ArrayList<>();
+        arguments.path("products").forEach(term -> names.add(term.asText()));
+        return names;
     }
 
     @Test
@@ -189,8 +193,9 @@ class ReorderIntegrationTest extends AbstractIntegrationTest {
 
         reorderService.buildScheduledDeltaOrder(userId);
 
-        JsonNode search = MCP.callArguments("silpo_find_products_batch").getFirst();
-        assertThat(search.path("items").get(0).path("quantity").asInt()).isEqualTo(2);
+        // silpo_find_products_batch searches by name alone; quantity travels on the add-to-cart call instead.
+        JsonNode added = MCP.callArguments("silpo_add_or_update_cart_products").getFirst();
+        assertThat(added.path("products").get(0).path("quantity").asInt()).isEqualTo(2);
     }
 
     @Test
