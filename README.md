@@ -309,6 +309,38 @@ Base config is profile-agnostic; two overlays ship out of the box, selected via 
 - **`prod`** (`application-prod.yml`) — Hikari timeouts and leak detection, trimmed actuator exposure, `INFO`
   logging. The Compose `app` service sets `SPRING_PROFILES_ACTIVE=prod`.
 
+### Diagnostic logging
+
+Every incident hit debugging this application so far — "what did Silpo's cart tool actually send",
+"what did the model actually say" — came down to not having the raw wire content in front of us. Two
+things fix that, both at `DEBUG`, which `com.silporestockai: DEBUG` in `application.yml` already turns
+on:
+
+- **Outbound**: `FeignConfig` turns on `Logger.Level.FULL` for every Feign client — the Silpo and Google
+  OAuth exchanges, the calendar insert, the Respeecher call — printing headers and bodies verbatim.
+  `client/mcp/SilpoMcpClientImpl` logs the raw text/structured content of every MCP tool call the same
+  way, unfiltered by whatever key names `utils/McpResponses` happens to guess. `client/claude/ClaudeApiClientImpl`
+  logs the prompt sent and the completion received on every call — the line that would have shown the
+  eighty-four-bananas and invented-items bugs directly, instead of needing a pasted chat transcript.
+- **Inbound**: `config/RequestResponseLoggingFilter` logs every request this application receives — the
+  Telegram webhook, the two OAuth callbacks — with its full body and response. Health checks and API
+  docs are excluded; they carry nothing worth a dump and would only add noise.
+
+**Full logging means full logging, and that is exactly where a secret would otherwise leak** — an
+access token in an OAuth exchange, a bearer header, Telegram's shared secret. `utils/SecretRedactor`
+scrubs all of it, pattern-based rather than field-by-field, before any of the above reaches a line: it
+has to catch a secret in a header, a JSON body and a form-encoded body without knowing which shape it is
+looking at, and it is safer to over-redact than to miss one. `SecretRedactorTest` covers every shape
+this application's traffic can carry it in.
+
+Zalando Logbook was the library actually asked for. It was not used: this stack is Spring Boot 4 /
+Spring Framework 7, new enough that this repository has already needed several local workarounds for
+places the ecosystem has not caught up (`archunit.properties`'s history, Spotless pinned off its
+default, Liquibase's autoconfiguration module split out on its own). A third-party logging library's
+compatibility with anything this new was unverifiable, and redacting Logbook's own body-filter DSL
+correctly for four different secret shapes was no smaller a job than the two files above. Feign's own
+built-in `Logger.Level.FULL` needed no new dependency at all.
+
 ### Caching & resilience
 
 `spring.cache` is backed by **Caffeine** (tune via `spring.cache.caffeine.spec`); annotate methods with

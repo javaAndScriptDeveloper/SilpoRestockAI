@@ -3,6 +3,7 @@ package com.silporestockai.client.mcp;
 import com.silporestockai.config.SilpoMcpProperties;
 import com.silporestockai.exception.SilpoMcpException;
 import com.silporestockai.exception.SilpoMcpRateLimitedException;
+import com.silporestockai.utils.SecretRedactor;
 import io.github.resilience4j.retry.annotation.Retry;
 import io.modelcontextprotocol.client.McpClient;
 import io.modelcontextprotocol.client.McpSyncClient;
@@ -86,10 +87,20 @@ public class SilpoMcpClientImpl implements SilpoMcpClient {
                 }
             }
             boolean isError = Boolean.TRUE.equals(result.isError());
+            McpToolResponse response = McpToolResponse.of(textBlocks, result.structuredContent(), isError);
             if (isError) {
                 log.warn("Silpo MCP tool {} reported an error for user {}", toolName, userId);
             }
-            return McpToolResponse.of(textBlocks, result.structuredContent(), isError);
+            // The wire content, unfiltered by whatever key names utils.McpResponses happens to guess — this is
+            // what actually answers "what did Silpo send", the question every shape mismatch this application has
+            // hit so far came down to. No secrets to redact here: tool responses carry catalogue and order data,
+            // never the session's own access token.
+            log.debug(
+                    "Silpo MCP tool {} answered: text={} structuredContent={}",
+                    toolName,
+                    SecretRedactor.truncate(response.text(), 2000),
+                    response.structuredContent());
+            return response;
         });
     }
 

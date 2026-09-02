@@ -24,6 +24,7 @@ import com.silporestockai.exception.ClaudeApiException;
 import com.silporestockai.exception.ClaudeRateLimitedException;
 import com.silporestockai.exception.ClaudeStructuredOutputException;
 import com.silporestockai.exception.ClaudeUnavailableException;
+import com.silporestockai.utils.SecretRedactor;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
 import java.util.Base64;
@@ -77,22 +78,27 @@ public class ClaudeApiClientImpl implements ClaudeApiClient {
     @CircuitBreaker(name = "claude")
     @Retry(name = "claude")
     public String complete(String systemPrompt, String userPrompt) {
+        logPrompt("complete", systemPrompt, userPrompt);
         MessageCreateParams params =
                 baseParams(systemPrompt).addUserMessage(userPrompt).build();
-        return textOf(call(() -> client().messages().create(params)));
+        String text = textOf(call(() -> client().messages().create(params)));
+        logCompletion("complete", text);
+        return text;
     }
 
     @Override
     @CircuitBreaker(name = "claude")
     @Retry(name = "claude")
     public <T> T completeStructured(String systemPrompt, String userPrompt, Class<T> responseType) {
+        logPrompt("completeStructured " + responseType.getSimpleName(), systemPrompt, userPrompt);
         StructuredMessageCreateParams<T> params = baseParams(systemPrompt)
                 .addUserMessage(userPrompt)
                 .outputConfig(responseType, JsonSchemaLocalValidation.YES)
                 .build();
         StructuredMessage<T> message = call(() -> client().messages().create(params));
+        T value;
         try {
-            return message.content().stream()
+            value = message.content().stream()
                     .map(StructuredContentBlock::text)
                     .flatMap(Optional::stream)
                     .findFirst()
@@ -108,12 +114,17 @@ public class ClaudeApiClientImpl implements ClaudeApiClient {
             throw new ClaudeStructuredOutputException(
                     "Claude returned output that does not match " + responseType.getSimpleName(), e);
         }
+        // Already deserialised by the SDK, not the raw JSON — but this is still the line every "the model invented
+        // something" bug so far turned out to need: not what the prompt asked for, but what actually came back.
+        logCompletion("completeStructured " + responseType.getSimpleName(), String.valueOf(value));
+        return value;
     }
 
     @Override
     @CircuitBreaker(name = "claude")
     @Retry(name = "claude")
     public String image(String systemPrompt, String userPrompt, byte[] imageBytes, String mediaType) {
+        logPrompt("image", systemPrompt, userPrompt);
         Base64ImageSource source = Base64ImageSource.builder()
                 .data(Base64.getEncoder().encodeToString(imageBytes))
                 .mediaType(Base64ImageSource.MediaType.of(mediaType))
@@ -124,7 +135,27 @@ public class ClaudeApiClientImpl implements ClaudeApiClient {
                                 ImageBlockParam.builder().source(source).build()),
                         ContentBlockParam.ofText(userPrompt)))
                 .build();
-        return textOf(call(() -> client().messages().create(params)));
+        String text = textOf(call(() -> client().messages().create(params)));
+        logCompletion("image", text);
+        return text;
+    }
+
+    /**
+     * The prompt actually sent, not the template it was built from. No secrets pass through a prompt or a completion
+     * — the API key lives only in the client's own header, added once at construction — so nothing here needs
+     * {@link com.silporestockai.utils.SecretRedactor}; truncation alone keeps a long shopping-list or meal-plan prompt
+     * from drowning a log line.
+     */
+    private void logPrompt(String call, String systemPrompt, String userPrompt) {
+        log.debug(
+                "Claude -> {} system=\"{}\" user=\"{}\"",
+                call,
+                SecretRedactor.truncate(systemPrompt, 200),
+                SecretRedactor.truncate(userPrompt, 2000));
+    }
+
+    private void logCompletion(String call, String text) {
+        log.debug("Claude <- {}: {}", call, SecretRedactor.truncate(text, 2000));
     }
 
     private MessageCreateParams.Builder baseParams(String systemPrompt) {

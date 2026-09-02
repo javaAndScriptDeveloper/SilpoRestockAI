@@ -3,6 +3,9 @@ package com.silporestockai.integration;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.silporestockai.entity.SilpoOAuthToken;
 import com.silporestockai.entity.User;
 import com.silporestockai.repository.SilpoOAuthTokenRepository;
@@ -15,9 +18,11 @@ import java.net.URI;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -108,6 +113,43 @@ class SilpoOAuthIntegrationTest extends AbstractIntegrationTest {
         assertThat(tokenCipher.decrypt(stored.getRefreshToken())).isEqualTo(StubOAuthServer.REFRESH_TOKEN);
         assertThat(stored.getExpiresAt()).isNotNull();
         assertThat(stored.toString()).doesNotContain(StubOAuthServer.ACCESS_TOKEN);
+    }
+
+    /**
+     * Full Feign logging is on for every client — {@code FeignConfig} turns it on globally, so that a shape mismatch
+     * like task 09's cart-id bug can be read straight from the log next time. That means this exchange's headers and
+     * bodies are printed verbatim by Feign's own logger, which is exactly where {@code TokenResponse.toString()}'s
+     * protection does not reach: this test proves the redacting logger catches what that override cannot.
+     */
+    @Test
+    void fullFeignLoggingNeverPrintsTheExchangedTokensOrTheAuthorizationCode() throws Exception {
+        UUID userId = persistedUser();
+        String state = queryOf(mockMvc.perform(get("/auth/silpo/start").param("userId", userId.toString()))
+                        .andReturn()
+                        .getResponse()
+                        .getHeader("Location"))
+                .get("state");
+
+        Logger logger = (Logger) LoggerFactory.getLogger("com.silporestockai.client.FeignHttp");
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            mockMvc.perform(
+                    get("/auth/silpo/callback").param("code", "auth-code-123").param("state", state));
+        } finally {
+            logger.detachAppender(appender);
+        }
+
+        List<String> lines =
+                appender.list.stream().map(ILoggingEvent::getFormattedMessage).toList();
+        // Something was actually logged — otherwise this test would pass by accident, proving nothing.
+        assertThat(lines).isNotEmpty();
+        assertThat(lines)
+                .noneMatch(line -> line.contains(StubOAuthServer.ACCESS_TOKEN))
+                .noneMatch(line -> line.contains(StubOAuthServer.REFRESH_TOKEN))
+                .noneMatch(line -> line.contains("auth-code-123"));
+        assertThat(lines).anyMatch(line -> line.contains("***"));
     }
 
     @Test

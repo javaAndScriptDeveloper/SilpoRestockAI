@@ -655,11 +655,31 @@ Two log lines are worth watching throughout: every outbound MCP call prints at I
 {args}`, and every meaningful state change prints its own line. A console recording of terminal 2
 during steps 6–7 is the most convincing artefact this project produces.
 
+### When INFO isn't enough
+
+`logging.level.com.silporestockai: DEBUG` is already the default (`application.yml`), so the moment
+something looks wrong, the raw wire content is already in terminal 2 — nothing to turn on:
+
+- **`MCP <- ... answered: text=... structuredContent=...`** — Silpo's actual reply to every tool call,
+  not filtered through `McpResponses`'s guessed key names. This is what would have shown, immediately,
+  what field name a live account's `silpo_get_my_shopping_cart` actually used.
+- **`Claude -> ...` / `Claude <-`** — the exact prompt sent and the exact completion received, on every
+  call. This is the line that shows a bananas-shaped or invented-items-shaped answer directly, instead
+  of needing you to paste the chat back here.
+- **`HTTP -> POST /telegram/webhook ...` / `HTTP <-`** — the full inbound request and response for the
+  webhook and both OAuth callbacks.
+- Every Feign call (the two OAuth exchanges, the calendar insert, Respeecher) logs its full headers and
+  body under the logger `com.silporestockai.client.FeignHttp`.
+
+None of this ever prints a real secret — access tokens, the bot token, API keys, the Telegram webhook
+secret, an OAuth authorization code all come back as `***`. If you ever see one that didn't, that is a
+bug in `utils/SecretRedactor`, not a green light to keep quiet about it.
+
 ---
 
 ## Automated tests, for comparison
 
-Everything above is also covered by 211 automated tests against stub servers:
+Everything above is also covered by 238 automated tests against stub servers:
 
 ```bash
 make test          # unit + integration, needs Docker

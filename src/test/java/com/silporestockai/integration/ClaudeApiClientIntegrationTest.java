@@ -67,6 +67,33 @@ class ClaudeApiClientIntegrationTest extends AbstractIntegrationTest {
         assertThat(request.path("messages").get(0).path("role").asText()).isEqualTo("user");
     }
 
+    /**
+     * The bananas bug and the invented-items bug were both "the model said something we did not expect", diagnosed
+     * only by asking the user to paste a chat transcript back. The prompt and the completion are now in the log on
+     * every call, so that question no longer needs a live conversation to answer.
+     */
+    @Test
+    void logsThePromptAndTheCompletionAtDebug() {
+        STUB.respondWithText("сир, молоко, хліб");
+
+        Logger logger = (Logger) LoggerFactory.getLogger("com.silporestockai.client.claude.ClaudeApiClientImpl");
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            claudeApiClient.complete("Ти помічник із закупів.", "Що купити на алергію на молочку?");
+        } finally {
+            logger.detachAppender(appender);
+        }
+
+        var debugLines = appender.list.stream()
+                .filter(event -> event.getLevel() == ch.qos.logback.classic.Level.DEBUG)
+                .map(ILoggingEvent::getFormattedMessage)
+                .toList();
+        assertThat(debugLines).anyMatch(line -> line.contains("Що купити на алергію на молочку?"));
+        assertThat(debugLines).anyMatch(line -> line.contains("сир, молоко, хліб"));
+    }
+
     @Test
     void mapsAnAuthenticationFailureToClaudeApiExceptionWithoutRetrying() {
         STUB.injectStatus(401);

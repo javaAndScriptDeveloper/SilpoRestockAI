@@ -92,6 +92,30 @@ class SilpoMcpClientIntegrationTest extends AbstractIntegrationTest {
         assertThat(STUB.seenCookieHeaders()).contains("mcp-user=" + userId);
     }
 
+    /**
+     * The exact question task 09's cart-id bug could not answer at the time: what did Silpo actually send. Every
+     * call now says so, not just the ones that end in a shape mismatch.
+     */
+    @Test
+    void logsTheRawResponseOfEveryCallNotJustFailures() {
+        STUB.respondToTool("silpo_get_my_profile", "{\"householdSize\":4}");
+
+        Logger logger = (Logger) LoggerFactory.getLogger("com.silporestockai.client.mcp.SilpoMcpClientImpl");
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            silpoMcpClient.callTool("silpo_get_my_profile", Map.of(), userId);
+        } finally {
+            logger.detachAppender(appender);
+        }
+
+        assertThat(appender.list.stream()
+                        .filter(event -> event.getLevel() == ch.qos.logback.classic.Level.DEBUG)
+                        .map(ILoggingEvent::getFormattedMessage))
+                .anyMatch(line -> line.contains("silpo_get_my_profile") && line.contains("householdSize"));
+    }
+
     @Test
     void backsOffAndRetriesWhenTheServerRateLimits() {
         STUB.injectStatus("tools/call", 429);
