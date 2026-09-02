@@ -132,11 +132,13 @@ class MealPlanHandoffIntegrationTest extends AbstractIntegrationTest {
         assertThat(mealPlanRepository.count()).isEqualTo(1);
         // Three distinct ingredients across the week, each repeated every day: the list is the collapsed form.
         assertThat(shoppingListItemRepository.count()).isEqualTo(3);
-        // The plan announcement is the first message, not the last: the hand-off goes straight on to build a
-        // cart from the list, and this test scripts no Silpo server for it to reach.
+        // The plan announcement is the first message, not the last: the hand-off goes straight on to show the
+        // list for approval rather than building a cart on its own — nothing reaches Silpo until a person agrees.
         String message = TELEGRAM.sentMessages().getFirst().path("text").asText();
         assertThat(message).contains("Вівсянка").contains("Борщ").contains("3 позицій");
-        assertThat(TELEGRAM.sentMessages().getLast().path("text").asText()).contains("Кошик зібрати не вдалось");
+        assertThat(TELEGRAM.sentMessages().getLast().path("text").asText())
+                .contains("Ось що пропоную взяти")
+                .contains("Всього 3 позиції");
     }
 
     @Test

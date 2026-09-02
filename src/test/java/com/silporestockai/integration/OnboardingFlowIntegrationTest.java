@@ -339,4 +339,24 @@ class OnboardingFlowIntegrationTest extends AbstractIntegrationTest {
                 .isEqualTo(OnboardingStep.ASK_HOUSEHOLD.name());
         assertThat(userProfileRepository.count()).isZero();
     }
+
+    /**
+     * A live account hit this: the snapshot was not empty (it had frequent purchases), but nothing it carried is
+     * shown on the confirmation screen — the screen went out as "Ось що знайшов:" with nothing under it. Nothing
+     * usable found must fall back to asking, exactly like a snapshot with nothing in it at all.
+     */
+    @Test
+    void fallsBackToAskingWhenTheSnapshotHasNothingTheConfirmationScreenCanShow() throws Exception {
+        sendText(1, "привіт");
+        connectSilpo();
+        CLAUDE.respondWithText("{\"frequentItems\":[\"молоко\",\"хліб\"]}");
+
+        tapButton(2, "onb:connected");
+
+        assertThat(TELEGRAM.sentMessages().stream().map(m -> m.path("text").asText()))
+                .anyMatch(text -> text.contains("Нічого не знайшов"));
+        assertThat(lastMessageText()).contains("Скільки вас удома?");
+        assertThat(conversationStateService.load(CHAT_ID).getCurrentStep())
+                .isEqualTo(OnboardingStep.ASK_HOUSEHOLD.name());
+    }
 }

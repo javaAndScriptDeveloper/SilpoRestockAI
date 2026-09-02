@@ -203,9 +203,20 @@ public class OnboardingFlowService {
         putIfPresent(context, KEY_KIDS_AGES, snapshot.kidsAges());
         putIfPresent(context, KEY_RESTRICTIONS, snapshot.dietaryRestrictions());
 
+        String found = describe(context);
+        if (found.isBlank()) {
+            // isEmpty() looked at fields this confirmation screen does not show — frequentItems, most likely — and
+            // called the snapshot non-empty on their account alone. Nothing usable for a person to confirm reached
+            // context, so this is the same outcome as an empty snapshot: say so, and ask instead of showing a
+            // "Ось що знайшов:" with nothing under it.
+            telegramOutboundService.sendMessage(chatId, "Нічого не знайшов у профілі «Сільпо». Запитаю сам.");
+            askNext(chatId, OnboardingStep.ASK_HOUSEHOLD, context, user);
+            return;
+        }
+
         telegramOutboundService.sendMessageWithButtons(
                 chatId,
-                "Ось що знайшов:\n" + describe(context) + "\nВсе вірно?",
+                "Ось що знайшов:\n" + found + "\nВсе вірно?",
                 List.of(
                         TelegramButton.callback("Все вірно", CALLBACK_CONFIRM),
                         TelegramButton.callback("Виправлю", CALLBACK_CORRECT)));
@@ -312,11 +323,9 @@ public class OnboardingFlowService {
     }
 
     private static void putIfPresent(Map<String, Object> context, String key, Object value) {
-        // Zero people is not an answer, it is an enrichment that found nothing — and storing it would skip the
-        // question that fills the gap.
-        if (value instanceof Number number && number.intValue() <= 0) {
-            return;
-        }
+        // A household size of zero is rejected upstream, in ProfileEnrichmentService, at the boundary where
+        // untrusted model output enters the system — not here, where it would be one of several unrelated fields
+        // passing through a generic helper.
         if (value != null && !(value instanceof List<?> list && list.isEmpty())) {
             context.put(key, value);
         }

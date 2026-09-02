@@ -57,11 +57,31 @@ public class ProfileEnrichmentService {
         }
 
         try {
-            return claudeApiClient.completeStructured(EXTRACTION_PROMPT, gathered, SilpoProfileSnapshot.class);
+            return sanitize(
+                    claudeApiClient.completeStructured(EXTRACTION_PROMPT, gathered, SilpoProfileSnapshot.class));
         } catch (RuntimeException e) {
             log.warn("could not normalise the Silpo profile for user {}: {}", userId, e.getMessage());
             return SilpoProfileSnapshot.empty();
         }
+    }
+
+    /**
+     * Structured output still emits a numeric default sometimes despite the prompt saying to leave an unknown field
+     * empty, and a household of zero people does not exist. Clamping it to null here, once, at the boundary where
+     * untrusted model output enters the system, is what keeps {@link SilpoProfileSnapshot#isEmpty()} honest — a
+     * snapshot with nothing usable in it must report itself as empty, or the onboarding confirmation screen ends up
+     * blank instead of falling back to asking.
+     */
+    private static SilpoProfileSnapshot sanitize(SilpoProfileSnapshot snapshot) {
+        if (snapshot.householdSize() != null && snapshot.householdSize() <= 0) {
+            return new SilpoProfileSnapshot(
+                    null,
+                    snapshot.hasKids(),
+                    snapshot.kidsAges(),
+                    snapshot.dietaryRestrictions(),
+                    snapshot.frequentItems());
+        }
+        return snapshot;
     }
 
     private List<String> collectToolOutput(UUID userId) {

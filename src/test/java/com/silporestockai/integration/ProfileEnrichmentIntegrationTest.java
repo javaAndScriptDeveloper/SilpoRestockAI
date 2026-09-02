@@ -151,4 +151,32 @@ class ProfileEnrichmentIntegrationTest extends AbstractIntegrationTest {
 
         assertThat(snapshot.isEmpty()).isTrue();
     }
+
+    /**
+     * A household of zero people does not exist. Structured output emitted it anyway despite the prompt saying to
+     * leave an unknown field empty, and on a live account it made isEmpty() report false — a snapshot with genuinely
+     * nothing usable in it — which sent the onboarding confirmation screen out with nothing to show.
+     */
+    @Test
+    void aHouseholdSizeOfZeroIsTreatedAsUnknownRatherThanAsZeroPeople() {
+        UUID userId = connectedUser(7205L);
+        CLAUDE.respondWithText("{\"householdSize\":0}");
+
+        SilpoProfileSnapshot snapshot = profileEnrichmentService.enrich(userId);
+
+        assertThat(snapshot.householdSize()).isNull();
+        assertThat(snapshot.isEmpty()).isTrue();
+    }
+
+    @Test
+    void aHouseholdSizeOfZeroDoesNotSuppressOtherFieldsTheModelFound() {
+        UUID userId = connectedUser(7206L);
+        CLAUDE.respondWithText("{\"householdSize\":0,\"dietaryRestrictions\":[\"без горіхів\"]}");
+
+        SilpoProfileSnapshot snapshot = profileEnrichmentService.enrich(userId);
+
+        assertThat(snapshot.householdSize()).isNull();
+        assertThat(snapshot.dietaryRestrictions()).containsExactly("без горіхів");
+        assertThat(snapshot.isEmpty()).isFalse();
+    }
 }
