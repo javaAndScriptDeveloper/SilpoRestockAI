@@ -69,3 +69,20 @@ a gate in front of it.
 
 - «3к», «3 тис», «3000 грн» all parse as three thousand. A budget of three hryvnia is not a budget.
 - An enrichment that returns a household size of zero is treated as no answer rather than as zero people.
+
+## Second incident: the balance rule ate a two-item request
+
+Live testing turned up the mirror image of the bananas bug. «12–25 positions, balanced, never one
+product» exists to stop a restrictive answer collapsing to one item — and the same rule made
+«давай воду та ковбасу» come back with eighteen invented staples nobody asked for.
+
+The prompt could not tell "build me a whole week" apart from "just these two things", so it now names
+the two request shapes explicitly and asks the model to classify before writing anything: a **concrete
+list** (named products — respond with exactly those, nothing added) versus a **description or photo**
+(no named products — build the full balanced week, twelve to twenty-five items). Editing an existing
+list is called out as its own case: apply the change to what is there, never regenerate it as though it
+were a fresh type-B request.
+
+This is a prompt-only fix. `StubAnthropicServer` returns a canned response regardless of what the prompt
+says, so the automated suite cannot verify a real model actually classifies these two cases correctly —
+that has to be read from a live conversation, the way this bug was found.
