@@ -24,6 +24,7 @@ import lombok.extern.slf4j.Slf4j;
 public final class McpResponses {
 
     public static final String[] CART_ID = {"cartId", "shoppingCartId", "id"};
+    public static final String[] CART_EXISTS = {"exists"};
     public static final String[] BRANCH_ID = {"branchId", "filialId"};
     public static final String[] COMPANY_ID = {"companyId"};
     public static final String[] PRODUCT_ID = {"productId", "id"};

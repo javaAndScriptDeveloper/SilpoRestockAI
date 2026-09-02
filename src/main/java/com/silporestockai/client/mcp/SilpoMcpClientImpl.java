@@ -180,11 +180,15 @@ public class SilpoMcpClientImpl implements SilpoMcpClient {
                 .build();
 
         client.initialize();
+        List<McpSchema.Tool> tools = client.listTools().tools();
         // The live catalogue is the only authority on what is callable; the count also doubles as smoke-test output.
-        log.info(
-                "connected to Silpo MCP for user {} — {} tools available",
-                userId,
-                client.listTools().tools().size());
+        log.info("connected to Silpo MCP for user {} — {} tools available", userId, tools.size());
+        // Full names + schemas at DEBUG: the one place to look when a cart step needs a tool this codebase has never
+        // called (e.g. no cart exists yet for a guest — the documented six-step sequence assumes one already does).
+        if (log.isDebugEnabled()) {
+            tools.forEach(tool ->
+                    log.debug("Silpo MCP tool {} — {} — schema {}", tool.name(), tool.description(), tool.inputSchema()));
+        }
         return client;
     }
 

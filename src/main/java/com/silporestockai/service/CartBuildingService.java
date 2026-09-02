@@ -82,6 +82,21 @@ public class CartBuildingService {
     public CartContext getOrCreateCartContext(UUID userId) {
         JsonNode myCart = call(userId, TOOL_MY_CART, Map.of());
         String cartId = McpResponses.findString(myCart, McpResponses.CART_ID).orElseThrow(() -> {
+            boolean serverSaysNoCartYet = McpResponses.findNode(myCart, McpResponses.CART_EXISTS)
+                    .map(node -> !node.asBoolean(true))
+                    .orElse(false);
+            if (serverSaysNoCartYet) {
+                // Silpo's own answer, not a field-name mismatch: exists=false for a guest that has never had a
+                // cart. The documented six-step sequence has no "create a cart" step and none of this
+                // codebase's tools appear to offer one — see the DEBUG tool catalogue logged on connect
+                // (SilpoMcpClientImpl) for what is actually callable before wiring one up here.
+                log.error(
+                        "silpo_get_my_shopping_cart reports exists=false for user {} — this account has no cart yet"
+                                + " and nothing in the documented sequence creates one. Raw response: {}",
+                        userId,
+                        myCart);
+                return new CartBuildException("User " + userId + " has no Silpo cart yet");
+            }
             // None of the key names in McpResponses.CART_ID matched — the live server disagrees with the
             // documented shape. Logging the raw answer is what turns this from a dead end into a one-line
             // fix: add whatever field name shows up here to CART_ID.

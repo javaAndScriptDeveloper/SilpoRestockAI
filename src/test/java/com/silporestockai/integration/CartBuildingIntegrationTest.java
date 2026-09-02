@@ -307,4 +307,31 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
                 .anyMatch(event -> event.getFormattedMessage().contains("somethingElse")
                         && event.getFormattedMessage().contains("cart-1"));
     }
+
+    /**
+     * The other live failure, distinct from a field-name mismatch: {@code exists:false} is Silpo's own signal that
+     * this guest has never had a cart, not a shape our key-name list has to learn. Collapsing both into the same
+     * generic "no cart id" message would send the next reader chasing a naming fix that does not exist.
+     */
+    @Test
+    void logsThatTheGuestHasNoCartYetRatherThanClaimingAFieldNameMismatch() {
+        UUID userId = connectedUser(8411L);
+        MCP.respondToTool("silpo_get_my_shopping_cart", "{\"success\":true,\"shoppingCartId\":null,\"exists\":false}");
+
+        Logger logger = (Logger) LoggerFactory.getLogger(CartBuildingService.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            assertThatThrownBy(() -> cartBuildingService.getOrCreateCartContext(userId))
+                    .isInstanceOf(CartBuildException.class)
+                    .hasMessageContaining("no Silpo cart yet");
+        } finally {
+            logger.detachAppender(appender);
+        }
+
+        assertThat(appender.list)
+                .filteredOn(event -> event.getLevel() == Level.ERROR)
+                .anyMatch(event -> event.getFormattedMessage().contains("exists=false"));
+    }
 }
