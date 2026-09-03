@@ -9,6 +9,11 @@ public enum OnboardingStep {
     AWAITING_CONNECT,
     /** Showing what MCP found; waiting for confirmation or a correction. */
     CONFIRM_PROFILE,
+    /**
+     * The Telegram WebApp form is open (or its manual-fallback button was offered); waiting for
+     * {@code web_app_data} or the fallback button's text.
+     */
+    AWAITING_WEBAPP_FORM,
     /** Asking how many people eat at home. */
     ASK_HOUSEHOLD,
     /** Asking about allergies and diet restrictions. */
