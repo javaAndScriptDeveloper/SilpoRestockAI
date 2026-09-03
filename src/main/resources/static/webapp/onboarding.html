@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Анкета Комора</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  body { font-family: -apple-system, sans-serif; padding: 16px; background: var(--tg-theme-bg-color, #fff);
+         color: var(--tg-theme-text-color, #000); }
+  fieldset { border: 1px solid #ccc; border-radius: 8px; margin-bottom: 16px; padding: 12px; }
+  legend { font-weight: 600; }
+  label { display: block; margin: 8px 0 4px; }
+  input[type=number] { width: 60px; }
+  .child-row { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+  button { padding: 8px 12px; }
+</style>
+</head>
+<body>
+<form id="onboarding-form">
+  <fieldset>
+    <legend>Дорослі</legend>
+    <label>Чоловіків: <input type="number" id="adultMale" min="0" value="1"></label>
+    <label>Жінок: <input type="number" id="adultFemale" min="0" value="1"></label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Діти</legend>
+    <div id="children"></div>
+    <button type="button" id="addChild">+ дитина</button>
+  </fieldset>
+
+  <fieldset>
+    <legend>Алергії та обмеження</legend>
+    <label><input type="checkbox" name="restriction" value="nuts"> Горіхи</label>
+    <label><input type="checkbox" name="restriction" value="lactose"> Лактоза</label>
+    <label><input type="checkbox" name="restriction" value="gluten"> Глютен</label>
+    <label><input type="checkbox" name="restriction" value="seafood"> Морепродукти</label>
+    <label>Інше: <input type="text" id="restrictionsOther"></label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Тип харчування</legend>
+    <select id="dietType">
+      <option value="NONE">Без обмежень</option>
+      <option value="VEGETARIAN">Вегетаріанство</option>
+      <option value="VEGAN">Веганство</option>
+      <option value="GLUTEN_FREE">Без глютену</option>
+      <option value="KETO">Кето</option>
+      <option value="OTHER">Інше</option>
+    </select>
+  </fieldset>
+
+  <fieldset>
+    <legend>Скільки часу на готування</legend>
+    <label><input type="radio" name="cookingTime" value="COOKS_DAILY" checked> Готую потроху щодня</label>
+    <label><input type="radio" name="cookingTime" value="COOKS_BATCH"> Готую раз на кілька днів, наперед</label>
+    <label><input type="radio" name="cookingTime" value="READY_MEALS_ONLY"> Часу немає, лише готова їжа</label>
+  </fieldset>
+
+  <button type="submit">Готово</button>
+</form>
+<script src="onboarding.js"></script>
+</body>
+</html>

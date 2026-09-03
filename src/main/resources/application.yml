@@ -194,6 +194,10 @@ telegram:
   webhook-secret: ${TELEGRAM_WEBHOOK_SECRET:}
   # Overridden by tests to point the SDK at a local stub. Not a production knob.
   api-url: ${TELEGRAM_API_URL:https://api.telegram.org}
+  # Public HTTPS base URL Spring serves static resources from — used to build the onboarding WebApp form's
+  # URL (/webapp/onboarding.html). Blank skips the WebApp button entirely; onboarding goes straight to the
+  # text-chain fallback.
+  web-app-base-url: ${TELEGRAM_WEB_APP_BASE_URL:}
 
 claude:
   api-key: ${ANTHROPIC_API_KEY:}
