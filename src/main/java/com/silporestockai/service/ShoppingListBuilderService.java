@@ -9,7 +9,6 @@ import com.silporestockai.model.OrderType;
 import com.silporestockai.model.ShoppingListDraft;
 import com.silporestockai.model.TelegramIncomingUpdate;
 import com.silporestockai.repository.BaselineBasketRepository;
-import com.silporestockai.repository.ShoppingListItemRepository;
 import com.silporestockai.repository.UserProfileRepository;
 import com.silporestockai.service.telegram.ShoppingListMessageService;
 import com.silporestockai.service.telegram.TelegramOutboundService;
@@ -45,7 +44,6 @@ public class ShoppingListBuilderService {
 
     private final ClaudeApiClient claudeApiClient;
     private final ShoppingListService shoppingListService;
-    private final ShoppingListItemRepository shoppingListItemRepository;
     private final UserProfileRepository userProfileRepository;
     private final BaselineBasketRepository baselineBasketRepository;
     private final ConversationStateService conversationStateService;
@@ -57,7 +55,6 @@ public class ShoppingListBuilderService {
     public ShoppingListBuilderService(
             ClaudeApiClient claudeApiClient,
             ShoppingListService shoppingListService,
-            ShoppingListItemRepository shoppingListItemRepository,
             UserProfileRepository userProfileRepository,
             BaselineBasketRepository baselineBasketRepository,
             ConversationStateService conversationStateService,
@@ -67,7 +64,6 @@ public class ShoppingListBuilderService {
             @Value("classpath:prompts/shopping-list-system.txt") Resource systemPromptResource) {
         this.claudeApiClient = claudeApiClient;
         this.shoppingListService = shoppingListService;
-        this.shoppingListItemRepository = shoppingListItemRepository;
         this.userProfileRepository = userProfileRepository;
         this.baselineBasketRepository = baselineBasketRepository;
         this.conversationStateService = conversationStateService;
@@ -176,7 +172,7 @@ public class ShoppingListBuilderService {
             return;
         }
 
-        shoppingListItemRepository.deleteAll(shoppingListItemRepository.findByUserIdAndMealPlanIdIsNull(user.getId()));
+        shoppingListService.keepOnly(user.getId(), List.of());
         List<ShoppingListItem> stored = shoppingListService.createAdHocList(user.getId(), draft.items());
         present(user, stored);
     }
@@ -205,7 +201,7 @@ public class ShoppingListBuilderService {
      * wrong, the query just never looked at the right rows.
      */
     private List<ShoppingListItem> currentItems(UUID userId) {
-        return shoppingListItemRepository.findByUserId(userId);
+        return shoppingListService.currentItems(userId);
     }
 
     /**

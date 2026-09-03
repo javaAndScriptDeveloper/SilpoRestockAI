@@ -100,7 +100,8 @@ class ShoppingListIntegrationTest extends AbstractIntegrationTest {
     void sumsAnIngredientThatAppearsInSeveralMealsAndKeepsMismatchedUnitsApart() {
         MealPlan plan = persistedPlan(8301L);
 
-        List<ShoppingListItem> items = shoppingListService.deriveFromMealPlan(plan.getId());
+        List<ShoppingListItem> items = shoppingListService.deriveFromMealPlan(
+                plan.getId(), com.silporestockai.model.ShoppingListSourceType.RECIPE_DERIVED);
 
         assertThat(lineFor(items, "цибуля", "кг").getQuantity()).isEqualByComparingTo("0.5");
         assertThat(lineFor(items, "цибуля", "шт").getQuantity()).isEqualByComparingTo("2");
@@ -115,11 +116,18 @@ class ShoppingListIntegrationTest extends AbstractIntegrationTest {
     @Test
     void derivingTwiceReplacesTheListRatherThanDoublingIt() {
         MealPlan plan = persistedPlan(8302L);
-        shoppingListService.deriveFromMealPlan(plan.getId());
+        shoppingListService.deriveFromMealPlan(
+                plan.getId(), com.silporestockai.model.ShoppingListSourceType.RECIPE_DERIVED);
 
-        shoppingListService.deriveFromMealPlan(plan.getId());
+        shoppingListService.deriveFromMealPlan(
+                plan.getId(), com.silporestockai.model.ShoppingListSourceType.RECIPE_DERIVED);
 
-        assertThat(shoppingListItemRepository.findByMealPlanId(plan.getId())).hasSize(5);
+        // The first derivation's rows are archived, not deleted — findByMealPlanId (unfiltered by status) sees
+        // both generations, but only the second one is ACTIVE.
+        assertThat(shoppingListItemRepository.findByMealPlanId(plan.getId())).hasSize(10);
+        assertThat(shoppingListItemRepository.findByUserIdAndStatus(
+                        plan.getUserId(), com.silporestockai.model.ShoppingListStatus.ACTIVE))
+                .hasSize(5);
     }
 
     @Test
@@ -147,7 +155,8 @@ class ShoppingListIntegrationTest extends AbstractIntegrationTest {
         shoppingListService.createAdHocList(
                 userId, List.of(new PlannedIngredient("морозиво", BigDecimal.ONE, "шт", null)));
 
-        shoppingListService.deriveFromMealPlan(plan.getId());
+        shoppingListService.deriveFromMealPlan(
+                plan.getId(), com.silporestockai.model.ShoppingListSourceType.RECIPE_DERIVED);
 
         assertThat(shoppingListItemRepository.findByUserIdAndMealPlanIdIsNull(userId))
                 .hasSize(1);

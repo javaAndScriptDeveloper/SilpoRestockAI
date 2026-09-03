@@ -62,7 +62,8 @@ public class MealPlanHandoffService {
                         user -> {
                             try {
                                 MealPlan plan = mealPlanService.generateWeeklyPlan(userId);
-                                List<ShoppingListItem> list = shoppingListService.deriveFromMealPlan(plan.getId());
+                                List<ShoppingListItem> list =
+                                        shoppingListService.deriveFromMealPlan(plan.getId(), plan.getSourceType());
                                 telegramOutboundService.sendMessage(
                                         user.getTelegramChatId(), summarise(plan, list.size()));
                                 // Never straight to a cart. Eighty-four bananas went through unseen once; the

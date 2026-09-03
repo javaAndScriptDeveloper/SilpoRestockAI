@@ -185,7 +185,8 @@ class ShoppingListBuilderIntegrationTest extends AbstractIntegrationTest {
         sendText(2, "звичайна їжа на тиждень, без молочки");
 
         assertThat(lastMessageText()).contains("Гречка").contains("Куряче філе").contains("3 позиції");
-        assertThat(shoppingListItemRepository.findByUserIdAndMealPlanIdIsNull(user.getId()))
+        assertThat(shoppingListItemRepository.findByUserIdAndStatus(
+                        user.getId(), com.silporestockai.model.ShoppingListStatus.ACTIVE))
                 .hasSize(3);
         // Nothing is ordered yet — that is the entire point of this step.
         assertThat(customerOrderRepository.findAll()).isEmpty();
@@ -209,7 +210,8 @@ class ShoppingListBuilderIntegrationTest extends AbstractIntegrationTest {
         sendText(1, "/list");
         CLAUDE.respondWithText(list("{\"name\":\"Банани\",\"quantity\":84,\"unit\":\"шт\"}"));
         sendText(2, "щось на тиждень");
-        assertThat(shoppingListItemRepository.findByUserIdAndMealPlanIdIsNull(user.getId()))
+        assertThat(shoppingListItemRepository.findByUserIdAndStatus(
+                        user.getId(), com.silporestockai.model.ShoppingListStatus.ACTIVE))
                 .hasSize(1);
 
         tapButton(3, ShoppingListMessageService.CALLBACK_EDIT);
@@ -217,7 +219,8 @@ class ShoppingListBuilderIntegrationTest extends AbstractIntegrationTest {
                 {"name":"Гречка","quantity":1,"unit":"кг"},{"name":"Яйця С1","quantity":10,"unit":"шт"}"""));
         sendText(4, "прибери банани, додай гречку і яйця");
 
-        List<ShoppingListItem> items = shoppingListItemRepository.findByUserIdAndMealPlanIdIsNull(user.getId());
+        List<ShoppingListItem> items = shoppingListItemRepository.findByUserIdAndStatus(
+                user.getId(), com.silporestockai.model.ShoppingListStatus.ACTIVE);
         assertThat(items).extracting(ShoppingListItem::getName).containsExactlyInAnyOrder("Гречка", "Яйця С1");
     }
 
@@ -231,7 +234,8 @@ class ShoppingListBuilderIntegrationTest extends AbstractIntegrationTest {
         sendText(3, "без бананів, будь ласка");
 
         assertThat(CLAUDE.requests().getLast().toString()).contains("змінити");
-        assertThat(shoppingListItemRepository.findByUserIdAndMealPlanIdIsNull(user.getId()))
+        assertThat(shoppingListItemRepository.findByUserIdAndStatus(
+                        user.getId(), com.silporestockai.model.ShoppingListStatus.ACTIVE))
                 .extracting(ShoppingListItem::getName)
                 .containsExactly("Гречка");
     }
@@ -271,8 +275,7 @@ class ShoppingListBuilderIntegrationTest extends AbstractIntegrationTest {
                 .unit("кг")
                 .build();
         shoppingListItemRepository.save(fromPlan);
-        conversationStateService.save(
-                CHAT_ID, ConversationFlow.LIST_BUILDING, "AWAITING_APPROVAL", java.util.Map.of());
+        conversationStateService.save(CHAT_ID, ConversationFlow.LIST_BUILDING, "AWAITING_APPROVAL", java.util.Map.of());
 
         tapButton(1, ShoppingListMessageService.CALLBACK_ORDER);
 
@@ -305,7 +308,8 @@ class ShoppingListBuilderIntegrationTest extends AbstractIntegrationTest {
         CLAUDE.respondWithText(list("{\"name\":\"Молоко\",\"quantity\":1,\"unit\":\"л\"}"));
         sendText(2, "молоко на тиждень");
 
-        assertThat(shoppingListItemRepository.findByUserId(user.getId()))
+        assertThat(shoppingListItemRepository.findByUserIdAndStatus(
+                        user.getId(), com.silporestockai.model.ShoppingListStatus.ACTIVE))
                 .extracting(ShoppingListItem::getName)
                 .containsExactly("Молоко");
     }
