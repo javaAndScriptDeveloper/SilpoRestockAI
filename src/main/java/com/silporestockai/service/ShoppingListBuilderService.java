@@ -14,6 +14,7 @@ import com.silporestockai.service.telegram.ShoppingListMessageService;
 import com.silporestockai.service.telegram.TelegramOutboundService;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
@@ -132,18 +133,75 @@ public class ShoppingListBuilderService {
 
     private void handleTap(User user, String data) {
         long chatId = user.getTelegramChatId();
+        if (data.startsWith(ShoppingListMessageService.CALLBACK_ITEM_DEC_PREFIX)) {
+            adjustQuantity(
+                    user,
+                    UUID.fromString(data.substring(ShoppingListMessageService.CALLBACK_ITEM_DEC_PREFIX.length())),
+                    new BigDecimal("-1"));
+            return;
+        }
+        if (data.startsWith(ShoppingListMessageService.CALLBACK_ITEM_INC_PREFIX)) {
+            adjustQuantity(
+                    user,
+                    UUID.fromString(data.substring(ShoppingListMessageService.CALLBACK_ITEM_INC_PREFIX.length())),
+                    BigDecimal.ONE);
+            return;
+        }
+        if (data.startsWith(ShoppingListMessageService.CALLBACK_ITEM_DEL_PREFIX)) {
+            shoppingListService.removeItem(
+                    user.getId(),
+                    UUID.fromString(data.substring(ShoppingListMessageService.CALLBACK_ITEM_DEL_PREFIX.length())));
+            telegramOutboundService.sendMessage(chatId, "Прибрав.");
+            return;
+        }
         switch (data) {
             case ShoppingListMessageService.CALLBACK_ORDER -> order(user);
             case ShoppingListMessageService.CALLBACK_EDIT -> {
                 conversationStateService.save(chatId, ConversationFlow.LIST_BUILDING, STEP_AWAITING_EDIT, Map.of());
                 telegramOutboundService.sendMessage(chatId, messages.askForEditText());
             }
+            case ShoppingListMessageService.CALLBACK_MANUAL_EDIT -> showManualEdit(user);
             case ShoppingListMessageService.CALLBACK_CANCEL -> {
                 conversationStateService.save(chatId, ConversationFlow.NONE, null, Map.of());
                 telegramOutboundService.sendMessage(chatId, messages.cancelledText());
             }
             default -> log.debug("ignoring unknown list callback {} in chat {}", data, chatId);
         }
+    }
+
+    /**
+     * The deterministic, AI-free edit path: one message per item, each with its own −/+/✕ row. Distinct from
+     * {@link ShoppingListMessageService#CALLBACK_EDIT}, which free-texts the whole list to Claude — this one never
+     * calls {@link ClaudeApiClient} at all, only {@link ShoppingListService}'s plain CRUD methods.
+     */
+    private void showManualEdit(User user) {
+        long chatId = user.getTelegramChatId();
+        List<ShoppingListItem> items = currentItems(user.getId());
+        if (items.isEmpty()) {
+            telegramOutboundService.sendMessage(chatId, messages.couldNotBuildText());
+            return;
+        }
+        telegramOutboundService.sendMessage(chatId, messages.manualEditIntroText());
+        items.forEach(item ->
+                telegramOutboundService.sendMessageWithButtons(chatId, item.getName(), messages.itemButtons(item)));
+    }
+
+    private void adjustQuantity(User user, UUID itemId, BigDecimal delta) {
+        long chatId = user.getTelegramChatId();
+        currentItems(user.getId()).stream()
+                .filter(item -> item.getId().equals(itemId))
+                .findFirst()
+                .ifPresent(item -> {
+                    BigDecimal newQuantity =
+                            (item.getQuantity() == null ? BigDecimal.ZERO : item.getQuantity()).add(delta);
+                    if (newQuantity.signum() <= 0) {
+                        shoppingListService.removeItem(user.getId(), itemId);
+                        telegramOutboundService.sendMessage(chatId, "Прибрав.");
+                    } else {
+                        shoppingListService.updateQuantity(user.getId(), itemId, newQuantity);
+                        telegramOutboundService.sendMessage(chatId, "Оновив: " + newQuantity + ".");
+                    }
+                });
     }
 
     /**
