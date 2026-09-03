@@ -1,9 +1,14 @@
 package com.silporestockai.service.onboarding;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.silporestockai.config.TelegramProperties;
 import com.silporestockai.entity.ConversationState;
 import com.silporestockai.entity.User;
 import com.silporestockai.entity.UserProfile;
+import com.silporestockai.model.AgeBracket;
 import com.silporestockai.model.ConversationFlow;
+import com.silporestockai.model.CookingTimePreference;
+import com.silporestockai.model.DietType;
 import com.silporestockai.model.OnboardingCompletedEvent;
 import com.silporestockai.model.OnboardingStep;
 import com.silporestockai.model.SilpoConnectedEvent;
@@ -17,6 +22,7 @@ import com.silporestockai.service.SilpoAuthService;
 import com.silporestockai.service.telegram.TelegramOutboundService;
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -53,12 +59,21 @@ public class OnboardingFlowService {
     public static final String CALLBACK_CONFIRM = "onb:confirm";
     public static final String CALLBACK_CORRECT = "onb:correct";
 
+    private static final String FALLBACK_LABEL = "Заповнити вручну";
+
     private static final String KEY_HOUSEHOLD = "householdSize";
     private static final String KEY_HAS_KIDS = "hasKids";
     private static final String KEY_KIDS_AGES = "kidsAges";
     private static final String KEY_RESTRICTIONS = "dietaryRestrictions";
     private static final String KEY_DISLIKES = "dislikedFoods";
     private static final String KEY_BUDGET = "weeklyBudget";
+    private static final String KEY_ADULT_MALE = "adultMale";
+    private static final String KEY_ADULT_FEMALE = "adultFemale";
+    private static final String KEY_CHILDREN_BRACKETS = "childrenAgeBrackets";
+    private static final String KEY_DIET_TYPE = "dietType";
+    private static final String KEY_COOKING_TIME = "cookingTimePreference";
+
+    private static final ObjectMapper MAPPER = new ObjectMapper().findAndRegisterModules();
 
     private static final Pattern FIRST_NUMBER = Pattern.compile("\\d+(?:[.,]\\d+)?");
 
@@ -94,6 +109,7 @@ public class OnboardingFlowService {
     private final ProfileEnrichmentService profileEnrichmentService;
     private final TelegramOutboundService telegramOutboundService;
     private final SilpoAuthService silpoAuthService;
+    private final TelegramProperties telegramProperties;
     private final ApplicationEventPublisher events;
 
     /**
@@ -146,7 +162,7 @@ public class OnboardingFlowService {
             }
             case TelegramIncomingUpdate.Text text -> handleAnswer(user, chatId, step, text.text(), context);
             case TelegramIncomingUpdate.WebAppData webAppData ->
-                telegramOutboundService.sendMessage(chatId, "Скористайся, будь ласка, кнопками вище.");
+                handleWebAppSubmit(user, chatId, step, webAppData.data(), context);
             // Neither a voice note nor a photo answers "how many of you are there"; both get the same nudge.
             case TelegramIncomingUpdate.Voice ignored ->
                 telegramOutboundService.sendMessage(chatId, "Голосові поки не розбираю. Напиши, будь ласка, текстом.");
@@ -169,7 +185,7 @@ public class OnboardingFlowService {
 
     private void handleButton(User user, long chatId, OnboardingStep step, String data, Map<String, Object> context) {
         if (step == OnboardingStep.AWAITING_CONNECT && CALLBACK_SKIP.equals(data)) {
-            askNext(chatId, OnboardingStep.ASK_HOUSEHOLD, context, user);
+            presentWebAppForm(chatId, context, user);
             return;
         }
         if (step == OnboardingStep.AWAITING_CONNECT) {
@@ -177,7 +193,7 @@ public class OnboardingFlowService {
             return;
         }
         if (step == OnboardingStep.CONFIRM_PROFILE && CALLBACK_CONFIRM.equals(data)) {
-            askNext(chatId, OnboardingStep.ASK_BUDGET, context, user);
+            presentWebAppForm(chatId, context, user);
             return;
         }
         if (step == OnboardingStep.CONFIRM_PROFILE && CALLBACK_CORRECT.equals(data)) {
@@ -187,17 +203,81 @@ public class OnboardingFlowService {
             context.remove(KEY_HOUSEHOLD);
             context.remove(KEY_RESTRICTIONS);
             context.remove(KEY_DISLIKES);
-            askNext(chatId, OnboardingStep.ASK_HOUSEHOLD, context, user);
+            presentWebAppForm(chatId, context, user);
             return;
         }
         log.debug("ignoring callback {} at step {}", data, step);
+    }
+
+    /**
+     * Opens the WebApp form (or, when it's not configured, skips straight to the manual fallback chain).
+     *
+     * <p>The WebApp form collects fields no Silpo enrichment can supply — diet type, cooking-time preference, a
+     * per-child age bracket — so it runs even when {@link #enrichThenConfirm} already confirmed the flat household
+     * fields; those become the form's prefill, not a reason to skip it.
+     */
+    private void presentWebAppForm(long chatId, Map<String, Object> context, User user) {
+        if (!telegramProperties.webAppConfigured()) {
+            askNext(chatId, OnboardingStep.ASK_HOUSEHOLD, context, user);
+            return;
+        }
+        String formUrl = telegramProperties.webAppBaseUrl() + "/webapp/onboarding.html?prefill=" + prefillOf(context);
+        telegramOutboundService.sendMessageWithWebAppButton(
+                chatId,
+                "Заповни коротку анкету — це швидше, ніж відповідати текстом.",
+                "Заповнити анкету",
+                formUrl,
+                FALLBACK_LABEL);
+        save(chatId, OnboardingStep.AWAITING_WEBAPP_FORM, context);
+    }
+
+    private static String prefillOf(Map<String, Object> context) {
+        try {
+            Map<String, Object> prefill = new LinkedHashMap<>();
+            putIfPresent(prefill, "householdSize", context.get(KEY_HOUSEHOLD));
+            String json = MAPPER.writeValueAsString(prefill);
+            return Base64.getUrlEncoder().withoutPadding().encodeToString(json.getBytes());
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    private void handleWebAppSubmit(
+            User user, long chatId, OnboardingStep step, String json, Map<String, Object> context) {
+        if (step != OnboardingStep.AWAITING_WEBAPP_FORM) {
+            telegramOutboundService.sendMessage(chatId, "Скористайся, будь ласка, кнопками вище.");
+            return;
+        }
+        WebAppOnboardingPayload payload;
+        try {
+            payload = MAPPER.readValue(json, WebAppOnboardingPayload.class);
+        } catch (Exception e) {
+            log.warn("could not parse onboarding WebApp payload for chat {}: {}", chatId, e.toString());
+            telegramOutboundService.sendMessage(
+                    chatId, "Не вдалось прочитати анкету. Спробуй ще раз або натисни «" + FALLBACK_LABEL + "».");
+            return;
+        }
+        context.put(KEY_ADULT_MALE, payload.adultMale());
+        context.put(KEY_ADULT_FEMALE, payload.adultFemale());
+        context.put(
+                KEY_CHILDREN_BRACKETS,
+                payload.childrenAgeBrackets() == null ? List.of() : payload.childrenAgeBrackets());
+        List<String> restrictions =
+                new ArrayList<>(payload.restrictions() == null ? List.<String>of() : payload.restrictions());
+        if (payload.restrictionsOther() != null && !payload.restrictionsOther().isBlank()) {
+            restrictions.add(payload.restrictionsOther().trim());
+        }
+        context.put(KEY_RESTRICTIONS, restrictions);
+        context.put(KEY_DIET_TYPE, payload.dietType());
+        context.put(KEY_COOKING_TIME, payload.cookingTimePreference());
+        askNext(chatId, OnboardingStep.ASK_BUDGET, context, user);
     }
 
     private void enrichThenConfirm(User user, long chatId, Map<String, Object> context) {
         SilpoProfileSnapshot snapshot = profileEnrichmentService.enrich(user.getId());
         if (snapshot.isEmpty()) {
             telegramOutboundService.sendMessage(chatId, "Нічого не знайшов у профілі «Сільпо». Запитаю сам.");
-            askNext(chatId, OnboardingStep.ASK_HOUSEHOLD, context, user);
+            presentWebAppForm(chatId, context, user);
             return;
         }
         putIfPresent(context, KEY_HOUSEHOLD, snapshot.householdSize());
@@ -212,7 +292,7 @@ public class OnboardingFlowService {
             // context, so this is the same outcome as an empty snapshot: say so, and ask instead of showing a
             // "Ось що знайшов:" with nothing under it.
             telegramOutboundService.sendMessage(chatId, "Нічого не знайшов у профілі «Сільпо». Запитаю сам.");
-            askNext(chatId, OnboardingStep.ASK_HOUSEHOLD, context, user);
+            presentWebAppForm(chatId, context, user);
             return;
         }
 
@@ -226,6 +306,15 @@ public class OnboardingFlowService {
     }
 
     private void handleAnswer(User user, long chatId, OnboardingStep step, String answer, Map<String, Object> context) {
+        if (step == OnboardingStep.AWAITING_WEBAPP_FORM) {
+            if (FALLBACK_LABEL.equals(answer.trim())) {
+                askNext(chatId, OnboardingStep.ASK_HOUSEHOLD, context, user);
+            } else {
+                telegramOutboundService.sendMessage(
+                        chatId, "Натисни кнопку «Заповнити анкету» або «" + FALLBACK_LABEL + "».");
+            }
+            return;
+        }
         switch (step) {
             case ASK_HOUSEHOLD -> {
                 Optional<Integer> size = parseCount(answer);
@@ -303,9 +392,26 @@ public class OnboardingFlowService {
                         .id(UUID.randomUUID())
                         .userId(user.getId())
                         .build());
-        profile.setHouseholdSize(intOf(context.get(KEY_HOUSEHOLD)));
-        profile.setHasKids(context.get(KEY_HAS_KIDS) instanceof Boolean flag ? flag : null);
-        profile.setKidsAges(intListOf(context.get(KEY_KIDS_AGES)));
+
+        Integer adultMale = intOf(context.get(KEY_ADULT_MALE));
+        Integer adultFemale = intOf(context.get(KEY_ADULT_FEMALE));
+        List<AgeBracket> brackets = ageBracketListOf(context.get(KEY_CHILDREN_BRACKETS));
+        if (adultMale != null || adultFemale != null) {
+            profile.setAdultMaleCount(adultMale);
+            profile.setAdultFemaleCount(adultFemale);
+            profile.setChildrenAgeBrackets(brackets);
+            profile.setDietType(dietOf(context));
+            profile.setCookingTimePreference(cookingTimeOf(context));
+            int adults = (adultMale == null ? 0 : adultMale) + (adultFemale == null ? 0 : adultFemale);
+            profile.setHouseholdSize(adults + brackets.size());
+            profile.setHasKids(!brackets.isEmpty());
+            profile.setKidsAges(
+                    brackets.stream().map(OnboardingFlowService::midpointAge).toList());
+        } else {
+            profile.setHouseholdSize(intOf(context.get(KEY_HOUSEHOLD)));
+            profile.setHasKids(context.get(KEY_HAS_KIDS) instanceof Boolean flag ? flag : null);
+            profile.setKidsAges(intListOf(context.get(KEY_KIDS_AGES)));
+        }
         profile.setDietaryRestrictions(stringListOf(context.get(KEY_RESTRICTIONS)));
         profile.setDislikedFoods(stringListOf(context.get(KEY_DISLIKES)));
         profile.setWeeklyBudget(
@@ -399,4 +505,55 @@ public class OnboardingFlowService {
                 ? list.stream().map(String::valueOf).toList()
                 : null;
     }
+
+    /**
+     * {@code context.get(KEY_DIET_TYPE)} is a {@link DietType} within the same webhook call that just deserialized
+     * it, but {@code conversation_state.context_json} round-trips through JSON storage between webhook calls — by the
+     * time {@link #finish} runs on a later call, it is a {@link String}. Handle both.
+     */
+    private static DietType dietOf(Map<String, Object> context) {
+        Object value = context.get(KEY_DIET_TYPE);
+        if (value instanceof DietType dietType) {
+            return dietType;
+        }
+        return value == null ? DietType.NONE : DietType.valueOf(value.toString());
+    }
+
+    private static CookingTimePreference cookingTimeOf(Map<String, Object> context) {
+        Object value = context.get(KEY_COOKING_TIME);
+        if (value instanceof CookingTimePreference preference) {
+            return preference;
+        }
+        return value == null ? null : CookingTimePreference.valueOf(value.toString());
+    }
+
+    private static int midpointAge(AgeBracket bracket) {
+        return switch (bracket) {
+            case AGE_0_3 -> 2;
+            case AGE_4_7 -> 5;
+            case AGE_8_12 -> 10;
+            case AGE_13_17 -> 15;
+        };
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<AgeBracket> ageBracketListOf(Object value) {
+        if (!(value instanceof List<?> list)) {
+            return List.of();
+        }
+        return ((List<Object>) list)
+                .stream()
+                        .map(item -> item instanceof AgeBracket bracket ? bracket : AgeBracket.valueOf(item.toString()))
+                        .toList();
+    }
+
+    /** The Telegram WebApp onboarding form's submitted payload. */
+    private record WebAppOnboardingPayload(
+            Integer adultMale,
+            Integer adultFemale,
+            List<AgeBracket> childrenAgeBrackets,
+            List<String> restrictions,
+            String restrictionsOther,
+            DietType dietType,
+            CookingTimePreference cookingTimePreference) {}
 }

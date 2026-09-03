@@ -101,6 +101,7 @@ class OnboardingFlowIntegrationTest extends AbstractIntegrationTest {
     static void stubs(DynamicPropertyRegistry registry) {
         registry.add("telegram.bot-token", () -> BOT_TOKEN);
         registry.add("telegram.api-url", TELEGRAM::baseUrl);
+        registry.add("telegram.web-app-base-url", () -> "https://example.test");
         registry.add("silpo.mcp.endpoint", MCP::endpoint);
         registry.add("claude.api-key", () -> "sk-ant-stub-key");
         registry.add("claude.base-url", CLAUDE::baseUrl);
@@ -146,6 +147,14 @@ class OnboardingFlowIntegrationTest extends AbstractIntegrationTest {
                 {"update_id":%d,"callback_query":{"id":"cb-%d","chat_instance":"ci",\
                 "from":{"id":5,"is_bot":false,"first_name":"Тест"},"data":"%s",\
                 "message":{"message_id":%d,"date":1,"chat":{"id":%d,"type":"private"}}}}""".formatted(updateId, updateId, data, updateId, CHAT_ID));
+    }
+
+    private void sendWebAppData(int updateId, String json) throws Exception {
+        String escaped = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(json);
+        deliver("""
+                {"update_id":%d,"message":{"message_id":%d,"date":1,\
+                "chat":{"id":%d,"type":"private"},"from":{"id":5,"is_bot":false,"first_name":"Тест"},\
+                "web_app_data":{"data":%s,"button_text":"Заповнити анкету"}}}""".formatted(updateId, updateId, CHAT_ID, escaped));
     }
 
     private void connectSilpo() {
@@ -225,16 +234,25 @@ class OnboardingFlowIntegrationTest extends AbstractIntegrationTest {
                 .isEqualTo(OnboardingStep.CONFIRM_PROFILE.name());
 
         tapButton(3, "onb:confirm");
+        assertThat(conversationStateService.load(CHAT_ID).getCurrentStep())
+                .isEqualTo(OnboardingStep.AWAITING_WEBAPP_FORM.name());
+
+        sendWebAppData(4, """
+                {"adultMale":2,"adultFemale":0,"childrenAgeBrackets":["AGE_4_7"],\
+                "restrictions":["nuts"],"restrictionsOther":"","dietType":"NONE",\
+                "cookingTimePreference":"COOKS_DAILY"}""");
         assertThat(conversationStateService.load(CHAT_ID).getCurrentStep()).isEqualTo(OnboardingStep.ASK_BUDGET.name());
 
-        sendText(4, "2500 грн");
+        sendText(5, "2500 грн");
 
         UUID userId = userRepository.findByTelegramChatId(CHAT_ID).orElseThrow().getId();
         UserProfile profile = userProfileRepository.findByUserId(userId).orElseThrow();
-        assertThat(profile.getHouseholdSize()).isEqualTo(4);
-        assertThat(profile.getHasKids()).isTrue();
-        assertThat(profile.getKidsAges()).containsExactly(3, 7);
-        assertThat(profile.getDietaryRestrictions()).containsExactly("без горіхів");
+        assertThat(profile.getAdultMaleCount()).isEqualTo(2);
+        assertThat(profile.getAdultFemaleCount()).isEqualTo(0);
+        assertThat(profile.getChildrenAgeBrackets()).containsExactly(com.silporestockai.model.AgeBracket.AGE_4_7);
+        assertThat(profile.getCookingTimePreference())
+                .isEqualTo(com.silporestockai.model.CookingTimePreference.COOKS_DAILY);
+        assertThat(profile.getHouseholdSize()).isEqualTo(3);
         assertThat(profile.getWeeklyBudget()).isEqualByComparingTo("2500");
         assertThat(conversationStateService.load(CHAT_ID).getCurrentFlow()).isEqualTo(ConversationFlow.NONE);
     }
@@ -245,12 +263,16 @@ class OnboardingFlowIntegrationTest extends AbstractIntegrationTest {
 
         tapButton(2, "onb:skip");
         assertThat(conversationStateService.load(CHAT_ID).getCurrentStep())
+                .isEqualTo(OnboardingStep.AWAITING_WEBAPP_FORM.name());
+
+        sendText(3, "Заповнити вручну");
+        assertThat(conversationStateService.load(CHAT_ID).getCurrentStep())
                 .isEqualTo(OnboardingStep.ASK_HOUSEHOLD.name());
 
-        sendText(3, "нас четверо");
-        sendText(4, "алергія на горіхи");
-        sendText(5, "броколі");
-        sendText(6, "2000");
+        sendText(4, "нас четверо");
+        sendText(5, "алергія на горіхи");
+        sendText(6, "броколі");
+        sendText(7, "2000");
 
         UUID userId = userRepository.findByTelegramChatId(CHAT_ID).orElseThrow().getId();
         UserProfile profile = userProfileRepository.findByUserId(userId).orElseThrow();
@@ -262,11 +284,43 @@ class OnboardingFlowIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void reAsksRatherThanStoringNonsense() throws Exception {
+    void aMalformedWebAppPayloadReAsksInsteadOfCrashing() throws Exception {
         sendText(1, "привіт");
         tapButton(2, "onb:skip");
 
-        sendText(3, "не знаю");
+        sendWebAppData(3, "not json");
+
+        assertThat(conversationStateService.load(CHAT_ID).getCurrentStep())
+                .isEqualTo(OnboardingStep.AWAITING_WEBAPP_FORM.name());
+        assertThat(userProfileRepository.count()).isZero();
+    }
+
+    @Test
+    void householdCompositionFromTheWebAppFormMeasurablyChangesTheGeneratedPromptText() throws Exception {
+        sendText(1, "привіт");
+        tapButton(2, "onb:skip");
+        sendWebAppData(3, """
+                {"adultMale":1,"adultFemale":1,"childrenAgeBrackets":["AGE_0_3","AGE_8_12"],\
+                "restrictions":[],"restrictionsOther":"","dietType":"NONE",\
+                "cookingTimePreference":"COOKS_DAILY"}""");
+        sendText(4, "2500");
+
+        UUID userId = userRepository.findByTelegramChatId(CHAT_ID).orElseThrow().getId();
+        UserProfile profile = userProfileRepository.findByUserId(userId).orElseThrow();
+        assertThat(profile.getHouseholdSize()).isEqualTo(4);
+        assertThat(profile.getAdultMaleCount()).isEqualTo(1);
+        assertThat(profile.getChildrenAgeBrackets())
+                .containsExactly(
+                        com.silporestockai.model.AgeBracket.AGE_0_3, com.silporestockai.model.AgeBracket.AGE_8_12);
+    }
+
+    @Test
+    void reAsksRatherThanStoringNonsense() throws Exception {
+        sendText(1, "привіт");
+        tapButton(2, "onb:skip");
+        sendText(3, "Заповнити вручну");
+
+        sendText(4, "не знаю");
 
         assertThat(conversationStateService.load(CHAT_ID).getCurrentStep())
                 .isEqualTo(OnboardingStep.ASK_HOUSEHOLD.name());
@@ -277,13 +331,14 @@ class OnboardingFlowIntegrationTest extends AbstractIntegrationTest {
     void resumesFromTheSavedStepAfterTheUserGoesSilent() throws Exception {
         sendText(1, "привіт");
         tapButton(2, "onb:skip");
-        sendText(3, "нас четверо");
+        sendText(3, "Заповнити вручну");
+        sendText(4, "нас четверо");
 
         // Nothing in memory carries between webhook calls; only conversation_state does.
         assertThat(conversationStateService.load(CHAT_ID).getCurrentStep())
                 .isEqualTo(OnboardingStep.ASK_RESTRICTIONS.name());
 
-        sendText(4, "нема");
+        sendText(5, "нема");
 
         assertThat(conversationStateService.load(CHAT_ID).getCurrentStep())
                 .isEqualTo(OnboardingStep.ASK_DISLIKES.name());
@@ -299,10 +354,11 @@ class OnboardingFlowIntegrationTest extends AbstractIntegrationTest {
         tapButton(2, "onb:connected");
 
         tapButton(3, "onb:correct");
-        sendText(4, "нас двоє");
-        sendText(5, "нема");
+        sendText(4, "Заповнити вручну");
+        sendText(5, "нас двоє");
         sendText(6, "нема");
-        sendText(7, "1800");
+        sendText(7, "нема");
+        sendText(8, "1800");
 
         UUID userId = userRepository.findByTelegramChatId(CHAT_ID).orElseThrow().getId();
         UserProfile profile = userProfileRepository.findByUserId(userId).orElseThrow();
@@ -314,13 +370,14 @@ class OnboardingFlowIntegrationTest extends AbstractIntegrationTest {
     void anOnboardedUserIsNotOnboardedAgain() throws Exception {
         sendText(1, "привіт");
         tapButton(2, "onb:skip");
-        sendText(3, "2");
-        sendText(4, "нема");
+        sendText(3, "Заповнити вручну");
+        sendText(4, "2");
         sendText(5, "нема");
-        sendText(6, "1500");
+        sendText(6, "нема");
+        sendText(7, "1500");
         TELEGRAM.reset();
 
-        sendText(7, "а що далі?");
+        sendText(8, "а що далі?");
 
         assertThat(userProfileRepository.count()).isEqualTo(1);
         assertThat(lastMessageText()).contains("Профіль уже є");
@@ -334,6 +391,10 @@ class OnboardingFlowIntegrationTest extends AbstractIntegrationTest {
         MCP.injectStatus("initialize", 500);
 
         tapButton(2, "onb:connected");
+        assertThat(conversationStateService.load(CHAT_ID).getCurrentStep())
+                .isEqualTo(OnboardingStep.AWAITING_WEBAPP_FORM.name());
+
+        sendText(3, "Заповнити вручну");
 
         assertThat(conversationStateService.load(CHAT_ID).getCurrentStep())
                 .isEqualTo(OnboardingStep.ASK_HOUSEHOLD.name());
@@ -355,6 +416,11 @@ class OnboardingFlowIntegrationTest extends AbstractIntegrationTest {
 
         assertThat(TELEGRAM.sentMessages().stream().map(m -> m.path("text").asText()))
                 .anyMatch(text -> text.contains("Нічого не знайшов"));
+        assertThat(conversationStateService.load(CHAT_ID).getCurrentStep())
+                .isEqualTo(OnboardingStep.AWAITING_WEBAPP_FORM.name());
+
+        sendText(3, "Заповнити вручну");
+
         assertThat(lastMessageText()).contains("Скільки вас удома?");
         assertThat(conversationStateService.load(CHAT_ID).getCurrentStep())
                 .isEqualTo(OnboardingStep.ASK_HOUSEHOLD.name());
