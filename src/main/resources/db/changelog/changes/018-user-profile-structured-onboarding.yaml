@@ -1,0 +1,29 @@
+databaseChangeLog:
+  - changeSet:
+      id: 018-user-profile-structured-onboarding
+      author: komora
+      comment: >-
+        The WebApp onboarding form (task 20) collects household composition and diet preference at a
+        granularity the flat household_size/kids_ages columns can't carry: adult sex counts, a per-child
+        age bracket, an explicit diet type, and how much time the household has to cook. The old columns
+        stay — the manual-fallback text chain still writes them, and existing prompt-building code still
+        reads them — these are additive.
+      changes:
+        - addColumn:
+            tableName: user_profile
+            columns:
+              - column:
+                  name: adult_male_count
+                  type: INT
+              - column:
+                  name: adult_female_count
+                  type: INT
+              - column:
+                  name: children_age_brackets
+                  type: JSONB
+              - column:
+                  name: diet_type
+                  type: VARCHAR(32)
+              - column:
+                  name: cooking_time_preference
+                  type: VARCHAR(32)

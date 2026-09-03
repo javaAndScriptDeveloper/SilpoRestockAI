@@ -1,5 +1,8 @@
 package com.silporestockai.entity;
 
+import com.silporestockai.model.AgeBracket;
+import com.silporestockai.model.CookingTimePreference;
+import com.silporestockai.model.DietType;
 import com.silporestockai.model.SpecialMode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -74,4 +77,22 @@ public class UserProfile {
 
     @Column(name = "special_mode_started_at")
     private Instant specialModeStartedAt;
+
+    @Column(name = "adult_male_count")
+    private Integer adultMaleCount;
+
+    @Column(name = "adult_female_count")
+    private Integer adultFemaleCount;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "children_age_brackets")
+    private List<AgeBracket> childrenAgeBrackets;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "diet_type", length = 32)
+    private DietType dietType;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "cooking_time_preference", length = 32)
+    private CookingTimePreference cookingTimePreference;
 }
