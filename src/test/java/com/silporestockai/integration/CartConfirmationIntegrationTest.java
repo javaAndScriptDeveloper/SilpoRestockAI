@@ -81,6 +81,9 @@ class CartConfirmationIntegrationTest extends AbstractIntegrationTest {
     private SilpoOAuthTokenRepository tokenRepository;
 
     @Autowired
+    private com.silporestockai.repository.ShoppingListItemRepository shoppingListItemRepository;
+
+    @Autowired
     private TokenCipher tokenCipher;
 
     private static StubTelegramServer startTelegram() {
@@ -122,6 +125,7 @@ class CartConfirmationIntegrationTest extends AbstractIntegrationTest {
     void clean() {
         TELEGRAM.reset();
         MCP.reset();
+        shoppingListItemRepository.deleteAll();
         baselineBasketRepository.deleteAll();
         customerOrderRepository.deleteAll();
         conversationStateRepository.deleteAll();
@@ -138,8 +142,7 @@ class CartConfirmationIntegrationTest extends AbstractIntegrationTest {
         // and only then risks the "no JavaTimeModule" serialization crash asMap() once hit — when this actually
         // parses to one.
         MCP.respondToTool(
-                "silpo_get_time_slots",
-                "{\"timeSlots\":[{\"id\":\"slot-1\",\"from\":\"2026-09-03T18:00:00Z\"}]}");
+                "silpo_get_time_slots", "{\"timeSlots\":[{\"id\":\"slot-1\",\"from\":\"2026-09-03T18:00:00Z\"}]}");
         MCP.respondToTool("silpo_find_products_batch", """
                 {"queries":[\
                 {"query":"цибуля","products":[{"name":"цибуля","productId":"p-1","companyId":"company-3","branchId":"branch-7"}]},\
@@ -235,6 +238,14 @@ class CartConfirmationIntegrationTest extends AbstractIntegrationTest {
     @Test
     void confirmingStoresTheOrderTheBaselineAndTheCheckoutLink() throws Exception {
         User user = presentedCart();
+        // The list on screen when the cart was confirmed — proves confirm() flips its status.
+        shoppingListItemRepository.save(ShoppingListItem.builder()
+                .id(UUID.randomUUID())
+                .userId(user.getId())
+                .name("цибуля")
+                .quantity(new BigDecimal("0.5"))
+                .unit("кг")
+                .build());
 
         tapButton(1, CartMessageService.CALLBACK_CONFIRM);
 
@@ -243,6 +254,13 @@ class CartConfirmationIntegrationTest extends AbstractIntegrationTest {
                 .getFirst();
         assertThat(order.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
         assertThat(order.getConfirmedAt()).isNotNull();
+
+        assertThat(shoppingListItemRepository.findByUserIdAndStatus(
+                        user.getId(), com.silporestockai.model.ShoppingListStatus.ORDERED))
+                .hasSize(1);
+        assertThat(shoppingListItemRepository.findByUserIdAndStatus(
+                        user.getId(), com.silporestockai.model.ShoppingListStatus.ACTIVE))
+                .isEmpty();
 
         BaselineBasket baseline = baselineBasketRepository
                 .findByUserIdAndIsCurrentTrue(user.getId())

@@ -62,6 +62,7 @@ public class CartConfirmationService {
     private final CartMessageService cartMessageService;
     private final TelegramOutboundService telegramOutboundService;
     private final SilpoMcpClient silpoMcpClient;
+    private final ShoppingListService shoppingListService;
     private final ApplicationEventPublisher events;
 
     /**
@@ -159,6 +160,7 @@ public class CartConfirmationService {
         order.setStatus(OrderStatus.CONFIRMED);
         order.setConfirmedAt(Instant.now());
         customerOrderRepository.save(order);
+        shoppingListService.markOrdered(user.getId());
         if (order.getType() == OrderType.INITIAL) {
             storeBaseline(user.getId(), order);
         }
