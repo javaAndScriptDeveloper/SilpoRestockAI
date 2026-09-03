@@ -22,7 +22,8 @@ class ShoppingListAggregationTest {
     }
 
     private static PlannedIngredient of(String name, String quantity, String unit, String category, String productId) {
-        return new PlannedIngredient(name, quantity == null ? null : new BigDecimal(quantity), unit, category, productId);
+        return new PlannedIngredient(
+                name, quantity == null ? null : new BigDecimal(quantity), unit, category, productId);
     }
 
     @Test

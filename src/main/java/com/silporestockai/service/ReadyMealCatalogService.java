@@ -75,8 +75,10 @@ public class ReadyMealCatalogService {
         Map<String, CatalogCandidate> byProductId = new LinkedHashMap<>();
         for (JsonNode query : McpResponses.findArray(found, McpResponses.QUERIES)) {
             for (JsonNode product : McpResponses.findArray(query, McpResponses.PRODUCTS)) {
-                String productId = McpResponses.findString(product, McpResponses.PRODUCT_ID).orElse(null);
-                String name = McpResponses.findString(product, McpResponses.NAME).orElse(null);
+                String productId = McpResponses.findString(product, McpResponses.PRODUCT_ID)
+                        .orElse(null);
+                String name =
+                        McpResponses.findString(product, McpResponses.NAME).orElse(null);
                 if (productId == null || name == null) {
                     continue;
                 }
@@ -85,9 +87,12 @@ public class ReadyMealCatalogService {
                         new CatalogCandidate(
                                 name,
                                 productId,
-                                McpResponses.findString(product, McpResponses.COMPANY_ID).orElse(context.companyId()),
-                                McpResponses.findString(product, McpResponses.BRANCH_ID).orElse(context.branchId()),
-                                McpResponses.findNumber(product, McpResponses.PRICE).orElse(null)));
+                                McpResponses.findString(product, McpResponses.COMPANY_ID)
+                                        .orElse(context.companyId()),
+                                McpResponses.findString(product, McpResponses.BRANCH_ID)
+                                        .orElse(context.branchId()),
+                                McpResponses.findNumber(product, McpResponses.PRICE)
+                                        .orElse(null)));
             }
         }
         log.info(

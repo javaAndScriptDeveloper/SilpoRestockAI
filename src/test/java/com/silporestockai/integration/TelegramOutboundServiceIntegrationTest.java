@@ -83,7 +83,11 @@ class TelegramOutboundServiceIntegrationTest extends AbstractIntegrationTest {
         assertThat(keyboard.get(1).get(0).path("text").asText()).isEqualTo("🎙 Голосові");
         assertThat(keyboard.get(1).get(1).path("text").asText()).isEqualTo("🌙 Блекаут");
         assertThat(keyboard.get(2).get(0).path("text").asText()).isEqualTo("📅 Календар");
-        assertThat(STUB.sentMessages().getFirst().path("reply_markup").path("resize_keyboard").asBoolean())
+        assertThat(STUB.sentMessages()
+                        .getFirst()
+                        .path("reply_markup")
+                        .path("resize_keyboard")
+                        .asBoolean())
                 .isTrue();
     }
 

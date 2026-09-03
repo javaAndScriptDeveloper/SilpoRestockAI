@@ -214,7 +214,8 @@ class MealPlanServiceTest {
                 new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules();
         WeeklyMealPlan stored = mapper.convertValue(savedCaptor.getValue().getPlan(), WeeklyMealPlan.class);
         assertThat(stored.days().getFirst().meals())
-                .allSatisfy(meal -> assertThat(meal.ingredients().getFirst().productId()).isEqualTo("p-1"));
+                .allSatisfy(meal ->
+                        assertThat(meal.ingredients().getFirst().productId()).isEqualTo("p-1"));
     }
 
     @Test
@@ -239,8 +240,9 @@ class MealPlanServiceTest {
                 new PlannedMeal(MealType.BREAKFAST, "Вигадка", invented),
                 new PlannedMeal(MealType.LUNCH, "Вигадка", invented),
                 new PlannedMeal(MealType.DINNER, "Вигадка", invented));
-        WeeklyMealPlan inventedPlan = new WeeklyMealPlan(
-                Arrays.stream(DayOfWeek.values()).map(day -> new PlannedDay(day, inventedMeals)).toList());
+        WeeklyMealPlan inventedPlan = new WeeklyMealPlan(Arrays.stream(DayOfWeek.values())
+                .map(day -> new PlannedDay(day, inventedMeals))
+                .toList());
         ClaudeApiClient claudeApiClient = mock(ClaudeApiClient.class);
         when(claudeApiClient.completeStructured(anyString(), anyString(), eq(WeeklyMealPlan.class)))
                 .thenReturn(inventedPlan)
@@ -294,8 +296,8 @@ class MealPlanServiceTest {
     }
 
     private static List<CatalogCandidate> oneCandidate() {
-        return List.of(new CatalogCandidate(
-                "Салат Цезар готовий", "p-1", "company-3", "branch-7", new BigDecimal("89.90")));
+        return List.of(
+                new CatalogCandidate("Салат Цезар готовий", "p-1", "company-3", "branch-7", new BigDecimal("89.90")));
     }
 
     private static WeeklyMealPlan readyMealPlan() {
@@ -305,13 +307,15 @@ class MealPlanServiceTest {
                 new PlannedMeal(MealType.BREAKFAST, "Салат Цезар готовий", ingredients),
                 new PlannedMeal(MealType.LUNCH, "Салат Цезар готовий", ingredients),
                 new PlannedMeal(MealType.DINNER, "Салат Цезар готовий", ingredients));
-        List<PlannedDay> days =
-                Arrays.stream(DayOfWeek.values()).map(day -> new PlannedDay(day, meals)).toList();
+        List<PlannedDay> days = Arrays.stream(DayOfWeek.values())
+                .map(day -> new PlannedDay(day, meals))
+                .toList();
         return new WeeklyMealPlan(days);
     }
 
     private static WeeklyMealPlan validPlan() {
-        List<PlannedIngredient> ingredients = List.of(new PlannedIngredient("Щось", BigDecimal.ONE, "шт", "Інше", null));
+        List<PlannedIngredient> ingredients =
+                List.of(new PlannedIngredient("Щось", BigDecimal.ONE, "шт", "Інше", null));
         List<PlannedMeal> meals = List.of(
                 new PlannedMeal(MealType.BREAKFAST, "Сніданок", ingredients),
                 new PlannedMeal(MealType.LUNCH, "Обід", ingredients),

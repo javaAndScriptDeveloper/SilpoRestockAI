@@ -150,7 +150,8 @@ public class MealPlanService {
                 readyMealsOnly ? ShoppingListSourceType.READY_MEAL_DIRECT : ShoppingListSourceType.RECIPE_DERIVED);
     }
 
-    private static List<String> allDefectsOf(WeeklyMealPlan plan, boolean readyMealsOnly, List<CatalogCandidate> candidates) {
+    private static List<String> allDefectsOf(
+            WeeklyMealPlan plan, boolean readyMealsOnly, List<CatalogCandidate> candidates) {
         List<String> defects = new ArrayList<>(defectsOf(plan));
         if (readyMealsOnly) {
             defects.addAll(candidateDefects(plan, candidates));
@@ -166,8 +167,9 @@ public class MealPlanService {
         if (plan == null || plan.days() == null) {
             return List.of();
         }
-        Set<String> candidateNames =
-                candidates.stream().map(candidate -> normalise(candidate.name())).collect(Collectors.toSet());
+        Set<String> candidateNames = candidates.stream()
+                .map(candidate -> normalise(candidate.name()))
+                .collect(Collectors.toSet());
         List<String> defects = new ArrayList<>();
         for (PlannedDay day : plan.days()) {
             List<PlannedMeal> meals = day == null || day.meals() == null ? List.of() : day.meals();
@@ -192,7 +194,8 @@ public class MealPlanService {
      */
     private static WeeklyMealPlan withResolvedProductIds(WeeklyMealPlan plan, List<CatalogCandidate> candidates) {
         Map<String, CatalogCandidate> byName = candidates.stream()
-                .collect(Collectors.toMap(candidate -> normalise(candidate.name()), candidate -> candidate, (a, b) -> a));
+                .collect(Collectors.toMap(
+                        candidate -> normalise(candidate.name()), candidate -> candidate, (a, b) -> a));
         List<PlannedDay> days = plan.days().stream()
                 .map(day -> new PlannedDay(
                         day.day(),

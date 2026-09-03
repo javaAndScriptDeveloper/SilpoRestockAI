@@ -168,15 +168,11 @@ class MealPlanHandoffIntegrationTest extends AbstractIntegrationTest {
                 .updatedAt(Instant.now())
                 .build());
         MCP.respondToTool("silpo_get_my_shopping_cart", "{\"cartId\":\"cart-1\"}");
-        MCP.respondToTool(
-                "silpo_get_shopping_cart_by_id",
-                """
+        MCP.respondToTool("silpo_get_shopping_cart_by_id", """
                 {"cartId":"cart-1","branchId":"branch-7","companyId":"company-3",\
                 "deliveryType":"delivery","items":[]}""");
         MCP.respondToTool("silpo_get_time_slots", "{\"timeSlots\":[{\"id\":\"slot-1\",\"from\":\"18:00\"}]}");
-        MCP.respondToTool(
-                "silpo_find_products_batch",
-                """
+        MCP.respondToTool("silpo_find_products_batch", """
                 {"queries":[{"query":"готові страви","products":[\
                 {"name":"Салат Цезар готовий","productId":"p-1"},\
                 {"name":"Борщ готовий, порція","productId":"p-2"}]}]}""");
@@ -195,26 +191,14 @@ class MealPlanHandoffIntegrationTest extends AbstractIntegrationTest {
             String name = names[i % 2];
             String productId = ids[i % 2];
             i++;
-            days.append(
-                    """
+            days.append("""
                     {"day":"%s","meals":[\
                     {"type":"BREAKFAST","name":"%s","ingredients":[{"name":"%s","quantity":1,"unit":"порція",\
                     "category":"Готові страви","productId":"%s"}]},\
                     {"type":"LUNCH","name":"%s","ingredients":[{"name":"%s","quantity":1,"unit":"порція",\
                     "category":"Готові страви","productId":"%s"}]},\
                     {"type":"DINNER","name":"%s","ingredients":[{"name":"%s","quantity":1,"unit":"порція",\
-                    "category":"Готові страви","productId":"%s"}]}]}"""
-                            .formatted(
-                                    day.name(),
-                                    name,
-                                    name,
-                                    productId,
-                                    name,
-                                    name,
-                                    productId,
-                                    name,
-                                    name,
-                                    productId));
+                    "category":"Готові страви","productId":"%s"}]}]}""".formatted(day.name(), name, name, productId, name, name, productId, name, name, productId));
         }
         return "{\"days\":[" + days + "]}";
     }
@@ -226,8 +210,7 @@ class MealPlanHandoffIntegrationTest extends AbstractIntegrationTest {
 
         mealPlanHandoffService.generateFirstPlan(userId);
 
-        assertThat(TELEGRAM.sentMessages().getFirst().path("text").asText())
-                .contains("не так багато готових страв");
+        assertThat(TELEGRAM.sentMessages().getFirst().path("text").asText()).contains("не так багато готових страв");
     }
 
     @Test

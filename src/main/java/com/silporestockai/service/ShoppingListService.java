@@ -182,7 +182,10 @@ public class ShoppingListService {
             byNameAndUnit.merge(
                     key,
                     new PlannedIngredient(
-                            ingredient.name().trim(), ingredient.quantity(), ingredient.unit(), ingredient.category(),
+                            ingredient.name().trim(),
+                            ingredient.quantity(),
+                            ingredient.unit(),
+                            ingredient.category(),
                             ingredient.productId()),
                     ShoppingListService::add);
         }

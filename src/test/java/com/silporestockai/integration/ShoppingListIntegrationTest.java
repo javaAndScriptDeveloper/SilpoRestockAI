@@ -102,16 +102,19 @@ class ShoppingListIntegrationTest extends AbstractIntegrationTest {
         Map<String, Object> plan = Map.of(
                 "days",
                 List.of(Map.of(
-                        "day", "MONDAY",
-                        "meals", List.of(Map.of(
+                        "day",
+                        "MONDAY",
+                        "meals",
+                        List.of(Map.of(
                                 "type", "LUNCH",
                                 "name", "Плов з куркою готовий",
-                                "ingredients", List.of(Map.of(
-                                        "name", "Плов з куркою готовий",
-                                        "quantity", BigDecimal.ONE,
-                                        "unit", "порція",
-                                        "category", "Готові страви",
-                                        "productId", "p-42")))))));
+                                "ingredients",
+                                        List.of(Map.of(
+                                                "name", "Плов з куркою готовий",
+                                                "quantity", BigDecimal.ONE,
+                                                "unit", "порція",
+                                                "category", "Готові страви",
+                                                "productId", "p-42")))))));
         MealPlan saved = mealPlanRepository.save(MealPlan.builder()
                 .id(UUID.randomUUID())
                 .userId(user.getId())

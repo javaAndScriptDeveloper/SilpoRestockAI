@@ -186,8 +186,8 @@ public class SilpoMcpClientImpl implements SilpoMcpClient {
         // Full names + schemas at DEBUG: the one place to look when a cart step needs a tool this codebase has never
         // called (e.g. no cart exists yet for a guest — the documented six-step sequence assumes one already does).
         if (log.isDebugEnabled()) {
-            tools.forEach(tool ->
-                    log.debug("Silpo MCP tool {} — {} — schema {}", tool.name(), tool.description(), tool.inputSchema()));
+            tools.forEach(tool -> log.debug(
+                    "Silpo MCP tool {} — {} — schema {}", tool.name(), tool.description(), tool.inputSchema()));
         }
         return client;
     }

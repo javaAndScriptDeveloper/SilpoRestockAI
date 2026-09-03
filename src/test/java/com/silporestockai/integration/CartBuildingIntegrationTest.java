@@ -261,8 +261,7 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
 
         // 800г and 400г of a product sold in 100г units — 8 units plus 4, not the raw kilogram numbers.
         cartBuildingService.buildCart(
-                userId,
-                List.of(item("курка ціла", "0.8", "кг"), item("курка гомілка", "0.4", "кг")));
+                userId, List.of(item("курка ціла", "0.8", "кг"), item("курка гомілка", "0.4", "кг")));
 
         JsonNode added = MCP.callArguments("silpo_add_or_update_cart_products").getFirst();
         assertThat(added.path("products")).hasSize(1);
@@ -291,9 +290,8 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
         MCP.respondToTool("silpo_add_or_update_cart_products", "{\"ok\":true}");
         scriptVerifiedCart();
 
-        List<ShoppingListItem> items = List.of(
-                readyMealItem("Салат Цезар готовий", "p-1"),
-                readyMealItem("Борщ готовий, порція", "p-2"));
+        List<ShoppingListItem> items =
+                List.of(readyMealItem("Салат Цезар готовий", "p-1"), readyMealItem("Борщ готовий, порція", "p-2"));
 
         cartBuildingService.buildCart(userId, items);
 
@@ -509,23 +507,17 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
     void createsACartFromASavedAddressWhenTheGuestHasNoneYet() {
         UUID userId = connectedUser(8412L);
         MCP.respondToTool("silpo_get_my_shopping_cart", "{\"success\":true,\"shoppingCartId\":null,\"exists\":false}");
-        MCP.respondToTool(
-                "silpo_get_my_delivery_addresses",
-                """
+        MCP.respondToTool("silpo_get_my_delivery_addresses", """
                 {"addresses":[{"addressType":"house","latitude":50.45,"longitude":30.52,\
                 "city":"Київ","street":"Хрещатик","houseNumber":"1","district":"Шевченківський"}]}""");
         MCP.respondToTool(
                 "silpo_get_available_delivery_types",
                 "{\"deliveryTypes\":[{\"deliveryType\":\"DeliveryHome\",\"branchId\":\"branch-9\"}]}");
-        MCP.respondToTool(
-                "silpo_get_time_slots",
-                """
+        MCP.respondToTool("silpo_get_time_slots", """
                 {"timeSlots":[{"id":"slot-1","start":"2026-09-03T10:00:00Z","end":"2026-09-03T12:00:00Z",\
                 "available":true}]}""");
         MCP.respondToTool("silpo_create_shopping_cart", "{\"shoppingCartId\":\"cart-new\"}");
-        MCP.respondToTool(
-                "silpo_get_shopping_cart_by_id",
-                """
+        MCP.respondToTool("silpo_get_shopping_cart_by_id", """
                 {"cartId":"cart-new","branchId":"branch-9","companyId":"company-1",\
                 "deliveryType":"DeliveryHome","items":[]}""");
 
@@ -541,7 +533,10 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
                         "silpo_get_time_slots",
                         "silpo_create_shopping_cart",
                         "silpo_get_shopping_cart_by_id");
-        assertThat(MCP.callArguments("silpo_create_shopping_cart").getFirst().path("branchId").asText())
+        assertThat(MCP.callArguments("silpo_create_shopping_cart")
+                        .getFirst()
+                        .path("branchId")
+                        .asText())
                 .isEqualTo("branch-9");
     }
 
@@ -556,15 +551,11 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
         MCP.respondToTool(
                 "silpo_get_available_delivery_types", "{\"deliveryTypes\":[{\"deliveryType\":\"SelfPickup\"}]}");
         MCP.respondToTool("silpo_list_branches", "{\"branches\":[{\"branchId\":\"pickup-branch-2\"}]}");
-        MCP.respondToTool(
-                "silpo_get_time_slots",
-                """
+        MCP.respondToTool("silpo_get_time_slots", """
                 {"timeSlots":[{"id":"slot-1","start":"2026-09-03T10:00:00Z","end":"2026-09-03T12:00:00Z",\
                 "available":true}]}""");
         MCP.respondToTool("silpo_create_shopping_cart", "{\"shoppingCartId\":\"cart-pickup\"}");
-        MCP.respondToTool(
-                "silpo_get_shopping_cart_by_id",
-                """
+        MCP.respondToTool("silpo_get_shopping_cart_by_id", """
                 {"cartId":"cart-pickup","branchId":"pickup-branch-2","companyId":"company-1",\
                 "deliveryType":"SelfPickup","items":[]}""");
 
@@ -572,7 +563,10 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
 
         assertThat(context.cartId()).isEqualTo("cart-pickup");
         assertThat(MCP.calledTools()).contains("silpo_list_branches");
-        assertThat(MCP.callArguments("silpo_get_time_slots").getFirst().path("branchId").asText())
+        assertThat(MCP.callArguments("silpo_get_time_slots")
+                        .getFirst()
+                        .path("branchId")
+                        .asText())
                 .isEqualTo("pickup-branch-2");
     }
 
@@ -586,7 +580,6 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
         assertThatThrownBy(() -> cartBuildingService.getOrCreateCartContext(userId))
                 .isInstanceOf(CartBuildException.class)
                 .hasMessageContaining("no saved delivery address");
-        assertThat(MCP.calledTools())
-                .containsExactly("silpo_get_my_shopping_cart", "silpo_get_my_delivery_addresses");
+        assertThat(MCP.calledTools()).containsExactly("silpo_get_my_shopping_cart", "silpo_get_my_delivery_addresses");
     }
 }

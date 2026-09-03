@@ -25,8 +25,8 @@ import org.mockito.ArgumentCaptor;
 class ReadyMealCatalogServiceTest {
 
     private static final UUID USER_ID = UUID.randomUUID();
-    private static final CartContext CONTEXT =
-            new CartContext("cart-1", "branch-7", "company-3", "delivery", "2026-09-07T10:00:00Z", "2026-09-07T12:00:00Z");
+    private static final CartContext CONTEXT = new CartContext(
+            "cart-1", "branch-7", "company-3", "delivery", "2026-09-07T10:00:00Z", "2026-09-07T12:00:00Z");
 
     private SilpoMcpClient silpoMcpClient;
     private CartBuildingService cartBuildingService;
@@ -45,12 +45,9 @@ class ReadyMealCatalogServiceTest {
     void resolvesCartContextThenSearchesTheFixedCategoryTermsInOneCall() {
         setUp();
         when(silpoMcpClient.callTool(eq("silpo_find_products_batch"), any(), eq(USER_ID)))
-                .thenReturn(new McpToolResponse(
-                        """
+                .thenReturn(new McpToolResponse("""
                         {"queries":[{"query":"салат готовий","products":[\
-                        {"name":"Салат Цезар готовий","productId":"p-1","companyId":"company-3","branchId":"branch-7","price":89.9}]}]}""",
-                        null,
-                        false));
+                        {"name":"Салат Цезар готовий","productId":"p-1","companyId":"company-3","branchId":"branch-7","price":89.9}]}]}""", null, false));
 
         List<CatalogCandidate> candidates = service.findCandidates(USER_ID);
 
@@ -73,34 +70,26 @@ class ReadyMealCatalogServiceTest {
     void flattensEveryProductAcrossEveryQueryNotJustTheFirstMatch() {
         setUp();
         when(silpoMcpClient.callTool(eq("silpo_find_products_batch"), any(), eq(USER_ID)))
-                .thenReturn(new McpToolResponse(
-                        """
+                .thenReturn(new McpToolResponse("""
                         {"queries":[\
                         {"query":"салат готовий","products":[\
                         {"name":"Салат Цезар готовий","productId":"p-1"},\
                         {"name":"Салат Грецький готовий","productId":"p-2"}]},\
-                        {"query":"борщ готовий","products":[{"name":"Борщ готовий, порція","productId":"p-3"}]}]}""",
-                        null,
-                        false));
+                        {"query":"борщ готовий","products":[{"name":"Борщ готовий, порція","productId":"p-3"}]}]}""", null, false));
 
         List<CatalogCandidate> candidates = service.findCandidates(USER_ID);
 
-        assertThat(candidates)
-                .extracting(CatalogCandidate::productId)
-                .containsExactlyInAnyOrder("p-1", "p-2", "p-3");
+        assertThat(candidates).extracting(CatalogCandidate::productId).containsExactlyInAnyOrder("p-1", "p-2", "p-3");
     }
 
     @Test
     void dedupesTheSameProductIdReturnedByTwoDifferentSearchTerms() {
         setUp();
         when(silpoMcpClient.callTool(eq("silpo_find_products_batch"), any(), eq(USER_ID)))
-                .thenReturn(new McpToolResponse(
-                        """
+                .thenReturn(new McpToolResponse("""
                         {"queries":[\
                         {"query":"готові страви","products":[{"name":"Плов з куркою","productId":"p-9"}]},\
-                        {"query":"плов готовий","products":[{"name":"Плов з куркою","productId":"p-9"}]}]}""",
-                        null,
-                        false));
+                        {"query":"плов готовий","products":[{"name":"Плов з куркою","productId":"p-9"}]}]}""", null, false));
 
         List<CatalogCandidate> candidates = service.findCandidates(USER_ID);
 

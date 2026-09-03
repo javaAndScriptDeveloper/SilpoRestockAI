@@ -131,16 +131,12 @@ class ReadyMealsSearchFirstIntegrationTest extends AbstractIntegrationTest {
 
     private void scriptSilpo() {
         MCP.respondToTool("silpo_get_my_shopping_cart", "{\"cartId\":\"cart-1\"}");
-        MCP.respondToTool(
-                "silpo_get_shopping_cart_by_id",
-                """
+        MCP.respondToTool("silpo_get_shopping_cart_by_id", """
                 {"cartId":"cart-1","branchId":"branch-7","companyId":"company-3",\
                 "deliveryType":"delivery","items":[]}""");
         MCP.respondToTool("silpo_get_time_slots", "{\"timeSlots\":[{\"id\":\"slot-1\",\"from\":\"18:00\"}]}");
         // 16 candidates across a few search terms — the same order of magnitude as the production bug report.
-        MCP.respondToTool(
-                "silpo_find_products_batch",
-                """
+        MCP.respondToTool("silpo_find_products_batch", """
                 {"queries":[{"query":"готові страви","products":[
                 {"name":"Сир кисломолочний з ягодами, порція","productId":"p-1"},
                 {"name":"Салат «Грецький» готовий","productId":"p-2"},
@@ -157,8 +153,7 @@ class ReadyMealsSearchFirstIntegrationTest extends AbstractIntegrationTest {
                 {"name":"Консерви тунець готові до вживання","productId":"p-13"},
                 {"name":"Запіканка сирна готова, порція","productId":"p-14"},
                 {"name":"Плов вегетаріанський готовий","productId":"p-15"},
-                {"name":"Салат з тунцем готовий","productId":"p-16"}]}]}"""
-                        .replace("\n", ""));
+                {"name":"Салат з тунцем готовий","productId":"p-16"}]}]}""".replace("\n", ""));
     }
 
     private static String curatedWeekJson() {
@@ -182,13 +177,11 @@ class ReadyMealsSearchFirstIntegrationTest extends AbstractIntegrationTest {
             String breakfast = names[d % names.length];
             String lunch = names[(d + 1) % names.length];
             String dinner = names[(d + 2) % names.length];
-            days.append(
-                    """
+            days.append("""
                     {"day":"%s","meals":[\
                     {"type":"BREAKFAST","name":"%s","ingredients":[{"name":"%s","quantity":1,"unit":"порція","category":"Готові страви"}]},\
                     {"type":"LUNCH","name":"%s","ingredients":[{"name":"%s","quantity":1,"unit":"порція","category":"Готові страви"}]},\
-                    {"type":"DINNER","name":"%s","ingredients":[{"name":"%s","quantity":1,"unit":"порція","category":"Готові страви"}]}]}"""
-                            .formatted(dayNames[d], breakfast, breakfast, lunch, lunch, dinner, dinner));
+                    {"type":"DINNER","name":"%s","ingredients":[{"name":"%s","quantity":1,"unit":"порція","category":"Готові страви"}]}]}""".formatted(dayNames[d], breakfast, breakfast, lunch, lunch, dinner, dinner));
         }
         return "{\"days\":[" + days + "]}";
     }
@@ -204,12 +197,11 @@ class ReadyMealsSearchFirstIntegrationTest extends AbstractIntegrationTest {
 
         assertThat(plan.getSourceType()).isEqualTo(ShoppingListSourceType.READY_MEAL_DIRECT);
         assertThat(items).isNotEmpty();
-        assertThat(items).allSatisfy(item -> assertThat(item.getSilpoProductId()).isNotBlank());
+        assertThat(items)
+                .allSatisfy(item -> assertThat(item.getSilpoProductId()).isNotBlank());
 
         MCP.respondToTool("silpo_add_or_update_cart_products", "{\"ok\":true}");
-        MCP.respondToTool(
-                "silpo_get_shopping_cart_by_id",
-                """
+        MCP.respondToTool("silpo_get_shopping_cart_by_id", """
                 {"cartId":"cart-1","branchId":"branch-7","companyId":"company-3","deliveryType":"delivery",\
                 "items":[],"total":0,"validations":[]}""");
 
@@ -219,7 +211,9 @@ class ReadyMealsSearchFirstIntegrationTest extends AbstractIntegrationTest {
         JsonNode added = MCP.callArguments("silpo_add_or_update_cart_products").getFirst();
         assertThat(added.path("products")).hasSize(items.size());
         // Only Step A's own search, during generation — none during cart-building for these pre-resolved lines.
-        assertThat(MCP.calledTools().stream().filter("silpo_find_products_batch"::equals).count())
+        assertThat(MCP.calledTools().stream()
+                        .filter("silpo_find_products_batch"::equals)
+                        .count())
                 .isEqualTo(1);
     }
 }

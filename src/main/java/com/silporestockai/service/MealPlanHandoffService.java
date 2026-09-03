@@ -109,8 +109,8 @@ public class MealPlanHandoffService {
     private static long distinctRealProducts(WeeklyMealPlan week) {
         return week.days().stream()
                 .flatMap(day -> (day.meals() == null ? List.<PlannedMeal>of() : day.meals()).stream())
-                .flatMap(meal -> (meal.ingredients() == null ? List.<PlannedIngredient>of() : meal.ingredients())
-                        .stream())
+                .flatMap(meal ->
+                        (meal.ingredients() == null ? List.<PlannedIngredient>of() : meal.ingredients()).stream())
                 .map(PlannedIngredient::productId)
                 .filter(java.util.Objects::nonNull)
                 .distinct()
