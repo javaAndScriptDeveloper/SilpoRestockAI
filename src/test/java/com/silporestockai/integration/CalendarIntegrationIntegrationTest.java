@@ -158,6 +158,10 @@ class CalendarIntegrationIntegrationTest extends AbstractIntegrationTest {
         assertThat(event.path("end").path("dateTime").asText()).startsWith("2026-09-04T20:00:00");
         assertThat(event.path("description").asText()).contains("7 позицій");
         assertThat(GOOGLE.authorizationHeaders()).containsExactly("Bearer stored-access-token");
+        assertThat(event.path("reminders").path("useDefault").asBoolean()).isFalse();
+        JsonNode override = event.path("reminders").path("overrides").get(0);
+        assertThat(override.path("method").asText()).isEqualTo("popup");
+        assertThat(override.path("minutes").asInt()).isEqualTo(60);
     }
 
     @Test

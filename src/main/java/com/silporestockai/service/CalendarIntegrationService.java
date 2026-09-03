@@ -6,6 +6,7 @@ import com.silporestockai.model.OrderConfirmedEvent;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
@@ -68,7 +69,11 @@ public class CalendarIntegrationService {
                                 event.slotLabel() == null ? "—" : event.slotLabel(),
                                 event.orderId()),
                 new GoogleCalendarApiClient.EventDateTime(RFC_3339.format(start), KYIV.getId()),
-                new GoogleCalendarApiClient.EventDateTime(RFC_3339.format(end), KYIV.getId()));
+                new GoogleCalendarApiClient.EventDateTime(RFC_3339.format(end), KYIV.getId()),
+                new GoogleCalendarApiClient.Reminders(
+                        false,
+                        List.of(new GoogleCalendarApiClient.ReminderOverride(
+                                "popup", properties.reminderMinutesBefore()))));
         try {
             GoogleCalendarApiClient.CreatedEvent created =
                     calendarApiClient.insertEvent("Bearer " + accessToken, properties.calendarId(), calendarEvent);
