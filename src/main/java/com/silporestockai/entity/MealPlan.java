@@ -1,9 +1,11 @@
 package com.silporestockai.entity;
 
+import com.silporestockai.model.ShoppingListSourceType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
@@ -51,4 +53,13 @@ public class MealPlan {
 
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
+
+    /**
+     * Which generation path produced this plan — {@code MealPlanService} sets it right after generating, so
+     * {@code ShoppingListService.deriveFromMealPlan} can tag the derived items without re-deriving it from the plan
+     * JSON. Not persisted: only the very next call in the same request needs it.
+     */
+    @Transient
+    @Builder.Default
+    private ShoppingListSourceType sourceType = ShoppingListSourceType.RECIPE_DERIVED;
 }

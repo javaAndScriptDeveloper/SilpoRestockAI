@@ -6,8 +6,10 @@ import com.silporestockai.entity.MealPlan;
 import com.silporestockai.entity.UserProfile;
 import com.silporestockai.exception.ApplicationException;
 import com.silporestockai.exception.MealPlanGenerationException;
+import com.silporestockai.model.CookingTimePreference;
 import com.silporestockai.model.PlannedDay;
 import com.silporestockai.model.PlannedMeal;
+import com.silporestockai.model.ShoppingListSourceType;
 import com.silporestockai.model.SpecialMode;
 import com.silporestockai.model.WeeklyMealPlan;
 import com.silporestockai.repository.MealPlanRepository;
@@ -55,7 +57,8 @@ public class MealPlanService {
     private final ClaudeApiClient claudeApiClient;
     private final InventoryTrendService inventoryTrendService;
     private final Clock clock;
-    private final String systemPrompt;
+    private final String recipeSystemPrompt;
+    private final String readyMealsSystemPrompt;
 
     public MealPlanService(
             UserProfileRepository userProfileRepository,
@@ -63,13 +66,15 @@ public class MealPlanService {
             ClaudeApiClient claudeApiClient,
             InventoryTrendService inventoryTrendService,
             Clock clock,
-            @Value("classpath:prompts/meal-plan-system.txt") Resource systemPromptResource) {
+            @Value("classpath:prompts/meal-plan-system.txt") Resource recipeSystemPromptResource,
+            @Value("classpath:prompts/meal-plan-ready-meals-system.txt") Resource readyMealsSystemPromptResource) {
         this.userProfileRepository = userProfileRepository;
         this.mealPlanRepository = mealPlanRepository;
         this.claudeApiClient = claudeApiClient;
         this.inventoryTrendService = inventoryTrendService;
         this.clock = clock;
-        this.systemPrompt = read(systemPromptResource);
+        this.recipeSystemPrompt = read(recipeSystemPromptResource);
+        this.readyMealsSystemPrompt = read(readyMealsSystemPromptResource);
     }
 
     @Transactional
@@ -95,6 +100,9 @@ public class MealPlanService {
                         HttpStatus.PRECONDITION_REQUIRED,
                         "user %s has no profile yet; onboarding has to finish first".formatted(userId)));
 
+        boolean readyMealsOnly = profile.getCookingTimePreference() == CookingTimePreference.READY_MEALS_ONLY;
+        String systemPrompt = readyMealsOnly ? readyMealsSystemPrompt : recipeSystemPrompt;
+
         String userPrompt = describe(profile, adjustment, inventoryTrendService.getRemovalCandidates(userId));
         WeeklyMealPlan plan = claudeApiClient.completeStructured(systemPrompt, userPrompt, WeeklyMealPlan.class);
         List<String> defects = defectsOf(plan);
@@ -110,7 +118,10 @@ public class MealPlanService {
                 throw new MealPlanGenerationException(userId, defects);
             }
         }
-        return persist(userId, plan);
+        return persist(
+                userId,
+                plan,
+                readyMealsOnly ? ShoppingListSourceType.READY_MEAL_DIRECT : ShoppingListSourceType.RECIPE_DERIVED);
     }
 
     private static String correctionOf(String userPrompt, List<String> defects) {
@@ -154,7 +165,7 @@ public class MealPlanService {
         return defects;
     }
 
-    private MealPlan persist(UUID userId, WeeklyMealPlan plan) {
+    private MealPlan persist(UUID userId, WeeklyMealPlan plan, ShoppingListSourceType sourceType) {
         // convertValue to a raw Map rather than a TypeReference: an anonymous TypeReference subclass is a class in
         // this package, and ArchUnit requires every one of those to be named ...Service.
         @SuppressWarnings("unchecked")
@@ -166,6 +177,7 @@ public class MealPlanService {
                 .plan(asJson)
                 .createdAt(Instant.now())
                 .build());
+        row.setSourceType(sourceType);
         log.info("stored a weekly plan for user {} starting {}", userId, row.getWeekStartDate());
         return row;
     }
@@ -180,17 +192,35 @@ public class MealPlanService {
     /** Everything the model needs about this household, in the user message rather than the system prompt. */
     private String describe(UserProfile profile, String adjustment, List<String> untouched) {
         StringBuilder text = new StringBuilder("Склади меню на тиждень для цієї родини.\n");
-        text.append("Людей удома: ")
-                .append(profile.getHouseholdSize() == null ? "невідомо" : profile.getHouseholdSize())
-                .append('\n');
-        if (Boolean.TRUE.equals(profile.getHasKids())) {
-            text.append("Діти: ")
-                    .append(
-                            profile.getKidsAges() == null
-                                            || profile.getKidsAges().isEmpty()
-                                    ? "є"
-                                    : profile.getKidsAges())
+        if (profile.getAdultMaleCount() != null || profile.getAdultFemaleCount() != null) {
+            text.append("Дорослих: ")
+                    .append(profile.getAdultMaleCount() == null ? 0 : profile.getAdultMaleCount())
+                    .append(" чоловіків, ")
+                    .append(profile.getAdultFemaleCount() == null ? 0 : profile.getAdultFemaleCount())
+                    .append(" жінок.\n");
+            if (profile.getChildrenAgeBrackets() != null
+                    && !profile.getChildrenAgeBrackets().isEmpty()) {
+                text.append("Дітей: ")
+                        .append(profile.getChildrenAgeBrackets().size())
+                        .append(", вікові групи: ")
+                        .append(profile.getChildrenAgeBrackets().stream()
+                                .map(Enum::name)
+                                .collect(java.util.stream.Collectors.joining(", ")))
+                        .append('\n');
+            }
+        } else {
+            text.append("Людей удома: ")
+                    .append(profile.getHouseholdSize() == null ? "невідомо" : profile.getHouseholdSize())
                     .append('\n');
+            if (Boolean.TRUE.equals(profile.getHasKids())) {
+                text.append("Діти: ")
+                        .append(
+                                profile.getKidsAges() == null
+                                                || profile.getKidsAges().isEmpty()
+                                        ? "є"
+                                        : profile.getKidsAges())
+                        .append('\n');
+            }
         }
         // Quoted, never presented as a parsed list. «Все окрім молочки та бананів» read as a list says the
         // opposite of what was meant, and once produced a week of nothing but bananas.
