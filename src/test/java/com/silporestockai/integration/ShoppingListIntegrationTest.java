@@ -137,9 +137,9 @@ class ShoppingListIntegrationTest extends AbstractIntegrationTest {
         List<ShoppingListItem> items = shoppingListService.createAdHocList(
                 userId,
                 List.of(
-                        new PlannedIngredient("попкорн", new BigDecimal("2"), "шт", null),
-                        new PlannedIngredient("попкорн", new BigDecimal("1"), "шт", null),
-                        new PlannedIngredient("кола", new BigDecimal("1.5"), "л", null)));
+                        new PlannedIngredient("попкорн", new BigDecimal("2"), "шт", null, null),
+                        new PlannedIngredient("попкорн", new BigDecimal("1"), "шт", null, null),
+                        new PlannedIngredient("кола", new BigDecimal("1.5"), "л", null, null)));
 
         assertThat(items).hasSize(2);
         assertThat(shoppingListItemRepository.findByUserIdAndMealPlanIdIsNull(userId))
@@ -153,7 +153,7 @@ class ShoppingListIntegrationTest extends AbstractIntegrationTest {
         MealPlan plan = persistedPlan(8304L);
         UUID userId = plan.getUserId();
         shoppingListService.createAdHocList(
-                userId, List.of(new PlannedIngredient("морозиво", BigDecimal.ONE, "шт", null)));
+                userId, List.of(new PlannedIngredient("морозиво", BigDecimal.ONE, "шт", null, null)));
 
         shoppingListService.deriveFromMealPlan(
                 plan.getId(), com.silporestockai.model.ShoppingListSourceType.RECIPE_DERIVED);

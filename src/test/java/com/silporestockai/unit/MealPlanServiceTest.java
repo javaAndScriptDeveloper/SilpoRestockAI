@@ -129,7 +129,7 @@ class MealPlanServiceTest {
     }
 
     private static WeeklyMealPlan validPlan() {
-        List<PlannedIngredient> ingredients = List.of(new PlannedIngredient("Щось", BigDecimal.ONE, "шт", "Інше"));
+        List<PlannedIngredient> ingredients = List.of(new PlannedIngredient("Щось", BigDecimal.ONE, "шт", "Інше", null));
         List<PlannedMeal> meals = List.of(
                 new PlannedMeal(MealType.BREAKFAST, "Сніданок", ingredients),
                 new PlannedMeal(MealType.LUNCH, "Обід", ingredients),

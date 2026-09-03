@@ -159,7 +159,8 @@ public class ShoppingListService {
                 ingredient.name(),
                 ingredient.quantity(),
                 ingredient.unit(),
-                categoryKeywordFallbackService.categorize(ingredient.name()));
+                categoryKeywordFallbackService.categorize(ingredient.name()),
+                ingredient.productId());
     }
 
     /**
@@ -181,7 +182,8 @@ public class ShoppingListService {
             byNameAndUnit.merge(
                     key,
                     new PlannedIngredient(
-                            ingredient.name().trim(), ingredient.quantity(), ingredient.unit(), ingredient.category()),
+                            ingredient.name().trim(), ingredient.quantity(), ingredient.unit(), ingredient.category(),
+                            ingredient.productId()),
                     ShoppingListService::add);
         }
         return List.copyOf(byNameAndUnit.values());
@@ -199,7 +201,7 @@ public class ShoppingListService {
         }
         String category =
                 existing.category() != null && !existing.category().isBlank() ? existing.category() : extra.category();
-        return new PlannedIngredient(existing.name(), quantity, existing.unit(), category);
+        return new PlannedIngredient(existing.name(), quantity, existing.unit(), category, existing.productId());
     }
 
     private static String normalise(String value) {

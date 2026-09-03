@@ -1,0 +1,16 @@
+databaseChangeLog:
+  - changeSet:
+      id: 020-shopping-list-item-silpo-product-id
+      author: komora
+      comment: >-
+        READY_MEALS_ONLY generation (task 22) now resolves a real Silpo product at plan-generation time,
+        so the shopping list line already carries the id CartBuildingService needs to add it to the cart
+        directly. Nullable because only that fork ever sets it — RECIPE_DERIVED lines still resolve by
+        name search as before.
+      changes:
+        - addColumn:
+            tableName: shopping_list_item
+            columns:
+              - column:
+                  name: silpo_product_id
+                  type: VARCHAR(64)
