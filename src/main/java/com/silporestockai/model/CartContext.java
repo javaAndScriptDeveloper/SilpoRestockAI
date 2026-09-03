@@ -11,4 +11,9 @@ package com.silporestockai.model;
  * @param timeslotEnd the cart's chosen delivery window end, ISO format, null when none is chosen yet
  */
 public record CartContext(
-        String cartId, String branchId, String companyId, String deliveryType, String timeslotStart, String timeslotEnd) {}
+        String cartId,
+        String branchId,
+        String companyId,
+        String deliveryType,
+        String timeslotStart,
+        String timeslotEnd) {}

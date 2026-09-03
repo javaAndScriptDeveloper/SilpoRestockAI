@@ -283,6 +283,24 @@ FROM customer_order;
 
 The draft exists *before* you answer. That is what makes a double tap safe.
 
+### READY_MEALS_ONLY: verify the search-first fix (task 22)
+
+For a household with `cookingTimePreference = READY_MEALS_ONLY`, the generated plan's every ingredient
+must already carry a real `productId` — check `meal_plan.plan_json` directly:
+
+```bash
+docker exec -i app-db psql -U app -d app <<'SQL'
+SELECT plan_json -> 'days' -> 0 -> 'meals' -> 0 -> 'ingredients' -> 0 ->> 'productId'
+FROM meal_plan WHERE user_id = (SELECT id FROM users WHERE telegram_chat_id = <CHAT_ID>)
+ORDER BY created_at DESC LIMIT 1;
+SQL
+```
+
+A non-null value here, followed by a cart that actually builds with 0 `unresolved` (see
+`CartSummary.unresolved()` / the bot's own cart message), confirms the fix. The log line
+`Silpo matched no product for N of M items` should read `0 of M` — the exact line the original bug
+report quoted at `16 of 16`.
+
 ---
 
 ## 7. Confirm, and the baseline

@@ -63,4 +63,7 @@ public class ShoppingListItem {
     @Enumerated(EnumType.STRING)
     @Column(name = "source_type", length = 24)
     private ShoppingListSourceType sourceType;
+
+    @Column(name = "silpo_product_id", length = 64)
+    private String silpoProductId;
 }

@@ -2,19 +2,25 @@ package com.silporestockai.integration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.silporestockai.entity.SilpoOAuthToken;
 import com.silporestockai.entity.User;
 import com.silporestockai.entity.UserProfile;
 import com.silporestockai.repository.MealPlanRepository;
 import com.silporestockai.repository.ShoppingListItemRepository;
+import com.silporestockai.repository.SilpoOAuthTokenRepository;
 import com.silporestockai.repository.UserProfileRepository;
 import com.silporestockai.repository.UserRepository;
 import com.silporestockai.service.MealPlanHandoffService;
 import com.silporestockai.service.UserAccountService;
 import com.silporestockai.support.StubAnthropicServer;
+import com.silporestockai.support.StubMcpServer;
 import com.silporestockai.support.StubTelegramServer;
+import com.silporestockai.utils.TokenCipher;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.time.DayOfWeek;
+import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -36,6 +42,7 @@ class MealPlanHandoffIntegrationTest extends AbstractIntegrationTest {
     private static final long CHAT_ID = 8201L;
     private static final StubTelegramServer TELEGRAM = startTelegram();
     private static final StubAnthropicServer CLAUDE = startClaude();
+    private static final StubMcpServer MCP = startMcp();
 
     @Autowired
     private MealPlanHandoffService mealPlanHandoffService;
@@ -55,6 +62,12 @@ class MealPlanHandoffIntegrationTest extends AbstractIntegrationTest {
     @Autowired
     private ShoppingListItemRepository shoppingListItemRepository;
 
+    @Autowired
+    private SilpoOAuthTokenRepository tokenRepository;
+
+    @Autowired
+    private TokenCipher tokenCipher;
+
     private static StubTelegramServer startTelegram() {
         try {
             return new StubTelegramServer(BOT_TOKEN);
@@ -71,26 +84,43 @@ class MealPlanHandoffIntegrationTest extends AbstractIntegrationTest {
         }
     }
 
+    /** Only used by the READY_MEALS_ONLY tests — Step A of that path needs a cart context to search from. */
+    private static StubMcpServer startMcp() {
+        try {
+            return new StubMcpServer(List.of(
+                    "silpo_get_my_shopping_cart",
+                    "silpo_get_shopping_cart_by_id",
+                    "silpo_get_time_slots",
+                    "silpo_find_products_batch"));
+        } catch (IOException e) {
+            throw new IllegalStateException("could not start the MCP stub", e);
+        }
+    }
+
     @DynamicPropertySource
     static void stubs(DynamicPropertyRegistry registry) {
         registry.add("telegram.bot-token", () -> BOT_TOKEN);
         registry.add("telegram.api-url", TELEGRAM::baseUrl);
         registry.add("claude.api-key", () -> "sk-ant-stub-key");
         registry.add("claude.base-url", CLAUDE::baseUrl);
+        registry.add("silpo.mcp.endpoint", MCP::endpoint);
     }
 
     @AfterAll
     static void stopStubs() {
         TELEGRAM.close();
         CLAUDE.close();
+        MCP.close();
     }
 
     @BeforeEach
     void clean() {
         TELEGRAM.reset();
         CLAUDE.reset();
+        MCP.reset();
         shoppingListItemRepository.deleteAll();
         mealPlanRepository.deleteAll();
+        tokenRepository.deleteAll();
         userProfileRepository.deleteAll();
         userRepository.deleteAll();
     }
@@ -120,6 +150,67 @@ class MealPlanHandoffIntegrationTest extends AbstractIntegrationTest {
                     {"type":"DINNER","name":"Рис з овочами","ingredients":[{"name":"рис","quantity":0.4,"unit":"кг"}]}]}""".formatted(day.name()));
         }
         return "{\"days\":[" + days + "]}";
+    }
+
+    private UUID readyMealsProfiledUser() {
+        User user = userAccountService.findOrCreate(CHAT_ID);
+        userProfileRepository.save(UserProfile.builder()
+                .id(UUID.randomUUID())
+                .userId(user.getId())
+                .householdSize(2)
+                .cookingTimePreference(com.silporestockai.model.CookingTimePreference.READY_MEALS_ONLY)
+                .build());
+        tokenRepository.save(SilpoOAuthToken.builder()
+                .userId(user.getId())
+                .accessToken(tokenCipher.encrypt("stub-access-token"))
+                .expiresAt(Instant.now().plusSeconds(3600))
+                .createdAt(Instant.now())
+                .updatedAt(Instant.now())
+                .build());
+        MCP.respondToTool("silpo_get_my_shopping_cart", "{\"cartId\":\"cart-1\"}");
+        MCP.respondToTool("silpo_get_shopping_cart_by_id", """
+                {"cartId":"cart-1","branchId":"branch-7","companyId":"company-3",\
+                "deliveryType":"delivery","items":[]}""");
+        MCP.respondToTool("silpo_get_time_slots", "{\"timeSlots\":[{\"id\":\"slot-1\",\"from\":\"18:00\"}]}");
+        MCP.respondToTool("silpo_find_products_batch", """
+                {"queries":[{"query":"готові страви","products":[\
+                {"name":"Салат Цезар готовий","productId":"p-1"},\
+                {"name":"Борщ готовий, порція","productId":"p-2"}]}]}""");
+        return user.getId();
+    }
+
+    private static String sparseReadyMealsWeekJson() {
+        StringBuilder days = new StringBuilder();
+        String[] names = {"Салат Цезар готовий", "Борщ готовий, порція"};
+        String[] ids = {"p-1", "p-2"};
+        int i = 0;
+        for (DayOfWeek day : DayOfWeek.values()) {
+            if (!days.isEmpty()) {
+                days.append(',');
+            }
+            String name = names[i % 2];
+            String productId = ids[i % 2];
+            i++;
+            days.append("""
+                    {"day":"%s","meals":[\
+                    {"type":"BREAKFAST","name":"%s","ingredients":[{"name":"%s","quantity":1,"unit":"порція",\
+                    "category":"Готові страви","productId":"%s"}]},\
+                    {"type":"LUNCH","name":"%s","ingredients":[{"name":"%s","quantity":1,"unit":"порція",\
+                    "category":"Готові страви","productId":"%s"}]},\
+                    {"type":"DINNER","name":"%s","ingredients":[{"name":"%s","quantity":1,"unit":"порція",\
+                    "category":"Готові страви","productId":"%s"}]}]}""".formatted(day.name(), name, name, productId, name, name, productId, name, name, productId));
+        }
+        return "{\"days\":[" + days + "]}";
+    }
+
+    @Test
+    void warnsWhenTheReadyMealsWeekHadToRepeatBecauseFewRealCandidatesExisted() {
+        UUID userId = readyMealsProfiledUser();
+        CLAUDE.respondWithText(sparseReadyMealsWeekJson());
+
+        mealPlanHandoffService.generateFirstPlan(userId);
+
+        assertThat(TELEGRAM.sentMessages().getFirst().path("text").asText()).contains("не так багато готових страв");
     }
 
     @Test

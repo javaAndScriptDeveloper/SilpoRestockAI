@@ -56,7 +56,8 @@ public class CartBuildingService {
     private static final String TOOL_CREATE_CART = "silpo_create_shopping_cart";
 
     /** {@code silpo_get_available_delivery_types} hands back a branch directly for these; the rest need resolving. */
-    private static final Set<String> DELIVERY_TYPES_WITH_A_BRANCH_ALREADY = Set.of("DeliveryHome", "WideAssortDelivery", "B2B");
+    private static final Set<String> DELIVERY_TYPES_WITH_A_BRANCH_ALREADY =
+            Set.of("DeliveryHome", "WideAssortDelivery", "B2B");
 
     /** Slot times without a zone are the household's, and the household is in Kyiv. */
     private static final ZoneId KYIV = ZoneId.of("Europe/Kyiv");
@@ -157,7 +158,8 @@ public class CartBuildingService {
         BigDecimal latitude = requireNumber(address, McpResponses.LATITUDE, userId, "a saved address had no latitude");
         BigDecimal longitude =
                 requireNumber(address, McpResponses.LONGITUDE, userId, "a saved address had no longitude");
-        String addressType = McpResponses.findString(address, McpResponses.ADDRESS_TYPE).orElse("house");
+        String addressType =
+                McpResponses.findString(address, McpResponses.ADDRESS_TYPE).orElse("house");
 
         JsonNode deliveryTypesResponse =
                 call(userId, TOOL_DELIVERY_TYPES, Map.of("latitude", latitude, "longitude", longitude));
@@ -178,9 +180,10 @@ public class CartBuildingService {
                             "Silpo offered no home-delivery or self-pickup option for user " + userId);
                 });
         String deliveryType = McpResponses.findString(chosen, McpResponses.DELIVERY_TYPE)
-                .orElseThrow(() -> new CartBuildException("delivery type option had no deliveryType for user " + userId));
-        String branchId = McpResponses.findString(chosen, McpResponses.BRANCH_ID)
-                .orElseGet(() -> resolvePickupBranch(userId));
+                .orElseThrow(
+                        () -> new CartBuildException("delivery type option had no deliveryType for user " + userId));
+        String branchId =
+                McpResponses.findString(chosen, McpResponses.BRANCH_ID).orElseGet(() -> resolvePickupBranch(userId));
 
         JsonNode timeSlotsResponse =
                 call(userId, TOOL_TIME_SLOTS, Map.of("branchId", branchId, "deliveryTypes", List.of(deliveryType)));
@@ -216,7 +219,10 @@ public class CartBuildingService {
 
         JsonNode created = call(userId, TOOL_CREATE_CART, createArgs);
         String cartId = McpResponses.findString(created, McpResponses.CART_ID).orElseThrow(() -> {
-            log.error("silpo_create_shopping_cart answered but no cart id for user {}. Raw response: {}", userId, created);
+            log.error(
+                    "silpo_create_shopping_cart answered but no cart id for user {}. Raw response: {}",
+                    userId,
+                    created);
             return new CartBuildException("Silpo created no cart id for user " + userId);
         });
         log.info("MCP <- created cart {} for user {} at branch {}", cartId, userId, branchId);
@@ -289,7 +295,8 @@ public class CartBuildingService {
             // Real slots carry no id of their own — only start/end/available — so start doubles as this
             // application's own handle for "which slot was picked", falling back to a documented id field only
             // if one is ever present.
-            String start = McpResponses.findString(slot, McpResponses.SLOT_START).orElse(null);
+            String start =
+                    McpResponses.findString(slot, McpResponses.SLOT_START).orElse(null);
             String id = McpResponses.findString(slot, McpResponses.SLOT_ID).orElse(start);
             if (id == null) {
                 log.debug("ignoring a time slot with no start and no identifier");
@@ -332,8 +339,29 @@ public class CartBuildingService {
      */
     public List<ResolvedProduct> resolveProducts(UUID userId, CartContext context, List<ShoppingListItem> items) {
         List<ResolvedProduct> resolved = new ArrayList<>();
-        for (int start = 0; start < items.size(); start += SEARCH_BATCH_SIZE) {
-            List<ShoppingListItem> chunk = items.subList(start, Math.min(items.size(), start + SEARCH_BATCH_SIZE));
+        List<ShoppingListItem> preResolved = items.stream()
+                .filter(item -> item.getSilpoProductId() != null
+                        && !item.getSilpoProductId().isBlank())
+                .toList();
+        // READY_MEALS_ONLY lines already carry a real productId, resolved during generation (task 22) — adding
+        // them straight to the cart, not searching for them again, is the whole point of that fix.
+        for (ShoppingListItem item : preResolved) {
+            resolved.add(new ResolvedProduct(
+                    item.getName(),
+                    item.getSilpoProductId(),
+                    context.companyId(),
+                    context.branchId(),
+                    quantityOf(item),
+                    item.getUnit()));
+        }
+
+        List<ShoppingListItem> needsSearch = items.stream()
+                .filter(item -> item.getSilpoProductId() == null
+                        || item.getSilpoProductId().isBlank())
+                .toList();
+        for (int start = 0; start < needsSearch.size(); start += SEARCH_BATCH_SIZE) {
+            List<ShoppingListItem> chunk =
+                    needsSearch.subList(start, Math.min(needsSearch.size(), start + SEARCH_BATCH_SIZE));
             JsonNode found = call(
                     userId,
                     TOOL_FIND_PRODUCTS,
@@ -342,9 +370,13 @@ public class CartBuildingService {
                             "deliveryType", nullSafe(context.deliveryType()),
                             "timeslotStart", nullSafe(context.timeslotStart()),
                             "timeslotEnd", nullSafe(context.timeslotEnd()),
-                            "products", chunk.stream().map(ShoppingListItem::getName).toList()));
+                            "products",
+                                    chunk.stream()
+                                            .map(ShoppingListItem::getName)
+                                            .toList()));
             for (JsonNode query : McpResponses.findArray(found, McpResponses.QUERIES)) {
-                String queryText = McpResponses.findString(query, McpResponses.NAME).orElse(null);
+                String queryText =
+                        McpResponses.findString(query, McpResponses.NAME).orElse(null);
                 ShoppingListItem item = queryText == null
                         ? null
                         : chunk.stream()
@@ -374,7 +406,12 @@ public class CartBuildingService {
                         });
             }
         }
-        log.info("MCP <- resolved {} of {} shopping list lines", resolved.size(), items.size());
+        log.info(
+                "MCP <- resolved {} of {} shopping list lines ({} pre-resolved, {} searched)",
+                resolved.size(),
+                items.size(),
+                preResolved.size(),
+                needsSearch.size());
         return resolved;
     }
 

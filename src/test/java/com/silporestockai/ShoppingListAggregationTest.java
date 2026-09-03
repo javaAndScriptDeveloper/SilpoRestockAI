@@ -14,11 +14,27 @@ import org.junit.jupiter.api.Test;
 class ShoppingListAggregationTest {
 
     private static PlannedIngredient of(String name, String quantity, String unit) {
-        return new PlannedIngredient(name, quantity == null ? null : new BigDecimal(quantity), unit, null);
+        return new PlannedIngredient(name, quantity == null ? null : new BigDecimal(quantity), unit, null, null);
     }
 
     private static PlannedIngredient of(String name, String quantity, String unit, String category) {
-        return new PlannedIngredient(name, quantity == null ? null : new BigDecimal(quantity), unit, category);
+        return new PlannedIngredient(name, quantity == null ? null : new BigDecimal(quantity), unit, category, null);
+    }
+
+    private static PlannedIngredient of(String name, String quantity, String unit, String category, String productId) {
+        return new PlannedIngredient(
+                name, quantity == null ? null : new BigDecimal(quantity), unit, category, productId);
+    }
+
+    @Test
+    void keepsTheProductIdWhenTheSameReadyMealIsPickedTwice() {
+        List<PlannedIngredient> aggregated = ShoppingListService.aggregate(List.of(
+                of("Плов з куркою готовий", "1", "порція", "Готові страви", "p-42"),
+                of("Плов з куркою готовий", "1", "порція", "Готові страви", "p-42")));
+
+        assertThat(aggregated).hasSize(1);
+        assertThat(aggregated.getFirst().productId()).isEqualTo("p-42");
+        assertThat(aggregated.getFirst().quantity()).isEqualByComparingTo("2");
     }
 
     @Test

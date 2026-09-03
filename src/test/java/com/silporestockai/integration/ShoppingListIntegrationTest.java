@@ -97,6 +97,40 @@ class ShoppingListIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void readyMealPlanCarriesTheRealProductIdThroughToTheStoredLine() {
+        User user = userAccountService.findOrCreate(8304L);
+        Map<String, Object> plan = Map.of(
+                "days",
+                List.of(Map.of(
+                        "day",
+                        "MONDAY",
+                        "meals",
+                        List.of(Map.of(
+                                "type", "LUNCH",
+                                "name", "Плов з куркою готовий",
+                                "ingredients",
+                                        List.of(Map.of(
+                                                "name", "Плов з куркою готовий",
+                                                "quantity", BigDecimal.ONE,
+                                                "unit", "порція",
+                                                "category", "Готові страви",
+                                                "productId", "p-42")))))));
+        MealPlan saved = mealPlanRepository.save(MealPlan.builder()
+                .id(UUID.randomUUID())
+                .userId(user.getId())
+                .weekStartDate(LocalDate.of(2026, 8, 31))
+                .plan(plan)
+                .createdAt(Instant.now())
+                .build());
+
+        List<ShoppingListItem> items = shoppingListService.deriveFromMealPlan(
+                saved.getId(), com.silporestockai.model.ShoppingListSourceType.READY_MEAL_DIRECT);
+
+        assertThat(items).hasSize(1);
+        assertThat(items.getFirst().getSilpoProductId()).isEqualTo("p-42");
+    }
+
+    @Test
     void sumsAnIngredientThatAppearsInSeveralMealsAndKeepsMismatchedUnitsApart() {
         MealPlan plan = persistedPlan(8301L);
 
@@ -137,9 +171,9 @@ class ShoppingListIntegrationTest extends AbstractIntegrationTest {
         List<ShoppingListItem> items = shoppingListService.createAdHocList(
                 userId,
                 List.of(
-                        new PlannedIngredient("попкорн", new BigDecimal("2"), "шт", null),
-                        new PlannedIngredient("попкорн", new BigDecimal("1"), "шт", null),
-                        new PlannedIngredient("кола", new BigDecimal("1.5"), "л", null)));
+                        new PlannedIngredient("попкорн", new BigDecimal("2"), "шт", null, null),
+                        new PlannedIngredient("попкорн", new BigDecimal("1"), "шт", null, null),
+                        new PlannedIngredient("кола", new BigDecimal("1.5"), "л", null, null)));
 
         assertThat(items).hasSize(2);
         assertThat(shoppingListItemRepository.findByUserIdAndMealPlanIdIsNull(userId))
@@ -153,7 +187,7 @@ class ShoppingListIntegrationTest extends AbstractIntegrationTest {
         MealPlan plan = persistedPlan(8304L);
         UUID userId = plan.getUserId();
         shoppingListService.createAdHocList(
-                userId, List.of(new PlannedIngredient("морозиво", BigDecimal.ONE, "шт", null)));
+                userId, List.of(new PlannedIngredient("морозиво", BigDecimal.ONE, "шт", null, null)));
 
         shoppingListService.deriveFromMealPlan(
                 plan.getId(), com.silporestockai.model.ShoppingListSourceType.RECIPE_DERIVED);

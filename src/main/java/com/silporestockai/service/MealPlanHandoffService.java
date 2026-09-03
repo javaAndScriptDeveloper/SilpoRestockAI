@@ -5,7 +5,9 @@ import com.silporestockai.entity.MealPlan;
 import com.silporestockai.entity.ShoppingListItem;
 import com.silporestockai.model.OnboardingCompletedEvent;
 import com.silporestockai.model.PlannedDay;
+import com.silporestockai.model.PlannedIngredient;
 import com.silporestockai.model.PlannedMeal;
+import com.silporestockai.model.ShoppingListSourceType;
 import com.silporestockai.model.WeeklyMealPlan;
 import com.silporestockai.repository.UserRepository;
 import com.silporestockai.service.telegram.TelegramOutboundService;
@@ -79,6 +81,8 @@ public class MealPlanHandoffService {
                         () -> log.warn("onboarding completed for unknown user {}", userId));
     }
 
+    private static final int MINIMUM_DISTINCT_READY_MEALS = 7;
+
     /** One line: the week is ready, and here is Monday, which is the only part anyone reads immediately. */
     private static String summarise(MealPlan plan, int shoppingListSize) {
         WeeklyMealPlan week = MAPPER.convertValue(plan.getPlan(), WeeklyMealPlan.class);
@@ -90,7 +94,26 @@ public class MealPlanHandoffService {
                 .stream()
                 .map(PlannedMeal::name)
                 .collect(Collectors.joining(" / "));
-        return "План на тиждень готовий, %d днів.\nПонеділок: %s\nСписок покупок: %d позицій."
+        String message = "План на тиждень готовий, %d днів.\nПонеділок: %s\nСписок покупок: %d позицій."
                 .formatted(week.days().size(), monday, shoppingListSize);
+        if (plan.getSourceType() == ShoppingListSourceType.READY_MEAL_DIRECT
+                && distinctRealProducts(week) < MINIMUM_DISTINCT_READY_MEALS) {
+            // Derived from what actually ended up in the plan, not a separate flag from generation — a thin
+            // candidate pool and a repetitive week are the same thing in practice.
+            message += "\nЧерез ваші обмеження знайшлось не так багато готових страв, тому деякі повторюються "
+                    + "цього тижня.";
+        }
+        return message;
+    }
+
+    private static long distinctRealProducts(WeeklyMealPlan week) {
+        return week.days().stream()
+                .flatMap(day -> (day.meals() == null ? List.<PlannedMeal>of() : day.meals()).stream())
+                .flatMap(meal ->
+                        (meal.ingredients() == null ? List.<PlannedIngredient>of() : meal.ingredients()).stream())
+                .map(PlannedIngredient::productId)
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .count();
     }
 }

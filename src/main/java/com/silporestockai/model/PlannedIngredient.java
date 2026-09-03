@@ -14,5 +14,8 @@ import java.math.BigDecimal;
  * @param category a short category label from the fixed taxonomy the system prompt gives (e.g. "Молочні продукти"),
  *     or null when the model left it out — {@link com.silporestockai.service.CategoryKeywordFallbackService} fills
  *     that gap.
+ * @param productId Silpo's real product id, set only by the {@code READY_MEALS_ONLY} generation fork (task 22) once
+ *     Claude's choice has been matched back to the candidate it was chosen from — null for every recipe-derived
+ *     ingredient, which still resolves to a product by name search in {@code CartBuildingService}.
  */
-public record PlannedIngredient(String name, BigDecimal quantity, String unit, String category) {}
+public record PlannedIngredient(String name, BigDecimal quantity, String unit, String category, String productId) {}

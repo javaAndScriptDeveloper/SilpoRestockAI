@@ -6,8 +6,10 @@ import com.silporestockai.entity.MealPlan;
 import com.silporestockai.entity.UserProfile;
 import com.silporestockai.exception.ApplicationException;
 import com.silporestockai.exception.MealPlanGenerationException;
+import com.silporestockai.model.CatalogCandidate;
 import com.silporestockai.model.CookingTimePreference;
 import com.silporestockai.model.PlannedDay;
+import com.silporestockai.model.PlannedIngredient;
 import com.silporestockai.model.PlannedMeal;
 import com.silporestockai.model.ShoppingListSourceType;
 import com.silporestockai.model.SpecialMode;
@@ -24,9 +26,12 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
@@ -56,6 +61,7 @@ public class MealPlanService {
     private final MealPlanRepository mealPlanRepository;
     private final ClaudeApiClient claudeApiClient;
     private final InventoryTrendService inventoryTrendService;
+    private final ReadyMealCatalogService readyMealCatalogService;
     private final Clock clock;
     private final String recipeSystemPrompt;
     private final String readyMealsSystemPrompt;
@@ -67,11 +73,13 @@ public class MealPlanService {
             InventoryTrendService inventoryTrendService,
             Clock clock,
             @Value("classpath:prompts/meal-plan-system.txt") Resource recipeSystemPromptResource,
-            @Value("classpath:prompts/meal-plan-ready-meals-system.txt") Resource readyMealsSystemPromptResource) {
+            @Value("classpath:prompts/meal-plan-ready-meals-system.txt") Resource readyMealsSystemPromptResource,
+            ReadyMealCatalogService readyMealCatalogService) {
         this.userProfileRepository = userProfileRepository;
         this.mealPlanRepository = mealPlanRepository;
         this.claudeApiClient = claudeApiClient;
         this.inventoryTrendService = inventoryTrendService;
+        this.readyMealCatalogService = readyMealCatalogService;
         this.clock = clock;
         this.recipeSystemPrompt = read(recipeSystemPromptResource);
         this.readyMealsSystemPrompt = read(readyMealsSystemPromptResource);
@@ -102,10 +110,25 @@ public class MealPlanService {
 
         boolean readyMealsOnly = profile.getCookingTimePreference() == CookingTimePreference.READY_MEALS_ONLY;
         String systemPrompt = readyMealsOnly ? readyMealsSystemPrompt : recipeSystemPrompt;
+        List<String> untouched = inventoryTrendService.getRemovalCandidates(userId);
 
-        String userPrompt = describe(profile, adjustment, inventoryTrendService.getRemovalCandidates(userId));
+        List<CatalogCandidate> candidates = List.of();
+        String userPrompt;
+        if (readyMealsOnly) {
+            candidates = readyMealCatalogService.findCandidates(userId);
+            if (candidates.isEmpty()) {
+                // Zero real candidates means there is nothing for Claude to curate — asking it anyway would just
+                // reproduce the original bug in a new form (an invented dish with no candidate behind it).
+                throw new MealPlanGenerationException(
+                        userId, List.of("Сільпо не має готових страв, які підходять під ваші обмеження цього тижня"));
+            }
+            userPrompt = curationPrompt(profile, adjustment, untouched, candidates);
+        } else {
+            userPrompt = describe(profile, adjustment, untouched);
+        }
+
         WeeklyMealPlan plan = claudeApiClient.completeStructured(systemPrompt, userPrompt, WeeklyMealPlan.class);
-        List<String> defects = defectsOf(plan);
+        List<String> defects = allDefectsOf(plan, readyMealsOnly, candidates);
         if (!defects.isEmpty()) {
             // One retry, naming what was wrong. Re-sending the same prompt would be a coin flip, and the transport
             // retries in ClaudeApiClientImpl do not see this class of failure at all — the answer arrived fine, it is
@@ -113,15 +136,89 @@ public class MealPlanService {
             log.warn("Claude returned an unusable plan for user {}: {}", userId, defects);
             plan = claudeApiClient.completeStructured(
                     systemPrompt, correctionOf(userPrompt, defects), WeeklyMealPlan.class);
-            defects = defectsOf(plan);
+            defects = allDefectsOf(plan, readyMealsOnly, candidates);
             if (!defects.isEmpty()) {
                 throw new MealPlanGenerationException(userId, defects);
             }
+        }
+        if (readyMealsOnly) {
+            plan = withResolvedProductIds(plan, candidates);
         }
         return persist(
                 userId,
                 plan,
                 readyMealsOnly ? ShoppingListSourceType.READY_MEAL_DIRECT : ShoppingListSourceType.RECIPE_DERIVED);
+    }
+
+    private static List<String> allDefectsOf(
+            WeeklyMealPlan plan, boolean readyMealsOnly, List<CatalogCandidate> candidates) {
+        List<String> defects = new ArrayList<>(defectsOf(plan));
+        if (readyMealsOnly) {
+            defects.addAll(candidateDefects(plan, candidates));
+        }
+        return defects;
+    }
+
+    /**
+     * Every ingredient name Claude returned that is not, character for character (case-insensitive), one of the real
+     * candidates it was given — the check the acceptance criteria call "never invents outside the list".
+     */
+    private static List<String> candidateDefects(WeeklyMealPlan plan, List<CatalogCandidate> candidates) {
+        if (plan == null || plan.days() == null) {
+            return List.of();
+        }
+        Set<String> candidateNames = candidates.stream()
+                .map(candidate -> normalise(candidate.name()))
+                .collect(Collectors.toSet());
+        List<String> defects = new ArrayList<>();
+        for (PlannedDay day : plan.days()) {
+            List<PlannedMeal> meals = day == null || day.meals() == null ? List.of() : day.meals();
+            for (PlannedMeal meal : meals) {
+                List<PlannedIngredient> ingredients =
+                        meal == null || meal.ingredients() == null ? List.of() : meal.ingredients();
+                for (PlannedIngredient ingredient : ingredients) {
+                    String name = ingredient == null ? null : ingredient.name();
+                    if (name == null || !candidateNames.contains(normalise(name))) {
+                        defects.add("«%s» немає у списку реальних товарів Сільпо".formatted(name));
+                    }
+                }
+            }
+        }
+        return defects;
+    }
+
+    /**
+     * Stamps each ingredient's real productId on, matching by the same case-insensitive name rule as
+     * {@link #candidateDefects}. Only ever called once that check has already passed — every name is guaranteed to
+     * have a match.
+     */
+    private static WeeklyMealPlan withResolvedProductIds(WeeklyMealPlan plan, List<CatalogCandidate> candidates) {
+        Map<String, CatalogCandidate> byName = candidates.stream()
+                .collect(Collectors.toMap(
+                        candidate -> normalise(candidate.name()), candidate -> candidate, (a, b) -> a));
+        List<PlannedDay> days = plan.days().stream()
+                .map(day -> new PlannedDay(
+                        day.day(),
+                        day.meals().stream()
+                                .map(meal -> new PlannedMeal(
+                                        meal.type(),
+                                        meal.name(),
+                                        meal.ingredients().stream()
+                                                .map(ingredient -> new PlannedIngredient(
+                                                        ingredient.name(),
+                                                        ingredient.quantity(),
+                                                        ingredient.unit(),
+                                                        ingredient.category(),
+                                                        Objects.requireNonNull(byName.get(normalise(ingredient.name())))
+                                                                .productId()))
+                                                .toList()))
+                                .toList()))
+                .toList();
+        return new WeeklyMealPlan(days);
+    }
+
+    private static String normalise(String value) {
+        return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
     }
 
     private static String correctionOf(String userPrompt, List<String> defects) {
@@ -251,6 +348,26 @@ public class MealPlanService {
         }
         if (adjustment != null && !adjustment.isBlank()) {
             text.append("Додаткова умова: ").append(adjustment.trim()).append('\n');
+        }
+        return text.toString();
+    }
+
+    /**
+     * {@link #describe}'s household/constraints text, plus the real candidates Claude must choose from — never a
+     * separate copy of the household text, since the constraints apply identically to both generation paths.
+     */
+    private String curationPrompt(
+            UserProfile profile, String adjustment, List<String> untouched, List<CatalogCandidate> candidates) {
+        StringBuilder text = new StringBuilder(describe(profile, adjustment, untouched));
+        text.append("\nОсь список готових страв, які зараз реально є в Сільпо. Обирай страви ТІЛЬКИ з цього ")
+                .append("списку і вказуй name страви ТОЧНО так, як він написаний нижче:\n");
+        int position = 1;
+        for (CatalogCandidate candidate : candidates) {
+            text.append(position++).append(". ").append(candidate.name());
+            if (candidate.price() != null) {
+                text.append(" (").append(candidate.price().toPlainString()).append(" грн)");
+            }
+            text.append('\n');
         }
         return text.toString();
     }
