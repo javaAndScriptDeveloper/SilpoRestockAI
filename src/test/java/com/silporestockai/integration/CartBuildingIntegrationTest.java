@@ -269,6 +269,60 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
         assertThat(added.path("products").get(0).path("quantity").asInt()).isEqualTo(12);
     }
 
+    private static ShoppingListItem readyMealItem(String name, String productId) {
+        return ShoppingListItem.builder()
+                .id(UUID.randomUUID())
+                .name(name)
+                .quantity(BigDecimal.ONE)
+                .unit("порція")
+                .silpoProductId(productId)
+                .build();
+    }
+
+    /**
+     * The exact bug this fixes: task 22's production evidence was 16 of 16 READY_MEALS_ONLY items unresolved
+     * because CartBuildingService tried to name-search invented dish descriptions. With a real productId already
+     * on the line, cart-building must add it directly — no search, no chance of a miss.
+     */
+    @Test
+    void addsAPreResolvedReadyMealDirectlyWithoutSearchingForItByName() {
+        UUID userId = connectedUser(8421L);
+        scriptCartTools();
+        MCP.respondToTool("silpo_add_or_update_cart_products", "{\"ok\":true}");
+        scriptVerifiedCart();
+
+        List<ShoppingListItem> items = List.of(
+                readyMealItem("Салат Цезар готовий", "p-1"),
+                readyMealItem("Борщ готовий, порція", "p-2"));
+
+        cartBuildingService.buildCart(userId, items);
+
+        assertThat(MCP.calledTools()).doesNotContain("silpo_find_products_batch");
+        JsonNode added = MCP.callArguments("silpo_add_or_update_cart_products").getFirst();
+        assertThat(added.path("products")).hasSize(2);
+    }
+
+    @Test
+    void mixesPreResolvedReadyMealsWithSearchedRecipeIngredientsInOneCart() {
+        UUID userId = connectedUser(8422L);
+        scriptCartTools();
+        scriptProductTools();
+        scriptVerifiedCart();
+
+        List<ShoppingListItem> items =
+                List.of(readyMealItem("Салат Цезар готовий", "p-9"), item("цибуля", "0.5", "кг"));
+
+        cartBuildingService.buildCart(userId, items);
+
+        assertThat(MCP.calledTools()).contains("silpo_find_products_batch");
+        JsonNode search = MCP.callArguments("silpo_find_products_batch").getFirst();
+        // Only the unresolved line was ever searched for — the pre-resolved one never appears in the query.
+        assertThat(search.path("products")).hasSize(1);
+        assertThat(search.path("products").get(0).asText()).isEqualTo("цибуля");
+        JsonNode added = MCP.callArguments("silpo_add_or_update_cart_products").getFirst();
+        assertThat(added.path("products")).hasSize(2);
+    }
+
     /**
      * The exact failure a live account hit: "800" sent as the unit count for a product whose own {@code displayRatio}
      * is "50г" does not ask for 800 grams of beef — it asks for eight hundred 50-gram packages. Silpo's own API

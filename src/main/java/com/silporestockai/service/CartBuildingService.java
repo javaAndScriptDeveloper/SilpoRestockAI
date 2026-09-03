@@ -332,8 +332,27 @@ public class CartBuildingService {
      */
     public List<ResolvedProduct> resolveProducts(UUID userId, CartContext context, List<ShoppingListItem> items) {
         List<ResolvedProduct> resolved = new ArrayList<>();
-        for (int start = 0; start < items.size(); start += SEARCH_BATCH_SIZE) {
-            List<ShoppingListItem> chunk = items.subList(start, Math.min(items.size(), start + SEARCH_BATCH_SIZE));
+        List<ShoppingListItem> preResolved = items.stream()
+                .filter(item -> item.getSilpoProductId() != null && !item.getSilpoProductId().isBlank())
+                .toList();
+        // READY_MEALS_ONLY lines already carry a real productId, resolved during generation (task 22) — adding
+        // them straight to the cart, not searching for them again, is the whole point of that fix.
+        for (ShoppingListItem item : preResolved) {
+            resolved.add(new ResolvedProduct(
+                    item.getName(),
+                    item.getSilpoProductId(),
+                    context.companyId(),
+                    context.branchId(),
+                    quantityOf(item),
+                    item.getUnit()));
+        }
+
+        List<ShoppingListItem> needsSearch = items.stream()
+                .filter(item -> item.getSilpoProductId() == null || item.getSilpoProductId().isBlank())
+                .toList();
+        for (int start = 0; start < needsSearch.size(); start += SEARCH_BATCH_SIZE) {
+            List<ShoppingListItem> chunk =
+                    needsSearch.subList(start, Math.min(needsSearch.size(), start + SEARCH_BATCH_SIZE));
             JsonNode found = call(
                     userId,
                     TOOL_FIND_PRODUCTS,
@@ -374,7 +393,12 @@ public class CartBuildingService {
                         });
             }
         }
-        log.info("MCP <- resolved {} of {} shopping list lines", resolved.size(), items.size());
+        log.info(
+                "MCP <- resolved {} of {} shopping list lines ({} pre-resolved, {} searched)",
+                resolved.size(),
+                items.size(),
+                preResolved.size(),
+                needsSearch.size());
         return resolved;
     }
 
