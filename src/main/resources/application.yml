@@ -158,6 +158,7 @@ google:
     # Writing events only. This application never reads anybody's calendar.
     scope: ${GOOGLE_CALENDAR_SCOPE:https://www.googleapis.com/auth/calendar.events}
     event-duration: ${GOOGLE_CALENDAR_EVENT_DURATION:2h}
+    reminder-minutes-before: ${GOOGLE_CALENDAR_REMINDER_MINUTES:60}
 
 # Speech-to-text for voice check-ins. Any OpenAI-compatible /v1/audio/transcriptions endpoint works —
 # OpenAI, Groq, or a local whisper server. Blank key disables the voice path: the bot asks for text instead.

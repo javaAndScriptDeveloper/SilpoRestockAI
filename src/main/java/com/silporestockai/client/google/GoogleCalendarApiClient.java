@@ -31,16 +31,27 @@ public interface GoogleCalendarApiClient {
      * @param description what was ordered, and the order id so a later task can find this event again
      * @param start when the delivery window opens
      * @param end a flat block after that; Silpo's slot end is not reliably returned
+     * @param reminders overrides the calendar's own default reminders with this application's own
      */
-    record CalendarEvent(String summary, String description, EventDateTime start, EventDateTime end) {}
+    record CalendarEvent(
+            String summary, String description, EventDateTime start, EventDateTime end, Reminders reminders) {}
 
     /** RFC 3339 timestamp plus its zone, which is what the API wants. */
     record EventDateTime(String dateTime, String timeZone) {}
 
+    /**
+     * {@code useDefault: false} is what makes {@code overrides} take effect at all — with it {@code true} the API
+     * ignores {@code overrides} and applies the calendar's own default reminders instead.
+     */
+    record Reminders(boolean useDefault, List<ReminderOverride> overrides) {}
+
+    /** One reminder, e.g. a popup 60 minutes before the event starts. Named to avoid shadowing {@code java.lang.Override}. */
+    record ReminderOverride(String method, int minutes) {}
+
     /** Only the fields worth logging come back modelled. */
     record CreatedEvent(String id, String htmlLink) {}
 
-    /** Convenience for the single reminder-free shape this application creates. */
+    /** Convenience for the write-only scope this application requests. */
     static List<String> writeOnlyScopes() {
         return List.of("https://www.googleapis.com/auth/calendar.events");
     }

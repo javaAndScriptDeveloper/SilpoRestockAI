@@ -18,6 +18,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param calendarId which calendar to write to; {@code primary} is the user's own
  * @param scope requested scope — only writing events, never reading them
  * @param eventDuration how long a delivery block lasts on the calendar; Silpo's slot end is not reliably returned
+ * @param reminderMinutesBefore how long before the delivery window starts the popup reminder fires
  */
 @ConfigurationProperties(prefix = "google.calendar")
 public record GoogleCalendarProperties(
@@ -29,7 +30,8 @@ public record GoogleCalendarProperties(
         String apiUrl,
         String calendarId,
         String scope,
-        Duration eventDuration) {
+        Duration eventDuration,
+        int reminderMinutesBefore) {
 
     public boolean configured() {
         return clientId != null && !clientId.isBlank();
