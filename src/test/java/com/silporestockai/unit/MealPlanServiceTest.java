@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 import com.silporestockai.client.claude.ClaudeApiClient;
 import com.silporestockai.entity.UserProfile;
 import com.silporestockai.model.AgeBracket;
+import com.silporestockai.model.CatalogCandidate;
 import com.silporestockai.model.CookingTimePreference;
 import com.silporestockai.model.MealType;
 import com.silporestockai.model.PlannedDay;
@@ -292,8 +293,8 @@ class MealPlanServiceTest {
         Mockito.verifyNoInteractions(claudeApiClient);
     }
 
-    private static List<ReadyMealCatalogService.CatalogCandidate> oneCandidate() {
-        return List.of(new ReadyMealCatalogService.CatalogCandidate(
+    private static List<CatalogCandidate> oneCandidate() {
+        return List.of(new CatalogCandidate(
                 "Салат Цезар готовий", "p-1", "company-3", "branch-7", new BigDecimal("89.90")));
     }
 

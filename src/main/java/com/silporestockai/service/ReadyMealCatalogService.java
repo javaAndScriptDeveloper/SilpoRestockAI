@@ -5,8 +5,8 @@ import com.silporestockai.client.mcp.McpToolResponse;
 import com.silporestockai.client.mcp.SilpoMcpClient;
 import com.silporestockai.exception.CartBuildException;
 import com.silporestockai.model.CartContext;
+import com.silporestockai.model.CatalogCandidate;
 import com.silporestockai.utils.McpResponses;
-import java.math.BigDecimal;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -51,9 +51,6 @@ public class ReadyMealCatalogService {
 
     private final SilpoMcpClient silpoMcpClient;
     private final CartBuildingService cartBuildingService;
-
-    /** One real product on offer right now, from Step A's search. */
-    public record CatalogCandidate(String name, String productId, String companyId, String branchId, BigDecimal price) {}
 
     /**
      * Every real ready-to-eat product Silpo currently offers this household's branch, deduplicated by

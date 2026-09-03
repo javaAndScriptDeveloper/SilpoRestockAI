@@ -12,6 +12,7 @@ import com.silporestockai.client.mcp.McpToolResponse;
 import com.silporestockai.client.mcp.SilpoMcpClient;
 import com.silporestockai.exception.CartBuildException;
 import com.silporestockai.model.CartContext;
+import com.silporestockai.model.CatalogCandidate;
 import com.silporestockai.model.OfferedSlot;
 import com.silporestockai.service.CartBuildingService;
 import com.silporestockai.service.ReadyMealCatalogService;
@@ -51,7 +52,7 @@ class ReadyMealCatalogServiceTest {
                         null,
                         false));
 
-        List<ReadyMealCatalogService.CatalogCandidate> candidates = service.findCandidates(USER_ID);
+        List<CatalogCandidate> candidates = service.findCandidates(USER_ID);
 
         assertThat(candidates).hasSize(1);
         assertThat(candidates.getFirst().name()).isEqualTo("Салат Цезар готовий");
@@ -82,10 +83,10 @@ class ReadyMealCatalogServiceTest {
                         null,
                         false));
 
-        List<ReadyMealCatalogService.CatalogCandidate> candidates = service.findCandidates(USER_ID);
+        List<CatalogCandidate> candidates = service.findCandidates(USER_ID);
 
         assertThat(candidates)
-                .extracting(ReadyMealCatalogService.CatalogCandidate::productId)
+                .extracting(CatalogCandidate::productId)
                 .containsExactlyInAnyOrder("p-1", "p-2", "p-3");
     }
 
@@ -101,7 +102,7 @@ class ReadyMealCatalogServiceTest {
                         null,
                         false));
 
-        List<ReadyMealCatalogService.CatalogCandidate> candidates = service.findCandidates(USER_ID);
+        List<CatalogCandidate> candidates = service.findCandidates(USER_ID);
 
         assertThat(candidates).hasSize(1);
     }
