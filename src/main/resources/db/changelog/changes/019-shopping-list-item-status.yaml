@@ -1,0 +1,29 @@
+databaseChangeLog:
+  - changeSet:
+      id: 019-shopping-list-item-status
+      author: komora
+      comment: >-
+        An explicit lifecycle (ACTIVE/ORDERED/ARCHIVED) so replacing the live list archives the old rows
+        instead of deleting them, and a source_type discriminator (RECIPE_DERIVED/READY_MEAL_DIRECT) so
+        downstream cart-building doesn't need to know which generation path produced a line.
+      changes:
+        - addColumn:
+            tableName: shopping_list_item
+            columns:
+              - column:
+                  name: status
+                  type: VARCHAR(16)
+                  defaultValue: ACTIVE
+                  constraints:
+                    nullable: false
+              - column:
+                  name: source_type
+                  type: VARCHAR(24)
+        - createIndex:
+            indexName: ix_shopping_list_item_user_status
+            tableName: shopping_list_item
+            columns:
+              - column:
+                  name: user_id
+              - column:
+                  name: status

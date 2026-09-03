@@ -1,7 +1,11 @@
 package com.silporestockai.entity;
 
+import com.silporestockai.model.ShoppingListSourceType;
+import com.silporestockai.model.ShoppingListStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
@@ -50,4 +54,13 @@ public class ShoppingListItem {
 
     @Column(name = "category", length = 64)
     private String category;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false, length = 16)
+    @Builder.Default
+    private ShoppingListStatus status = ShoppingListStatus.ACTIVE;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "source_type", length = 24)
+    private ShoppingListSourceType sourceType;
 }
