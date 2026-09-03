@@ -26,6 +26,17 @@ class ShoppingListAggregationTest {
     }
 
     @Test
+    void keepsTheProductIdWhenTheSameReadyMealIsPickedTwice() {
+        List<PlannedIngredient> aggregated = ShoppingListService.aggregate(List.of(
+                of("Плов з куркою готовий", "1", "порція", "Готові страви", "p-42"),
+                of("Плов з куркою готовий", "1", "порція", "Готові страви", "p-42")));
+
+        assertThat(aggregated).hasSize(1);
+        assertThat(aggregated.getFirst().productId()).isEqualTo("p-42");
+        assertThat(aggregated.getFirst().quantity()).isEqualByComparingTo("2");
+    }
+
+    @Test
     void sumsTheSameIngredientAcrossEveryMealThatUsesIt() {
         List<PlannedIngredient> aggregated = ShoppingListService.aggregate(List.of(
                 of("цибуля", "0.2", "кг"),
