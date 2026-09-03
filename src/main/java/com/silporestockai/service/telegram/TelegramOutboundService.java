@@ -25,8 +25,12 @@ import org.telegram.telegrambots.meta.api.methods.updates.SetWebhook;
 import org.telegram.telegrambots.meta.api.objects.File;
 import org.telegram.telegrambots.meta.api.objects.InputFile;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardRow;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.KeyboardButton;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.KeyboardRow;
+import org.telegram.telegrambots.meta.api.objects.webapp.WebAppInfo;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import org.telegram.telegrambots.meta.generics.TelegramClient;
 
@@ -143,6 +147,37 @@ public class TelegramOutboundService {
                 .chatId(chatId)
                 .text(text)
                 .replyMarkup(InlineKeyboardMarkup.builder().keyboardRow(row).build())
+                .build();
+        try {
+            client.execute(message);
+        } catch (TelegramApiException e) {
+            throw failure("sendMessage", e);
+        }
+    }
+
+    /**
+     * Sends a message with a reply-keyboard WebApp button plus a plain-text fallback row.
+     *
+     * <p>Deliberately a {@code ReplyKeyboardMarkup}, not an inline one: only a WebApp opened from a reply-keyboard
+     * button delivers its {@code Telegram.WebApp.sendData()} payload back as {@code message.web_app_data}. An inline
+     * {@code web_app} button's data goes through {@code answerWebAppQuery} instead, which this application has no use
+     * for.
+     */
+    public void sendMessageWithWebAppButton(
+            long chatId, String text, String webAppLabel, String webAppUrl, String fallbackLabel) {
+        ReplyKeyboardMarkup markup = ReplyKeyboardMarkup.builder()
+                .keyboardRow(new KeyboardRow(KeyboardButton.builder()
+                        .text(webAppLabel)
+                        .webApp(WebAppInfo.builder().url(webAppUrl).build())
+                        .build()))
+                .keyboardRow(new KeyboardRow(fallbackLabel))
+                .resizeKeyboard(true)
+                .oneTimeKeyboard(true)
+                .build();
+        SendMessage message = SendMessage.builder()
+                .chatId(chatId)
+                .text(text)
+                .replyMarkup(markup)
                 .build();
         try {
             client.execute(message);

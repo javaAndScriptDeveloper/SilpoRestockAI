@@ -145,6 +145,8 @@ public class OnboardingFlowService {
                 handleButton(user, chatId, step, tap.data(), context);
             }
             case TelegramIncomingUpdate.Text text -> handleAnswer(user, chatId, step, text.text(), context);
+            case TelegramIncomingUpdate.WebAppData webAppData ->
+                telegramOutboundService.sendMessage(chatId, "Скористайся, будь ласка, кнопками вище.");
             // Neither a voice note nor a photo answers "how many of you are there"; both get the same nudge.
             case TelegramIncomingUpdate.Voice ignored ->
                 telegramOutboundService.sendMessage(chatId, "Голосові поки не розбираю. Напиши, будь ласка, текстом.");

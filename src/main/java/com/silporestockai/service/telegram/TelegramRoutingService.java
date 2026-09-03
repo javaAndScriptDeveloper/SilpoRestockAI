@@ -121,6 +121,10 @@ public class TelegramRoutingService {
                 int duration = voice.getDuration() == null ? 0 : voice.getDuration();
                 return Optional.of(new TelegramIncomingUpdate.Voice(chatId, userId, voice.getFileId(), duration));
             }
+            if (message.hasWebAppData()) {
+                return Optional.of(new TelegramIncomingUpdate.WebAppData(
+                        chatId, userId, message.getWebAppData().getData()));
+            }
             return Optional.empty();
         }
         if (update.hasCallbackQuery()) {

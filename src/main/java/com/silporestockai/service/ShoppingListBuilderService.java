@@ -98,7 +98,8 @@ public class ShoppingListBuilderService {
             telegramOutboundService.sendMessage(chatId, messages.couldNotBuildText());
             return;
         }
-        shoppingListService.keepOnly(user.getId(), items.stream().map(ShoppingListItem::getId).toList());
+        shoppingListService.keepOnly(
+                user.getId(), items.stream().map(ShoppingListItem::getId).toList());
         conversationStateService.save(chatId, ConversationFlow.LIST_BUILDING, STEP_AWAITING_APPROVAL, Map.of());
         telegramOutboundService.sendMessageWithButtons(chatId, messages.listText(items), messages.listButtons());
     }
@@ -127,6 +128,8 @@ public class ShoppingListBuilderService {
                 buildAndShow(user, "Ось фото. Склади список покупок на тиждень.", image);
             }
             case TelegramIncomingUpdate.Voice ignored ->
+                telegramOutboundService.sendMessage(chatId, "Напиши текстом або надішли фото, будь ласка.");
+            case TelegramIncomingUpdate.WebAppData ignored ->
                 telegramOutboundService.sendMessage(chatId, "Напиши текстом або надішли фото, будь ласка.");
         }
     }

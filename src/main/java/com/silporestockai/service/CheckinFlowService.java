@@ -41,6 +41,10 @@ public class CheckinFlowService {
                 telegramOutboundService.answerCallback(tap.callbackQueryId());
                 log.debug("ignoring button tap {} during a check-in in chat {}", tap.data(), chatId);
             }
+            case TelegramIncomingUpdate.WebAppData ignored ->
+                // A stray onboarding-form submission arriving while a check-in is in progress; nothing here
+                // reads it.
+                log.debug("ignoring web_app_data during a check-in in chat {}", chatId);
         }
     }
 

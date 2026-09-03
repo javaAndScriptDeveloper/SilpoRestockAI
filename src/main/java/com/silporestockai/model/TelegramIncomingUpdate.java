@@ -26,4 +26,7 @@ public sealed interface TelegramIncomingUpdate {
     /** An inline keyboard button tap. {@code data} is the {@code callbackData} the button was built with. */
     record ButtonTap(long chatId, long telegramUserId, String callbackQueryId, String data)
             implements TelegramIncomingUpdate {}
+
+    /** A Telegram WebApp form submission — {@code Telegram.WebApp.sendData()} on the client side. */
+    record WebAppData(long chatId, long telegramUserId, String data) implements TelegramIncomingUpdate {}
 }
