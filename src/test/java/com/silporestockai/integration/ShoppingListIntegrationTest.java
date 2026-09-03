@@ -129,9 +129,9 @@ class ShoppingListIntegrationTest extends AbstractIntegrationTest {
         List<ShoppingListItem> items = shoppingListService.createAdHocList(
                 userId,
                 List.of(
-                        new PlannedIngredient("попкорн", new BigDecimal("2"), "шт"),
-                        new PlannedIngredient("попкорн", new BigDecimal("1"), "шт"),
-                        new PlannedIngredient("кола", new BigDecimal("1.5"), "л")));
+                        new PlannedIngredient("попкорн", new BigDecimal("2"), "шт", null),
+                        new PlannedIngredient("попкорн", new BigDecimal("1"), "шт", null),
+                        new PlannedIngredient("кола", new BigDecimal("1.5"), "л", null)));
 
         assertThat(items).hasSize(2);
         assertThat(shoppingListItemRepository.findByUserIdAndMealPlanIdIsNull(userId))
@@ -144,7 +144,8 @@ class ShoppingListIntegrationTest extends AbstractIntegrationTest {
     void aPlanRegenerationDoesNotTouchAnAdHocList() {
         MealPlan plan = persistedPlan(8304L);
         UUID userId = plan.getUserId();
-        shoppingListService.createAdHocList(userId, List.of(new PlannedIngredient("морозиво", BigDecimal.ONE, "шт")));
+        shoppingListService.createAdHocList(
+                userId, List.of(new PlannedIngredient("морозиво", BigDecimal.ONE, "шт", null)));
 
         shoppingListService.deriveFromMealPlan(plan.getId());
 

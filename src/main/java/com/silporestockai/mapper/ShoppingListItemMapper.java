@@ -10,7 +10,8 @@ import org.mapstruct.Mapping;
  * Turns an aggregated ingredient into a shopping list line.
  *
  * <p>Ownership — which plan, which user — is set by the caller: the same ingredient becomes a plan line or an ad-hoc
- * line depending on where it came from, which is not something the mapper can know.
+ * line depending on where it came from, which is not something the mapper can know. {@code sourceType} is set by the
+ * caller too, for the same reason.
  */
 @Mapper
 public interface ShoppingListItemMapper {
@@ -18,7 +19,8 @@ public interface ShoppingListItemMapper {
     @Mapping(target = "id", expression = "java(java.util.UUID.randomUUID())")
     @Mapping(target = "mealPlanId", source = "mealPlanId")
     @Mapping(target = "userId", source = "userId")
-    // Category is a Silpo notion, filled in by product matching (task 09), not by the plan.
-    @Mapping(target = "category", ignore = true)
+    @Mapping(target = "category", source = "ingredient.category")
+    @Mapping(target = "status", constant = "ACTIVE")
+    @Mapping(target = "sourceType", ignore = true)
     ShoppingListItem toItem(PlannedIngredient ingredient, UUID mealPlanId, UUID userId);
 }

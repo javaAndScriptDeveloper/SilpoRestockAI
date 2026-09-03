@@ -108,13 +108,14 @@ public class ShoppingListService {
             String key = normalise(ingredient.name()) + "|" + normalise(ingredient.unit());
             byNameAndUnit.merge(
                     key,
-                    new PlannedIngredient(ingredient.name().trim(), ingredient.quantity(), ingredient.unit()),
+                    new PlannedIngredient(
+                            ingredient.name().trim(), ingredient.quantity(), ingredient.unit(), ingredient.category()),
                     ShoppingListService::add);
         }
         return List.copyOf(byNameAndUnit.values());
     }
 
-    /** Keeps the first line's spelling and unit; only the quantity accumulates. */
+    /** Keeps the first line's spelling, unit and category; only the quantity accumulates. */
     private static PlannedIngredient add(PlannedIngredient existing, PlannedIngredient extra) {
         BigDecimal quantity;
         if (existing.quantity() == null) {
@@ -124,7 +125,9 @@ public class ShoppingListService {
         } else {
             quantity = existing.quantity().add(extra.quantity());
         }
-        return new PlannedIngredient(existing.name(), quantity, existing.unit());
+        String category =
+                existing.category() != null && !existing.category().isBlank() ? existing.category() : extra.category();
+        return new PlannedIngredient(existing.name(), quantity, existing.unit(), category);
     }
 
     private static String normalise(String value) {

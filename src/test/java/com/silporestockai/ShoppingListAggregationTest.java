@@ -14,7 +14,11 @@ import org.junit.jupiter.api.Test;
 class ShoppingListAggregationTest {
 
     private static PlannedIngredient of(String name, String quantity, String unit) {
-        return new PlannedIngredient(name, quantity == null ? null : new BigDecimal(quantity), unit);
+        return new PlannedIngredient(name, quantity == null ? null : new BigDecimal(quantity), unit, null);
+    }
+
+    private static PlannedIngredient of(String name, String quantity, String unit, String category) {
+        return new PlannedIngredient(name, quantity == null ? null : new BigDecimal(quantity), unit, category);
     }
 
     @Test
@@ -73,5 +77,15 @@ class ShoppingListAggregationTest {
 
         assertThat(aggregated).hasSize(1);
         assertThat(aggregated.getFirst().name()).isEqualTo("рис");
+    }
+
+    @Test
+    void aggregationKeepsTheFirstNonBlankCategoryForRepeatedIngredients() {
+        List<PlannedIngredient> aggregated = ShoppingListService.aggregate(
+                List.of(of("Цибуля", "1", "шт", "Овочі і фрукти"), of("Цибуля", "2", "шт", null)));
+
+        assertThat(aggregated).hasSize(1);
+        assertThat(aggregated.getFirst().category()).isEqualTo("Овочі і фрукти");
+        assertThat(aggregated.getFirst().quantity()).isEqualByComparingTo("3");
     }
 }
