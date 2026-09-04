@@ -68,11 +68,9 @@ public class ReadyMealCatalogService {
                 .findByUserId(userId)
                 .map(profile -> Boolean.TRUE.equals(profile.getOnlyUaProducer()))
                 .orElse(false);
-        List<String> searchTerms = onlyUaProducer
-                ? CATEGORY_SEARCH_TERMS.stream()
-                        .map(term -> term + " українського виробництва")
-                        .toList()
-                : CATEGORY_SEARCH_TERMS;
+        List<String> searchTerms = CATEGORY_SEARCH_TERMS.stream()
+                .map(term -> CartBuildingService.biasedSearchTerm(term, onlyUaProducer))
+                .toList();
 
         JsonNode found = call(
                 userId,
