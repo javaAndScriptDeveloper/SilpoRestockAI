@@ -277,9 +277,10 @@ public class SpecialModeService {
     }
 
     private void regenerateAndPresent(User user) {
+        List<ShoppingListItem> previousItems = shoppingListService.currentItems(user.getId());
         MealPlan plan = mealPlanService.regenerateWithAdjustment(user.getId(), null);
         List<ShoppingListItem> items = shoppingListService.deriveFromMealPlan(plan.getId(), plan.getSourceType());
-        shoppingListBuilderService.present(user, items);
+        shoppingListBuilderService.presentRegenerated(user, items, previousItems);
     }
 
     private static boolean isActive(UserProfile profile) {

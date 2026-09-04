@@ -123,9 +123,10 @@ public class IntentRouterService {
     }
 
     private void adjustPlan(User user, String instruction) {
+        List<ShoppingListItem> previousItems = shoppingListService.currentItems(user.getId());
         MealPlan plan = mealPlanService.regenerateWithAdjustment(user.getId(), instruction);
         List<ShoppingListItem> items = shoppingListService.deriveFromMealPlan(plan.getId(), plan.getSourceType());
-        shoppingListBuilderService.present(user, items);
+        shoppingListBuilderService.presentRegenerated(user, items, previousItems);
     }
 
     private void askClarifyingQuestion(User user) {

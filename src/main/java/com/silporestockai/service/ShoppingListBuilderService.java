@@ -6,6 +6,7 @@ import com.silporestockai.entity.ShoppingListItem;
 import com.silporestockai.entity.User;
 import com.silporestockai.model.ConversationFlow;
 import com.silporestockai.model.OrderType;
+import com.silporestockai.model.ShoppingListDelta;
 import com.silporestockai.model.ShoppingListDraft;
 import com.silporestockai.model.TelegramIncomingUpdate;
 import com.silporestockai.repository.BaselineBasketRepository;
@@ -45,6 +46,7 @@ public class ShoppingListBuilderService {
 
     private final ClaudeApiClient claudeApiClient;
     private final ShoppingListService shoppingListService;
+    private final ShoppingListDiffService shoppingListDiffService;
     private final UserProfileRepository userProfileRepository;
     private final BaselineBasketRepository baselineBasketRepository;
     private final ConversationStateService conversationStateService;
@@ -56,6 +58,7 @@ public class ShoppingListBuilderService {
     public ShoppingListBuilderService(
             ClaudeApiClient claudeApiClient,
             ShoppingListService shoppingListService,
+            ShoppingListDiffService shoppingListDiffService,
             UserProfileRepository userProfileRepository,
             BaselineBasketRepository baselineBasketRepository,
             ConversationStateService conversationStateService,
@@ -65,6 +68,7 @@ public class ShoppingListBuilderService {
             @Value("classpath:prompts/shopping-list-system.txt") Resource systemPromptResource) {
         this.claudeApiClient = claudeApiClient;
         this.shoppingListService = shoppingListService;
+        this.shoppingListDiffService = shoppingListDiffService;
         this.userProfileRepository = userProfileRepository;
         this.baselineBasketRepository = baselineBasketRepository;
         this.conversationStateService = conversationStateService;
@@ -95,10 +99,50 @@ public class ShoppingListBuilderService {
             telegramOutboundService.sendMessage(chatId, messages.couldNotBuildText());
             return;
         }
+        makeActive(user, items);
+        telegramOutboundService.sendMessageWithButtons(chatId, messages.listText(items), messages.listButtons());
+    }
+
+    /**
+     * Same as {@link #present}, except an AI-triggered regeneration (diet adjustment, special-mode switch,
+     * checkin-driven reorder) shows what changed against the list the household had a moment ago, not the
+     * full list dumped again (task 21) — reintroducing the "wall of text" problem {@link #present}'s own
+     * javadoc already explains was the point of building this class in the first place. A manual single-item
+     * edit ({@link #adjustQuantity}) never goes through here — it already has its own immediate inline
+     * feedback, and showing a delta on top of that would be friction over a change the user just made
+     * themselves with full context.
+     *
+     * @param previousItems the list this user had active immediately before the regeneration that produced
+     *     {@code items} — empty for a first-ever list, in which case this behaves exactly like {@link #present}
+     */
+    public void presentRegenerated(User user, List<ShoppingListItem> items, List<ShoppingListItem> previousItems) {
+        long chatId = user.getTelegramChatId();
+        if (items.isEmpty()) {
+            telegramOutboundService.sendMessage(chatId, messages.couldNotBuildText());
+            return;
+        }
+        if (previousItems.isEmpty()) {
+            present(user, items);
+            return;
+        }
+        ShoppingListDelta delta = shoppingListDiffService.diff(previousItems, items);
+        makeActive(user, items);
+        if (delta.totalChanges() == 0) {
+            telegramOutboundService.sendMessage(chatId, "Раціон лишився без змін.");
+        } else if (delta.isTrivial()) {
+            telegramOutboundService.sendMessageWithButtons(
+                    chatId, messages.trivialDeltaText(delta), messages.listButtons());
+        } else {
+            telegramOutboundService.sendMessageWithButtons(chatId, messages.deltaText(delta), messages.deltaButtons());
+        }
+    }
+
+    /** Everything {@link #present} and {@link #presentRegenerated} share: make {@code items} the live list. */
+    private void makeActive(User user, List<ShoppingListItem> items) {
         shoppingListService.keepOnly(
                 user.getId(), items.stream().map(ShoppingListItem::getId).toList());
-        conversationStateService.save(chatId, ConversationFlow.LIST_BUILDING, STEP_AWAITING_APPROVAL, Map.of());
-        telegramOutboundService.sendMessageWithButtons(chatId, messages.listText(items), messages.listButtons());
+        conversationStateService.save(
+                user.getTelegramChatId(), ConversationFlow.LIST_BUILDING, STEP_AWAITING_APPROVAL, Map.of());
     }
 
     /** Everything a chat sitting in {@link ConversationFlow#LIST_BUILDING} can send. */
@@ -154,6 +198,7 @@ public class ShoppingListBuilderService {
                 telegramOutboundService.sendMessage(chatId, messages.askForEditText());
             }
             case ShoppingListMessageService.CALLBACK_MANUAL_EDIT -> showManualEdit(user);
+            case ShoppingListMessageService.CALLBACK_SHOW_FULL -> present(user, currentItems(user.getId()));
             case ShoppingListMessageService.CALLBACK_CANCEL -> {
                 conversationStateService.save(chatId, ConversationFlow.NONE, null, Map.of());
                 telegramOutboundService.sendMessage(chatId, messages.cancelledText());

@@ -1,6 +1,7 @@
 package com.silporestockai.service.telegram;
 
 import com.silporestockai.entity.ShoppingListItem;
+import com.silporestockai.model.ShoppingListDelta;
 import com.silporestockai.model.TelegramButton;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -20,6 +21,7 @@ public class ShoppingListMessageService {
     public static final String CALLBACK_MANUAL_EDIT = "list:manual";
     public static final String CALLBACK_ITEM_DEC_PREFIX = "sli:dec:";
     public static final String CALLBACK_ITEM_INC_PREFIX = "sli:inc:";
+    public static final String CALLBACK_SHOW_FULL = "list:full";
 
     private static final String UNCATEGORIZED = "Інше";
 
@@ -81,6 +83,76 @@ public class ShoppingListMessageService {
         text.append("\nВсього ").append(items.size()).append(' ').append(positions(items.size()));
         text.append(".\nЯкщо все влаштовує — замовляю. Якщо ні — скажи, що змінити, або зміни вручну.");
         return text.toString();
+    }
+
+    /**
+     * A bulk AI-triggered change (task 21): what changed, not the whole list again. {@code
+     * "Показати весь список"} is the only button — the reader hasn't seen the full current list yet, so
+     * letting them order/edit straight from this view would mean agreeing to something they haven't seen.
+     */
+    public String deltaText(ShoppingListDelta delta) {
+        StringBuilder text =
+                new StringBuilder("Оновив раціон: ").append(summaryLine(delta)).append('.');
+        if (!delta.added().isEmpty()) {
+            text.append("\n\nДодано:");
+            delta.added()
+                    .forEach(line -> text.append("\n+ ").append(lineText(line.name(), line.quantity(), line.unit())));
+        }
+        if (!delta.removed().isEmpty()) {
+            text.append("\n\nПрибрано:");
+            delta.removed()
+                    .forEach(line -> text.append("\n− ").append(lineText(line.name(), line.quantity(), line.unit())));
+        }
+        if (!delta.quantityChanged().isEmpty()) {
+            text.append("\n\nЗмінено кількість:");
+            delta.quantityChanged()
+                    .forEach(change -> text.append("\n— ")
+                            .append(change.name())
+                            .append(": ")
+                            .append(amount(change.oldQuantity()))
+                            .append(" → ")
+                            .append(amount(change.newQuantity()))
+                            .append(change.unit() == null ? "" : " " + change.unit()));
+        }
+        return text.toString();
+    }
+
+    public List<TelegramButton> deltaButtons() {
+        return List.of(TelegramButton.callback("Показати весь список", CALLBACK_SHOW_FULL));
+    }
+
+    /** 1-2 total changes (task 21): shown inline, no summary header, no "show full list" button. */
+    public String trivialDeltaText(ShoppingListDelta delta) {
+        List<String> parts = new ArrayList<>();
+        delta.added().forEach(line -> parts.add("+ " + lineText(line.name(), line.quantity(), line.unit())));
+        delta.removed().forEach(line -> parts.add("− " + lineText(line.name(), line.quantity(), line.unit())));
+        delta.quantityChanged()
+                .forEach(change -> parts.add(change.name() + ": " + amount(change.oldQuantity()) + " → "
+                        + amount(change.newQuantity()) + (change.unit() == null ? "" : " " + change.unit())));
+        return "Оновив: " + String.join("; ", parts) + ".";
+    }
+
+    private static String summaryLine(ShoppingListDelta delta) {
+        List<String> parts = new ArrayList<>();
+        if (!delta.added().isEmpty()) {
+            parts.add("+" + delta.added().size() + " " + positions(delta.added().size()));
+        }
+        if (!delta.removed().isEmpty()) {
+            parts.add("-" + delta.removed().size() + " "
+                    + positions(delta.removed().size()));
+        }
+        if (!delta.quantityChanged().isEmpty()) {
+            parts.add("змінено кількість у " + delta.quantityChanged().size());
+        }
+        String summary = String.join(", ", parts);
+        return delta.unchangedCount() == 0 ? summary : summary + " (" + delta.unchangedCount() + " без змін)";
+    }
+
+    private static String lineText(String name, BigDecimal quantity, String unit) {
+        if (quantity == null) {
+            return name;
+        }
+        return name + " — " + amount(quantity) + (unit == null ? "" : " " + unit);
     }
 
     public List<TelegramButton> listButtons() {
