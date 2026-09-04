@@ -177,6 +177,10 @@ komora:
     sweep-cron: ${CHECKIN_SWEEP_CRON:0 0 * * * *}
     # Reported as "still there" this many check-ins in a row and the agent stops putting it in the plan.
     removal-threshold: ${CHECKIN_REMOVAL_THRESHOLD:3}
+  special-mode:
+    gastritis-acute-duration: ${GASTRITIS_ACUTE_DURATION:3d}
+    gastritis-diet5-duration: ${GASTRITIS_DIET5_DURATION:11d}
+    sweep-cron: ${SPECIAL_MODE_SWEEP_CRON:0 0 * * * *}
 
 springdoc:
   swagger-ui:
