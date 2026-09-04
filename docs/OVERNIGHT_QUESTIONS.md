@@ -91,3 +91,16 @@ dispatched to existing services, (2) the 3-button menu + "Інструкція" 
 deferred if the night runs out — it's the most UI-flow-heavy, lowest-reuse piece, and nothing else in the
 task depends on it. Status will reflect whatever is actually true when the queue moves on: "In progress"
 if any criterion is unmet, never "Done" on partial coverage.
+
+## Task 31 follow-up: `SpecialModeService.detectGastritisIntent` is now dead code
+
+**Observation, deferred cleanup, not a question:** `IntentRouterService` replaces the one caller of
+`SpecialModeService.detectGastritisIntent` (the free-text fallback in `TelegramRoutingService`), per the
+spec's own explicit scope ("replacing the current single-purpose `detectGastritisIntent` check"). The
+method itself, its private `GastritisIntent` record, and the `gastritis-intent-system.txt` prompt resource
+now have no caller anywhere in the codebase. Left in place rather than deleted tonight: removing it means
+changing `SpecialModeService`'s constructor signature (dropping the injected prompt `Resource`), and that
+file has its own substantial, currently-green test suite (18 tests across 3 files) that I chose not to
+risk touching for a pure cleanup with zero behavioral value. Safe to delete in daylight, in one small pass:
+`SpecialModeService.detectGastritisIntent` + `GastritisIntent` + the constructor's
+`gastritisIntentSystemPromptResource` param + `src/main/resources/prompts/gastritis-intent-system.txt`.

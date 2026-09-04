@@ -376,10 +376,12 @@ class OnboardingFlowIntegrationTest extends AbstractIntegrationTest {
         sendText(7, "1500");
         TELEGRAM.reset();
 
+        // Onboarded users' free text goes through IntentRouterService (task 31); an un-stubbed Claude call
+        // there fails classification and falls back to a clarifying question, not the old static message.
         sendText(8, "а що далі?");
 
         assertThat(userProfileRepository.count()).isEqualTo(1);
-        assertThat(lastMessageText()).contains("Профіль уже є");
+        assertThat(lastMessageText()).contains("Не зовсім зрозумів");
         assertThat(mealPlanRepository.count()).isZero();
     }
 

@@ -10,6 +10,7 @@ import com.silporestockai.service.CartConfirmationService;
 import com.silporestockai.service.CheckinFlowService;
 import com.silporestockai.service.ConversationStateService;
 import com.silporestockai.service.GoogleAuthService;
+import com.silporestockai.service.IntentRouterService;
 import com.silporestockai.service.ReorderConfirmationService;
 import com.silporestockai.service.ReorderService;
 import com.silporestockai.service.ShoppingListBuilderService;
@@ -54,6 +55,7 @@ public class TelegramRoutingService {
     private final UserRepository userRepository;
     private final TelegramOutboundService telegramOutboundService;
     private final SpecialModeService specialModeService;
+    private final IntentRouterService intentRouterService;
 
     /**
      * Off the webhook thread on purpose. A fridge photo means a vision call — the slowest and most expensive kind
@@ -173,34 +175,29 @@ public class TelegramRoutingService {
             shoppingListBuilderService.askForInput(user);
             return;
         }
-        if (incoming instanceof TelegramIncomingUpdate.Text voice
-                && matches(voice.text(), "/voice", MainMenuKeyboard.VOICE)) {
+        if (incoming instanceof TelegramIncomingUpdate.Text voice && matches(voice.text(), "/voice", "")) {
             toggleVoice(user, incoming.chatId());
             return;
         }
-        if (incoming instanceof TelegramIncomingUpdate.Text reorder
-                && matches(reorder.text(), "/reorder", MainMenuKeyboard.REORDER)) {
+        if (incoming instanceof TelegramIncomingUpdate.Text reorder && matches(reorder.text(), "/reorder", "")) {
             // The reorder cycle has no scheduler by design (see task 14's notes), so this is how a person — or a
             // demo — starts one. It builds the same delta the cycle would and hands it to the same confirmation.
             telegramOutboundService.sendMessage(incoming.chatId(), "Дивлюсь, що треба докупити.");
             reorderConfirmationService.present(user, reorderService.buildScheduledDeltaOrder(user.getId()));
             return;
         }
-        if (incoming instanceof TelegramIncomingUpdate.Text blackout
-                && matches(blackout.text(), "/blackout", MainMenuKeyboard.BLACKOUT)) {
+        if (incoming instanceof TelegramIncomingUpdate.Text blackout && matches(blackout.text(), "/blackout", "")) {
             // Explicit only. Inferring an outage from a sentence and sending an unwanted order would land at the
             // worst possible moment, which is the one this mode exists for.
             telegramOutboundService.sendMessage(incoming.chatId(), "Збираю щось на поїсти без плити й холодильника.");
             blackoutModeService.buildBlackoutOrder(user);
             return;
         }
-        if (incoming instanceof TelegramIncomingUpdate.Text text
-                && matches(text.text(), "/calendar", MainMenuKeyboard.CALENDAR)) {
+        if (incoming instanceof TelegramIncomingUpdate.Text text && matches(text.text(), "/calendar", "")) {
             offerCalendar(user, incoming.chatId());
             return;
         }
-        if (incoming instanceof TelegramIncomingUpdate.Text normal
-                && matches(normal.text(), "/normal", MainMenuKeyboard.NORMAL)) {
+        if (incoming instanceof TelegramIncomingUpdate.Text normal && matches(normal.text(), "/normal", "")) {
             specialModeService.cancel(user);
             return;
         }
@@ -220,15 +217,12 @@ public class TelegramRoutingService {
             log.debug("ignoring stale button tap {} in chat {}", tap.data(), tap.chatId());
             return;
         }
-        if (incoming instanceof TelegramIncomingUpdate.Text freeText
-                && specialModeService.detectGastritisIntent(freeText.text())) {
-            specialModeService.triggerGastritis(user);
+        if (incoming instanceof TelegramIncomingUpdate.Text freeText) {
+            intentRouterService.route(user, freeText.text());
             return;
         }
         telegramOutboundService.sendMessageWithMainMenu(
-                incoming.chatId(),
-                "Профіль уже є. Обери дію нижче або напиши /list, /reorder, /voice, /blackout, /calendar, "
-                        + "/masgain, /uaonly чи /normal.");
+                incoming.chatId(), "Скористайся кнопками нижче або напиши, що потрібно.");
     }
 
     /** A command matches whether it was typed as a slash command or tapped as its own main-menu button. */

@@ -184,8 +184,10 @@ class SpecialModeIntegrationTest extends AbstractIntegrationTest {
 
     @Test
     void freeTextAboutGastritisTriggersTheMedicalMode() throws Exception {
-        CLAUDE.respondWithTexts(
-                "{\"isIllnessTrigger\":true,\"confidence\":0.95}", MealPlanIntegrationTest.fullWeekJson());
+        // The classifier's answer, then the medical-diet plan IntentRouterService's dispatch generates.
+        CLAUDE.respondWithTexts("""
+                {"intent":"SPECIAL_MODE_MEDICAL_GASTRITIS","confidence":0.95,\
+                "themeDescription":null,"targetDateTimeIso":null}""", MealPlanIntegrationTest.fullWeekJson());
 
         sendText(1, "я захворів, гастрит, два тижні дієтичного раціону");
 
@@ -195,7 +197,8 @@ class SpecialModeIntegrationTest extends AbstractIntegrationTest {
 
     @Test
     void unrelatedFreeTextDoesNotTriggerAnything() throws Exception {
-        CLAUDE.respondWithText("{\"isIllnessTrigger\":false,\"confidence\":0.9}");
+        CLAUDE.respondWithText(
+                "{\"intent\":\"UNKNOWN\",\"confidence\":0.2,\"themeDescription\":null,\"targetDateTimeIso\":null}");
 
         sendText(1, "що там на вечерю сьогодні?");
 
