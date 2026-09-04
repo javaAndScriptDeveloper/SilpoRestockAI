@@ -1,0 +1,17 @@
+databaseChangeLog:
+  - changeSet:
+      id: 022-scheduled-ad-hoc-task
+      author: komora
+      comment: >-
+        Task 31: a free-text "закажи до п'ятниці..." request is scheduled here rather than fired
+        immediately — the sweep in AdHocScheduleScheduler picks it up when triggerAt arrives.
+      changes:
+        - createTable:
+            tableName: scheduled_ad_hoc_task
+            columns:
+              - column: { name: id, type: UUID, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: user_id, type: UUID, constraints: { nullable: false } }
+              - column: { name: trigger_at, type: TIMESTAMP WITH TIME ZONE, constraints: { nullable: false } }
+              - column: { name: theme_description, type: VARCHAR(256), constraints: { nullable: false } }
+              - column: { name: status, type: VARCHAR(16), constraints: { nullable: false } }
+              - column: { name: created_at, type: TIMESTAMP WITH TIME ZONE, constraints: { nullable: false } }

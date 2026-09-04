@@ -181,6 +181,8 @@ komora:
     gastritis-acute-duration: ${GASTRITIS_ACUTE_DURATION:3d}
     gastritis-diet5-duration: ${GASTRITIS_DIET5_DURATION:11d}
     sweep-cron: ${SPECIAL_MODE_SWEEP_CRON:0 0 * * * *}
+  ad-hoc-schedule:
+    sweep-cron: ${AD_HOC_SCHEDULE_SWEEP_CRON:0 */15 * * * *}
 
 springdoc:
   swagger-ui:
