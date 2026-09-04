@@ -41,7 +41,7 @@ class ReadyMealCatalogServiceTest {
         userProfileRepository = mock(UserProfileRepository.class);
         when(cartBuildingService.getOrCreateCartContext(USER_ID)).thenReturn(CONTEXT);
         when(cartBuildingService.firstDeliverableSlot(USER_ID, CONTEXT))
-                .thenReturn(new OfferedSlot("slot-1", "slot-1", null));
+                .thenReturn(new OfferedSlot("slot-1", "2026-09-07T10:00:00Z", null, "2026-09-07T12:00:00Z"));
         when(userProfileRepository.findByUserId(USER_ID)).thenReturn(Optional.empty());
         service = new ReadyMealCatalogService(silpoMcpClient, cartBuildingService, userProfileRepository);
     }

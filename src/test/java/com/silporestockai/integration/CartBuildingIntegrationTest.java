@@ -302,6 +302,39 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
     }
 
     /**
+     * Production bug (2026-09-04): a returning guest's cart already carried a stale, Silpo-rejected timeslot
+     * ("timeslot.not_found" in the cart's own validations). {@code firstDeliverableSlot} correctly picks a fresh,
+     * actually-available slot, but that fresh slot was never written back into the {@code CartContext} passed to
+     * {@code resolveProducts} — so the product search still sent the stale window, and Silpo returned zero matches
+     * for all 25 real, perfectly ordinary ingredient names ("Банан", "Мед", "Рис"...). The cart came back empty.
+     */
+    @Test
+    void searchesProductsWithTheFreshSlotNotTheCartsStaleOne() {
+        UUID userId = connectedUser(8422L);
+        MCP.respondToTool("silpo_get_my_shopping_cart", "{\"cartId\":\"cart-1\"}");
+        MCP.respondToTool(
+                "silpo_get_shopping_cart_by_id",
+                """
+                {"cartId":"cart-1","branchId":"branch-7","companyId":"company-3","deliveryType":"delivery",\
+                "timeslot":{"start":"2026-09-03T06:00:00+00:00","end":"2026-09-03T07:30:00+00:00"},\
+                "items":[],"validations":[{"level":"error","type":"timeslot","message":"timeslot.not_found"}]}""");
+        MCP.respondToTool(
+                "silpo_get_time_slots",
+                """
+                {"timeSlots":[{"start":"2026-09-05T06:00:00+00:00","end":"2026-09-05T07:30:00+00:00",\
+                "available":true}]}""");
+        MCP.respondToTool("silpo_find_products_batch", """
+                {"queries":[{"query":"цибуля","products":[]}]}""");
+        MCP.respondToTool("silpo_add_or_update_cart_products", "{\"ok\":true}");
+
+        cartBuildingService.buildCart(userId, List.of(item("цибуля", "0.5", "кг")));
+
+        JsonNode search = MCP.callArguments("silpo_find_products_batch").getFirst();
+        assertThat(search.path("timeslotStart").asText()).isEqualTo("2026-09-05T06:00:00+00:00");
+        assertThat(search.path("timeslotEnd").asText()).isEqualTo("2026-09-05T07:30:00+00:00");
+    }
+
+    /**
      * The exact bug this fixes: task 22's production evidence was 16 of 16 READY_MEALS_ONLY items unresolved
      * because CartBuildingService tried to name-search invented dish descriptions. With a real productId already
      * on the line, cart-building must add it directly — no search, no chance of a miss.

@@ -294,8 +294,8 @@ class ReorderConfirmationIntegrationTest extends AbstractIntegrationTest {
 
     @Test
     void chooseSlotPrefersTheEarliestWhenNothingMatchesTheHabit() {
-        OfferedSlot later = new OfferedSlot("later", "later", Instant.now().plusSeconds(7200));
-        OfferedSlot sooner = new OfferedSlot("sooner", "sooner", Instant.now().plusSeconds(3600));
+        OfferedSlot later = new OfferedSlot("later", "later", Instant.now().plusSeconds(7200), null);
+        OfferedSlot sooner = new OfferedSlot("sooner", "sooner", Instant.now().plusSeconds(3600), null);
 
         assertThat(reorderConfirmationService.chooseSlot(user.getId(), List.of(later, sooner)))
                 .isEqualTo(sooner);

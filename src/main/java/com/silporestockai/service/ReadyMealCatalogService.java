@@ -6,6 +6,7 @@ import com.silporestockai.client.mcp.SilpoMcpClient;
 import com.silporestockai.exception.CartBuildException;
 import com.silporestockai.model.CartContext;
 import com.silporestockai.model.CatalogCandidate;
+import com.silporestockai.model.OfferedSlot;
 import com.silporestockai.repository.UserProfileRepository;
 import com.silporestockai.utils.McpResponses;
 import java.util.LinkedHashMap;
@@ -61,8 +62,17 @@ public class ReadyMealCatalogService {
     public List<CatalogCandidate> findCandidates(UUID userId) {
         CartContext context = cartBuildingService.getOrCreateCartContext(userId);
         // Same fail-fast convention CartBuildingService.buildCart uses: a household nothing can be delivered to
-        // should not spend an AI call curating a menu it can never actually order.
-        cartBuildingService.firstDeliverableSlot(userId, context);
+        // should not spend an AI call curating a menu it can never actually order. The cart's own stored timeslot
+        // can be stale or already Silpo-rejected — searching against it, rather than this freshly picked slot,
+        // silently returns zero matches for everything (the exact production bug this mirrors in buildCart).
+        OfferedSlot deliverySlot = cartBuildingService.firstDeliverableSlot(userId, context);
+        context = new CartContext(
+                context.cartId(),
+                context.branchId(),
+                context.companyId(),
+                context.deliveryType(),
+                deliverySlot.label(),
+                deliverySlot.end());
 
         boolean onlyUaProducer = userProfileRepository
                 .findByUserId(userId)

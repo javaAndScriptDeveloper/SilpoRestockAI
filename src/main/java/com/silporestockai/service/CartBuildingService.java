@@ -73,6 +73,16 @@ public class CartBuildingService {
     public CartSummary buildCart(UUID userId, List<ShoppingListItem> items) {
         CartContext context = getOrCreateCartContext(userId);
         OfferedSlot deliverySlot = firstDeliverableSlot(userId, context);
+        // The cart's own stored timeslot can be stale (or Silpo-rejected outright — see the cart's own
+        // validations) by the time somebody actually confirms it. Searching against that stale window, rather
+        // than the fresh slot just picked, silently returned zero matches for every real product name.
+        context = new CartContext(
+                context.cartId(),
+                context.branchId(),
+                context.companyId(),
+                context.deliveryType(),
+                deliverySlot.label(),
+                deliverySlot.end());
         List<ResolvedProduct> resolved = resolveProducts(userId, context, items);
         List<String> unresolved = unresolvedNames(items, resolved);
         if (!unresolved.isEmpty()) {
@@ -299,12 +309,13 @@ public class CartBuildingService {
             // if one is ever present.
             String start =
                     McpResponses.findString(slot, McpResponses.SLOT_START).orElse(null);
+            String end = McpResponses.findString(slot, McpResponses.SLOT_END).orElse(null);
             String id = McpResponses.findString(slot, McpResponses.SLOT_ID).orElse(start);
             if (id == null) {
                 log.debug("ignoring a time slot with no start and no identifier");
                 continue;
             }
-            offered.add(new OfferedSlot(id, start == null ? id : start, parseStart(start)));
+            offered.add(new OfferedSlot(id, start == null ? id : start, parseStart(start), end));
         }
         return offered;
     }
