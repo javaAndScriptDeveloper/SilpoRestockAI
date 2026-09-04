@@ -119,7 +119,9 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
         MCP.respondToTool("silpo_get_my_shopping_cart", "{\"cartId\":\"cart-1\"}");
         MCP.respondToTool("silpo_get_shopping_cart_by_id", """
                 {"cartId":"cart-1","branchId":"branch-7","companyId":"company-3",\
-                "deliveryType":"delivery","items":[]}""");
+                "deliveryType":"delivery","items":[],\
+                "checkoutWebLink":"https://silpo.ua/checkout/cart-1",\
+                "checkoutMobileLink":"silpo://checkout/cart-1"}""");
         MCP.respondToTool("silpo_get_time_slots", "{\"timeSlots\":[{\"id\":\"slot-1\",\"from\":\"18:00\"}]}");
     }
 
@@ -246,6 +248,30 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
         assertThat(added.has("shoppingCartId")).isTrue();
     }
 
+    /**
+     * The verified cart is the one authoritative read for whether checkout can actually happen — a cart
+     * with no usable checkout link is not something any consuming flow (task 10, 15, 19) can present to
+     * a user, so this must fail loudly here rather than let a confirmation message reach the user with a
+     * missing button.
+     */
+    @Test
+    void treatsAMissingCheckoutLinkAsAFatalError() {
+        UUID userId = connectedUser(8423L);
+        scriptCartTools();
+        scriptProductTools();
+        // Overrides scriptCartTools()'s normally-healthy cart response with one Silpo gave no checkout link on.
+        MCP.respondToTool("silpo_get_shopping_cart_by_id", """
+                {"cartId":"cart-1","branchId":"branch-7","companyId":"company-3",\
+                "deliveryType":"delivery","items":[]}""");
+
+        assertThatThrownBy(() -> cartBuildingService.buildCart(userId, List.of(item("цибуля", "0.5", "кг"))))
+                .isInstanceOf(CartBuildException.class)
+                .hasMessageContaining("checkout");
+
+        // The add still ran — this is a failure of the verification read, not a reason to skip step 5.
+        assertThat(MCP.calledTools()).contains("silpo_add_or_update_cart_products");
+    }
+
     @Test
     void biasesSearchTermsTowardUkrainianProducersWhenTheFlagIsSet() {
         UUID userId = connectedUser(9201L);
@@ -312,15 +338,13 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
     void searchesProductsWithTheFreshSlotNotTheCartsStaleOne() {
         UUID userId = connectedUser(8422L);
         MCP.respondToTool("silpo_get_my_shopping_cart", "{\"cartId\":\"cart-1\"}");
-        MCP.respondToTool(
-                "silpo_get_shopping_cart_by_id",
-                """
+        MCP.respondToTool("silpo_get_shopping_cart_by_id", """
                 {"cartId":"cart-1","branchId":"branch-7","companyId":"company-3","deliveryType":"delivery",\
                 "timeslot":{"start":"2026-09-03T06:00:00+00:00","end":"2026-09-03T07:30:00+00:00"},\
-                "items":[],"validations":[{"level":"error","type":"timeslot","message":"timeslot.not_found"}]}""");
-        MCP.respondToTool(
-                "silpo_get_time_slots",
-                """
+                "items":[],"validations":[{"level":"error","type":"timeslot","message":"timeslot.not_found"}],\
+                "checkoutWebLink":"https://silpo.ua/checkout/cart-1",\
+                "checkoutMobileLink":"silpo://checkout/cart-1"}""");
+        MCP.respondToTool("silpo_get_time_slots", """
                 {"timeSlots":[{"start":"2026-09-05T06:00:00+00:00","end":"2026-09-05T07:30:00+00:00",\
                 "available":true}]}""");
         MCP.respondToTool("silpo_find_products_batch", """

@@ -603,6 +603,21 @@ public class CartBuildingService {
                         .isPresent();
         boolean bonusDecisionPending = enabled && !requested && bonusAvailable.signum() > 0;
 
+        String checkoutWebLink =
+                McpResponses.findString(cart, McpResponses.CHECKOUT_WEB).orElse(null);
+        String checkoutMobileLink =
+                McpResponses.findString(cart, McpResponses.CHECKOUT_MOBILE).orElse(null);
+        if (isBlank(checkoutWebLink) || isBlank(checkoutMobileLink)) {
+            log.error(
+                    "verified cart {} has no usable checkout link — checkoutWebLink={}, checkoutMobileLink={}. "
+                            + "Raw response: {}",
+                    context.cartId(),
+                    checkoutWebLink,
+                    checkoutMobileLink,
+                    cart);
+            throw new CartBuildException("Silpo gave no checkout link for cart " + context.cartId());
+        }
+
         CartSummary summary = new CartSummary(
                 context.cartId(),
                 deliverySlot == null ? null : deliverySlot.id(),
@@ -614,8 +629,8 @@ public class CartBuildingService {
                         .toList(),
                 bonusAvailable,
                 bonusDecisionPending,
-                McpResponses.findString(cart, McpResponses.CHECKOUT_WEB).orElse(null),
-                McpResponses.findString(cart, McpResponses.CHECKOUT_MOBILE).orElse(null),
+                checkoutWebLink,
+                checkoutMobileLink,
                 unresolved);
         log.info(
                 "MCP <- cart {} verified: {} items, total {}, bonuses available {}, unresolved {}",
@@ -634,6 +649,10 @@ public class CartBuildingService {
             throw new CartBuildException("Silpo tool %s reported an error".formatted(tool));
         }
         return McpResponses.tree(response);
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 
     private static String nullSafe(String value) {

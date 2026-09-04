@@ -203,7 +203,9 @@ class ReadyMealsSearchFirstIntegrationTest extends AbstractIntegrationTest {
         MCP.respondToTool("silpo_add_or_update_cart_products", "{\"ok\":true}");
         MCP.respondToTool("silpo_get_shopping_cart_by_id", """
                 {"cartId":"cart-1","branchId":"branch-7","companyId":"company-3","deliveryType":"delivery",\
-                "items":[],"total":0,"validations":[]}""");
+                "items":[],"total":0,"validations":[],\
+                "checkoutWebLink":"https://silpo.ua/checkout/cart-1",\
+                "checkoutMobileLink":"silpo://checkout/cart-1"}""");
 
         CartSummary summary = cartBuildingService.buildCart(userId, items);
 

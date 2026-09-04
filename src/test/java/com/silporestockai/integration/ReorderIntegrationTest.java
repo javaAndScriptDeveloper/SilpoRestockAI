@@ -128,7 +128,9 @@ class ReorderIntegrationTest extends AbstractIntegrationTest {
         MCP.respondToTool("silpo_get_shopping_cart_by_id", """
                 {"cartId":"cart-9","branchId":"branch-7","companyId":"company-3","deliveryType":"delivery",\
                 "items":[{"productId":"p-1","name":"Молоко 2.5%","unit":"л","quantity":2,"price":38}],\
-                "total":76,"validations":[]}""");
+                "total":76,"validations":[],\
+                "checkoutWebLink":"https://silpo.ua/checkout/cart-9",\
+                "checkoutMobileLink":"silpo://checkout/cart-9"}""");
         MCP.respondToTool("silpo_add_or_update_cart_products", "{\"ok\":true}");
         MCP.respondToTool("silpo_get_promotions", "{\"promotions\":[]}");
         MCP.respondToTool(
@@ -225,7 +227,9 @@ class ReorderIntegrationTest extends AbstractIntegrationTest {
         MCP.respondToTool("silpo_get_shopping_cart_by_id", """
                 {"cartId":"cart-9","branchId":"branch-7","companyId":"company-3","deliveryType":"delivery",\
                 "items":[{"productId":"promo-1","name":"Молоко 2.5%","unit":"л","quantity":2,"price":30}],\
-                "total":60,"validations":[]}""");
+                "total":60,"validations":[],\
+                "checkoutWebLink":"https://silpo.ua/checkout/cart-9",\
+                "checkoutMobileLink":"silpo://checkout/cart-9"}""");
 
         DeltaOrder order = reorderService.buildScheduledDeltaOrder(userId);
 

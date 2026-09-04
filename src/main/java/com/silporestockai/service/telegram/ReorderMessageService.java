@@ -11,6 +11,7 @@ import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 /**
@@ -20,6 +21,7 @@ import org.springframework.stereotype.Service;
  * the different bread and refuse the different milk.
  */
 @Service
+@RequiredArgsConstructor
 public class ReorderMessageService {
 
     public static final String CALLBACK_ACCEPT_PREFIX = "re:acc:";
@@ -28,6 +30,8 @@ public class ReorderMessageService {
     public static final String CALLBACK_SLOT_PREFIX = "re:slot:";
     public static final String CALLBACK_CONFIRM = "re:confirm";
     public static final String CALLBACK_CANCEL = "re:cancel";
+
+    private final CartMessageService cartMessageService;
 
     /** The order as it currently stands, decisions included. */
     public String orderText(DeltaOrder order, OfferedSlot slot, Map<Integer, Boolean> decisions) {
@@ -121,9 +125,7 @@ public class ReorderMessageService {
             text.append("\nВаші правки врахував — далі орієнтуюсь на цей набір.");
         }
         text.append("\n\nОплата — на боці «Сільпо».");
-        if (cart.checkoutMobileLink() != null) {
-            text.append("\nУ застосунку: ").append(cart.checkoutMobileLink());
-        }
+        text.append(cartMessageService.checkoutFallbackLine(cart));
         return text.toString();
     }
 
