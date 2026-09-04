@@ -2,6 +2,7 @@ package com.silporestockai.integration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.silporestockai.config.SpecialModeProperties;
 import com.silporestockai.entity.BaselineBasket;
 import com.silporestockai.entity.SilpoOAuthToken;
 import com.silporestockai.entity.User;
@@ -21,6 +22,7 @@ import com.silporestockai.utils.TokenCipher;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
@@ -56,6 +58,9 @@ class SpecialModeIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
     private UserRepository userRepository;
+
+    @Autowired
+    private SpecialModeProperties specialModeProperties;
 
     @Autowired
     private TokenCipher tokenCipher;
@@ -234,5 +239,75 @@ class SpecialModeIntegrationTest extends AbstractIntegrationTest {
                         .orElseThrow()
                         .getOnlyUaProducer())
                 .isFalse();
+    }
+
+    @Test
+    void sweepTransitionsAcuteToDietTable5WhenTheAcuteDurationHasPassed() {
+        specialModeService.triggerGastritis(user);
+        UserProfile profile = userProfileRepository.findByUserId(user.getId()).orElseThrow();
+        // Fast-forward: matches the "backdate the timestamp" convention CheckinPromptIntegrationTest uses instead
+        // of an injected fake Clock. Truncated to microseconds because that is what the DB column round-trips to;
+        // otherwise the exact-value assertion below would compare a nanosecond-precision Instant against the
+        // microsecond-precision one read back from Postgres.
+        Instant startedAt = Instant.now().minusSeconds(1_000_000).truncatedTo(ChronoUnit.MICROS);
+        profile.setSpecialModeStartedAt(startedAt);
+        profile.setSpecialModeExpiresAt(Instant.now().minusSeconds(1));
+        userProfileRepository.save(profile);
+        CLAUDE.reset();
+        CLAUDE.respondWithText(MealPlanIntegrationTest.fullWeekJson());
+
+        int swept = specialModeService.sweepExpired();
+
+        assertThat(swept).isEqualTo(1);
+        UserProfile after = userProfileRepository.findByUserId(user.getId()).orElseThrow();
+        assertThat(after.getSpecialMode()).isEqualTo(SpecialMode.MEDICAL_DIET_TABLE_5);
+        // Pinned to the exact recomputed expiry (startedAt + acute duration + diet5 duration), not just
+        // "is after now" — the arithmetic in stepDownToDietTable5 is what this test exists to lock in.
+        assertThat(after.getSpecialModeExpiresAt())
+                .isEqualTo(startedAt
+                        .plus(specialModeProperties.gastritisAcuteDuration())
+                        .plus(specialModeProperties.gastritisDiet5Duration()));
+        assertThat(CLAUDE.requests().getFirst().toString()).contains("столу №5").doesNotContain("гострим гастритом");
+        // Not getLast(): regenerateAndPresent sends the new shopping list as the final message, after this one.
+        assertThat(TELEGRAM.sentMessages()).anyMatch(m -> m.toString().contains("дієтичного столу №5"));
+    }
+
+    @Test
+    void sweepRevertsToNormalWhenDietTable5HasAlsoExpired() {
+        specialModeService.triggerGastritis(user);
+        UserProfile profile = userProfileRepository.findByUserId(user.getId()).orElseThrow();
+        profile.setSpecialMode(SpecialMode.MEDICAL_DIET_TABLE_5);
+        profile.setSpecialModeExpiresAt(Instant.now().minusSeconds(1));
+        userProfileRepository.save(profile);
+        CLAUDE.reset();
+        CLAUDE.respondWithText(MealPlanIntegrationTest.fullWeekJson());
+
+        int swept = specialModeService.sweepExpired();
+
+        assertThat(swept).isEqualTo(1);
+        UserProfile after = userProfileRepository.findByUserId(user.getId()).orElseThrow();
+        assertThat(after.getSpecialMode()).isEqualTo(SpecialMode.NONE);
+        assertThat(after.getSpecialModeExpiresAt()).isNull();
+        // Not getLast(): regenerateAndPresent sends the new shopping list as the final message, after this one.
+        assertThat(TELEGRAM.sentMessages())
+                .anyMatch(m -> m.toString()
+                        .contains("Два тижні дієтичного харчування завершено, повертаємось до звичайного раціону"));
+    }
+
+    @Test
+    void sweepingTwiceInARowDoesNothingTheSecondTime() {
+        specialModeService.triggerGastritis(user);
+        UserProfile profile = userProfileRepository.findByUserId(user.getId()).orElseThrow();
+        profile.setSpecialModeExpiresAt(Instant.now().minusSeconds(1));
+        userProfileRepository.save(profile);
+        CLAUDE.reset();
+        CLAUDE.respondWithText(MealPlanIntegrationTest.fullWeekJson());
+
+        specialModeService.sweepExpired();
+        CLAUDE.reset();
+        int secondSweep = specialModeService.sweepExpired();
+
+        assertThat(secondSweep).isZero();
+        assertThat(CLAUDE.callCount()).isZero();
     }
 }
