@@ -78,6 +78,18 @@ public class UserProfile {
     @Column(name = "special_mode_started_at")
     private Instant specialModeStartedAt;
 
+    @Column(name = "special_mode_expires_at")
+    private Instant specialModeExpiresAt;
+
+    @Column(name = "target_weight_kg", precision = 5, scale = 2)
+    private BigDecimal targetWeightKg;
+
+    @Column(name = "target_calories")
+    private Integer targetCalories;
+
+    @Column(name = "target_protein_g")
+    private Integer targetProteinG;
+
     @Column(name = "adult_male_count")
     private Integer adultMaleCount;
 
