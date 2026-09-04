@@ -147,13 +147,6 @@ public class ShoppingListBuilderService {
                     BigDecimal.ONE);
             return;
         }
-        if (data.startsWith(ShoppingListMessageService.CALLBACK_ITEM_DEL_PREFIX)) {
-            shoppingListService.removeItem(
-                    user.getId(),
-                    UUID.fromString(data.substring(ShoppingListMessageService.CALLBACK_ITEM_DEL_PREFIX.length())));
-            telegramOutboundService.sendMessage(chatId, "Прибрав.");
-            return;
-        }
         switch (data) {
             case ShoppingListMessageService.CALLBACK_ORDER -> order(user);
             case ShoppingListMessageService.CALLBACK_EDIT -> {
@@ -170,7 +163,7 @@ public class ShoppingListBuilderService {
     }
 
     /**
-     * The deterministic, AI-free edit path: one message per item, each with its own −/+/✕ row. Distinct from
+     * The deterministic, AI-free edit path: one message per item, each with its own −/+ row. Distinct from
      * {@link ShoppingListMessageService#CALLBACK_EDIT}, which free-texts the whole list to Claude — this one never
      * calls {@link ClaudeApiClient} at all, only {@link ShoppingListService}'s plain CRUD methods.
      */

@@ -46,8 +46,9 @@ import org.springframework.stereotype.Service;
  * {@code conversation_state}: {@code current_step} names where it is, {@code context_json} accumulates the answers. A
  * user who goes silent for an hour resumes where they stopped.
  *
- * <p>Questions the Silpo profile already answered are skipped. The budget is always asked, because MCP cannot know
- * what someone intends to spend.
+ * <p>Questions the Silpo profile already answered are skipped. The budget is collected by the WebApp form itself
+ * (MCP cannot know what someone intends to spend); the chat question only fires for the manual-fallback path, where
+ * there is no form to put it in.
  */
 @Slf4j
 @Service
@@ -213,8 +214,8 @@ public class OnboardingFlowService {
      * Opens the WebApp form (or, when it's not configured, skips straight to the manual fallback chain).
      *
      * <p>The WebApp form collects fields no Silpo enrichment can supply — diet type, cooking-time preference, a
-     * per-child age bracket — so it runs even when {@link #enrichThenConfirm} already confirmed the flat household
-     * fields; those become the form's prefill, not a reason to skip it.
+     * per-child age bracket, weekly budget — so it runs even when {@link #enrichThenConfirm} already confirmed the
+     * flat household fields; those become the form's prefill, not a reason to skip it.
      */
     private void presentWebAppForm(long chatId, Map<String, Object> context, User user) {
         if (!telegramProperties.webAppConfigured()) {
@@ -270,6 +271,9 @@ public class OnboardingFlowService {
         context.put(KEY_RESTRICTIONS, restrictions);
         context.put(KEY_DIET_TYPE, payload.dietType());
         context.put(KEY_COOKING_TIME, payload.cookingTimePreference());
+        if (payload.weeklyBudget() != null) {
+            context.put(KEY_BUDGET, payload.weeklyBudget().toPlainString());
+        }
         askNext(chatId, OnboardingStep.ASK_BUDGET, context, user);
     }
 
@@ -346,10 +350,10 @@ public class OnboardingFlowService {
         }
     }
 
-    /** Moves to {@code step}, skipping any question the Silpo profile already answered. */
+    /** Moves to {@code step}, skipping any question already answered — by Silpo enrichment, or by the WebApp form. */
     private void askNext(long chatId, OnboardingStep step, Map<String, Object> context, User user) {
         OnboardingStep target = step;
-        while (target != OnboardingStep.ASK_BUDGET && answered(context, target)) {
+        while (answered(context, target)) {
             target = following(target);
         }
         switch (target) {
@@ -372,6 +376,7 @@ public class OnboardingFlowService {
         return switch (step) {
             case ASK_HOUSEHOLD -> OnboardingStep.ASK_RESTRICTIONS;
             case ASK_RESTRICTIONS -> OnboardingStep.ASK_DISLIKES;
+            case ASK_BUDGET -> OnboardingStep.DONE;
             default -> OnboardingStep.ASK_BUDGET;
         };
     }
@@ -381,6 +386,7 @@ public class OnboardingFlowService {
             case ASK_HOUSEHOLD -> context.get(KEY_HOUSEHOLD) != null;
             case ASK_RESTRICTIONS -> context.get(KEY_RESTRICTIONS) != null;
             case ASK_DISLIKES -> context.get(KEY_DISLIKES) != null;
+            case ASK_BUDGET -> context.get(KEY_BUDGET) != null;
             default -> false;
         };
     }
@@ -555,5 +561,6 @@ public class OnboardingFlowService {
             List<String> restrictions,
             String restrictionsOther,
             DietType dietType,
-            CookingTimePreference cookingTimePreference) {}
+            CookingTimePreference cookingTimePreference,
+            BigDecimal weeklyBudget) {}
 }

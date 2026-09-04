@@ -240,10 +240,10 @@ class OnboardingFlowIntegrationTest extends AbstractIntegrationTest {
         sendWebAppData(4, """
                 {"adultMale":2,"adultFemale":0,"childrenAgeBrackets":["AGE_4_7"],\
                 "restrictions":["nuts"],"restrictionsOther":"","dietType":"NONE",\
-                "cookingTimePreference":"COOKS_DAILY"}""");
-        assertThat(conversationStateService.load(CHAT_ID).getCurrentStep()).isEqualTo(OnboardingStep.ASK_BUDGET.name());
-
-        sendText(5, "2500 грн");
+                "cookingTimePreference":"COOKS_DAILY","weeklyBudget":2500}""");
+        // The form already carried the budget — onboarding finishes right there, no separate chat question.
+        assertThat(conversationStateService.load(CHAT_ID).getCurrentFlow()).isEqualTo(ConversationFlow.NONE);
+        assertThat(lastMessageText()).doesNotContain("бюджет").doesNotContain("Бюджет");
 
         UUID userId = userRepository.findByTelegramChatId(CHAT_ID).orElseThrow().getId();
         UserProfile profile = userProfileRepository.findByUserId(userId).orElseThrow();
@@ -302,8 +302,7 @@ class OnboardingFlowIntegrationTest extends AbstractIntegrationTest {
         sendWebAppData(3, """
                 {"adultMale":1,"adultFemale":1,"childrenAgeBrackets":["AGE_0_3","AGE_8_12"],\
                 "restrictions":[],"restrictionsOther":"","dietType":"NONE",\
-                "cookingTimePreference":"COOKS_DAILY"}""");
-        sendText(4, "2500");
+                "cookingTimePreference":"COOKS_DAILY","weeklyBudget":2500}""");
 
         UUID userId = userRepository.findByTelegramChatId(CHAT_ID).orElseThrow().getId();
         UserProfile profile = userProfileRepository.findByUserId(userId).orElseThrow();

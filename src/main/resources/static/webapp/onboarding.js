@@ -62,6 +62,9 @@ document.getElementById("onboarding-form").addEventListener("submit", (event) =>
     restrictionsOther: document.getElementById("restrictionsOther").value.trim(),
     dietType: document.getElementById("dietType").value,
     cookingTimePreference: document.querySelector('input[name="cookingTime"]:checked').value,
+    weeklyBudget: document.getElementById("weeklyBudget").value === ""
+      ? null
+      : parseFloat(document.getElementById("weeklyBudget").value),
   };
   tg.sendData(JSON.stringify(payload));
 });

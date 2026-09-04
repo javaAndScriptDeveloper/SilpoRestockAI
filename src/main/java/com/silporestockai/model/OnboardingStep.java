@@ -20,7 +20,7 @@ public enum OnboardingStep {
     ASK_RESTRICTIONS,
     /** Asking what nobody in the household will eat. */
     ASK_DISLIKES,
-    /** Asking the weekly budget. MCP never knows this, so it is always asked. */
+    /** Asking the weekly budget — only reached on the manual-fallback path; the WebApp form asks it directly. */
     ASK_BUDGET,
     /** Profile saved; the conversation returns to {@link ConversationFlow#NONE}. */
     DONE

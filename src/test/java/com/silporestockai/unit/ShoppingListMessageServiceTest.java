@@ -3,6 +3,7 @@ package com.silporestockai.unit;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.silporestockai.entity.ShoppingListItem;
+import com.silporestockai.model.TelegramButton;
 import com.silporestockai.service.telegram.ShoppingListMessageService;
 import java.math.BigDecimal;
 import java.util.List;
@@ -33,6 +34,15 @@ class ShoppingListMessageServiceTest {
         var grouped = service.categorized(items);
 
         assertThat(grouped.keySet()).containsExactly("Інше");
+    }
+
+    @Test
+    void itemButtonsOffersOnlyPlusAndMinusNoDeleteButton() {
+        ShoppingListItem item = item("Молоко", "Молочні продукти");
+
+        List<TelegramButton> buttons = service.itemButtons(item);
+
+        assertThat(buttons).extracting(TelegramButton::label).containsExactly("−", "+");
     }
 
     private static ShoppingListItem item(String name, String category) {

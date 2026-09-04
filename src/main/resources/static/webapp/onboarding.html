@@ -6,14 +6,48 @@
 <title>Анкета Комора</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
-  body { font-family: -apple-system, sans-serif; padding: 16px; background: var(--tg-theme-bg-color, #fff);
-         color: var(--tg-theme-text-color, #000); }
-  fieldset { border: 1px solid #ccc; border-radius: 8px; margin-bottom: 16px; padding: 12px; }
-  legend { font-weight: 600; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    margin: 0;
+    padding: 16px;
+    background: var(--tg-theme-bg-color, #fff);
+    color: var(--tg-theme-text-color, #000);
+  }
+  form { display: flex; flex-direction: column; gap: 16px; max-width: 480px; margin: 0 auto; }
+  fieldset {
+    border: 1px solid var(--tg-theme-hint-color, #ccc);
+    border-radius: 8px;
+    padding: 12px;
+    background: var(--tg-theme-secondary-bg-color, transparent);
+  }
+  legend { font-weight: 600; padding: 0 4px; }
   label { display: block; margin: 8px 0 4px; }
-  input[type=number] { width: 60px; }
+  input[type=number], input[type=text], select {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid var(--tg-theme-hint-color, #ccc);
+    border-radius: 6px;
+    background: var(--tg-theme-bg-color, #fff);
+    color: var(--tg-theme-text-color, #000);
+    font-size: 16px;
+  }
   .child-row { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
-  button { padding: 8px 12px; }
+  .child-row select { flex: 1; }
+  button {
+    padding: 10px 12px;
+    border: none;
+    border-radius: 8px;
+    background: var(--tg-theme-button-color, #2481cc);
+    color: var(--tg-theme-button-text-color, #fff);
+    font-size: 16px;
+    cursor: pointer;
+  }
+  button[type=button] {
+    background: transparent;
+    color: var(--tg-theme-link-color, var(--tg-theme-button-color, #2481cc));
+    padding: 4px 8px;
+  }
 </style>
 </head>
 <body>
@@ -56,6 +90,11 @@
     <label><input type="radio" name="cookingTime" value="COOKS_DAILY" checked> Готую потроху щодня</label>
     <label><input type="radio" name="cookingTime" value="COOKS_BATCH"> Готую раз на кілька днів, наперед</label>
     <label><input type="radio" name="cookingTime" value="READY_MEALS_ONLY"> Часу немає, лише готова їжа</label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Бюджет</legend>
+    <label>Бюджет на тиждень (грн): <input type="number" id="weeklyBudget" min="0" step="1"></label>
   </fieldset>
 
   <button type="submit">Готово</button>

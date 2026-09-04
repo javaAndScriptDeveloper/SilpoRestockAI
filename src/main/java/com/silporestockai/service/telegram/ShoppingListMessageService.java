@@ -20,7 +20,6 @@ public class ShoppingListMessageService {
     public static final String CALLBACK_MANUAL_EDIT = "list:manual";
     public static final String CALLBACK_ITEM_DEC_PREFIX = "sli:dec:";
     public static final String CALLBACK_ITEM_INC_PREFIX = "sli:inc:";
-    public static final String CALLBACK_ITEM_DEL_PREFIX = "sli:del:";
 
     private static final String UNCATEGORIZED = "Інше";
 
@@ -60,12 +59,14 @@ public class ShoppingListMessageService {
         return text.toString();
     }
 
-    /** −/+/✕ for one item, wired to {@code ShoppingListBuilderService}'s manual-edit handler. */
+    /**
+     * −/+ for one item, wired to {@code ShoppingListBuilderService}'s manual-edit handler. No explicit delete
+     * button — reducing quantity to zero removes the item.
+     */
     public List<TelegramButton> itemButtons(ShoppingListItem item) {
         return List.of(
                 TelegramButton.callback("−", CALLBACK_ITEM_DEC_PREFIX + item.getId()),
-                TelegramButton.callback("+", CALLBACK_ITEM_INC_PREFIX + item.getId()),
-                TelegramButton.callback("✕", CALLBACK_ITEM_DEL_PREFIX + item.getId()));
+                TelegramButton.callback("+", CALLBACK_ITEM_INC_PREFIX + item.getId()));
     }
 
     /**
@@ -95,7 +96,7 @@ public class ShoppingListMessageService {
         return "Напиши, що змінити. Наприклад: «прибери банани, додай хліб і яйця, молока більше».";
     }
 
-    /** Precedes the per-item −/+/✕ messages of the manual-edit view. No AI call happens past this point. */
+    /** Precedes the per-item −/+ messages of the manual-edit view. No AI call happens past this point. */
     public String manualEditIntroText() {
         return "Онови кожну позицію окремо:";
     }
