@@ -356,6 +356,30 @@ hackathon jury demo.
 5. Save the recording somewhere durable and link it from the "Сценарій демо-запису" Notion page and from
    Notion task 28 itself, then mark task 28's acceptance criteria checked off there.
 
+### Task 31: verify free-text intents live in Telegram
+
+The integration tests script every intent against a stubbed classifier response — they prove the dispatch
+logic is correct, not that Claude's real, live classification actually picks the right intent for a real,
+possibly-ambiguous Ukrainian sentence. That needs a human reading the bot's actual reply. For each row
+below, type the phrase into a real chat with an onboarded profile and confirm the "expected" outcome:
+
+| Type this | Expect |
+|---|---|
+| «закажи до п'ятниці вино та сир по знижці» | "Заплановано на ..." confirmation; no cart yet |
+| «я захворів, гастрит» | "Перемикаю на щадне харчування" + a new plan |
+| «зроби менш калорійним» | A new plan, without switching to a named special mode |
+| «хочу набрати масу» / «більше протеїну» | A cross-sell line about protein/gainer, then "Яка зараз вага?" |
+| «шукай тільки український виробник» | A confirmation the UA-only filter is on |
+| «покажи список» | The current shopping list |
+| «що ти вмієш?» | The static Інструкція text |
+| something genuinely ambiguous, e.g. «зроби щось» | A clarifying question, not a guess |
+| «/blackout» (typed, not tapped) | Still works exactly as before — no classification call happens |
+
+Also confirm the persistent keyboard shows exactly three buttons (Список / Анкета / Інструкція) after
+onboarding finishes, and that tapping «🧾 Анкета» does *not* crash — it currently falls through to a
+clarifying question (the Анкета-reopen flow is task 31's deferred scope; see
+`docs/superpowers/specs/2026-09-05-intent-router-design.md`).
+
 ---
 
 ## 8. The scheduled check-in
