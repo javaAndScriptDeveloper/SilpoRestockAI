@@ -330,6 +330,32 @@ SELECT count(*) FROM baseline_basket;                            -- still 1
 > order](#redo-the-first-order)) and tap «Скасувати». The order goes to `CANCELLED` and no baseline row
 > appears.
 
+### Task 28: verify the checkout link actually completes a real purchase
+
+This is the one step in this runbook that cannot be automated — it needs a real Silpo guest account, a
+phone with Telegram installed, and ends in an actual payment. Do this once per significant change to
+`CartMessageService`/`CartBuildingService`'s checkout-link handling, and definitely once before any
+hackathon jury demo.
+
+1. Run the full flow above (steps 1-7) with a real, OAuth-connected Silpo guest account through to the
+   confirmed-order message.
+2. **Confirm the button, not the text.** The confirmation message must show one tappable inline button
+   labeled "Перейти до оплати" — not raw URL text. Tap it.
+3. Record your screen from this tap onward (any screen recorder — this becomes hackathon demo evidence,
+   referenced from the "Сценарій демо-запису" Notion page).
+4. Confirm, while recording:
+   - The tap opens the Silpo app directly (or its checkout page) — not a dead link, not a 404.
+   - The cart shown on Silpo's side has the same items and total the bot's own confirmation message had.
+   - No re-login/re-auth prompt appears — the guest's session carries through. If one does appear, this
+     is exactly the friction task 28 calls out; document it in the recording's description and decide
+     with the team whether it's fixable or an inherent platform constraint (Telegram's Bot API has no
+     server-side control over in-app vs. system browser, so `checkoutMobileLink` is the intended
+     workaround — if friction still appears even via the mobile link, that's new information worth
+     escalating, not something to silently route around again).
+   - Complete a real payment for a small real order.
+5. Save the recording somewhere durable and link it from the "Сценарій демо-запису" Notion page and from
+   Notion task 28 itself, then mark task 28's acceptance criteria checked off there.
+
 ---
 
 ## 8. The scheduled check-in
