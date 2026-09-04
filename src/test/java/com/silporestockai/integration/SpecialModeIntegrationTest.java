@@ -8,6 +8,7 @@ import com.silporestockai.entity.SilpoOAuthToken;
 import com.silporestockai.entity.User;
 import com.silporestockai.entity.UserProfile;
 import com.silporestockai.model.BasketItem;
+import com.silporestockai.model.ConversationFlow;
 import com.silporestockai.model.SpecialMode;
 import com.silporestockai.repository.BaselineBasketRepository;
 import com.silporestockai.repository.ConversationStateRepository;
@@ -399,6 +400,11 @@ class SpecialModeIntegrationTest extends AbstractIntegrationTest {
         assertThat(profile.getTargetCalories()).isEqualTo(3200);
         assertThat(profile.getTargetProteinG()).isEqualTo(160);
         assertThat(CLAUDE.requests().getLast().toString()).contains("набору маси");
+        // finishMassGainSetup's own regenerateAndPresent call must be the last thing to touch
+        // conversation state — the freshly presented list has to stay approvable, not get its
+        // LIST_BUILDING/STEP_AWAITING_APPROVAL state clobbered back to NONE afterwards.
+        assertThat(conversationStateRepository.findById(CHAT_ID).orElseThrow().getCurrentFlow())
+                .isEqualTo(ConversationFlow.LIST_BUILDING);
     }
 
     @Test

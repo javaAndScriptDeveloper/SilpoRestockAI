@@ -173,8 +173,8 @@ public class SpecialModeService {
                 telegramOutboundService.sendMessage(chatId, "Скільки грамів білка на день — ціль?");
             }
             case STEP_ASK_PROTEIN -> {
-                finishMassGainSetup(user, context, number.intValue());
                 conversationStateService.save(chatId, ConversationFlow.NONE, null, Map.of());
+                finishMassGainSetup(user, context, number.intValue());
             }
             default -> telegramOutboundService.sendMessage(chatId, "Напиши /masgain, щоб почати заново.");
         }
