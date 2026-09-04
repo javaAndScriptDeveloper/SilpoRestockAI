@@ -19,12 +19,12 @@ import com.silporestockai.model.OrderConfirmedEvent;
 import com.silporestockai.model.OrderStatus;
 import com.silporestockai.model.ReplacementOption;
 import com.silporestockai.model.ReplacementSuggestion;
-import com.silporestockai.model.TelegramButton;
 import com.silporestockai.model.TelegramIncomingUpdate;
 import com.silporestockai.model.TrustTier;
 import com.silporestockai.repository.BaselineBasketRepository;
 import com.silporestockai.repository.CustomerOrderRepository;
 import com.silporestockai.repository.TrustLevelRepository;
+import com.silporestockai.service.telegram.CartMessageService;
 import com.silporestockai.service.telegram.ReorderMessageService;
 import com.silporestockai.service.telegram.TelegramOutboundService;
 import java.time.Clock;
@@ -81,6 +81,7 @@ public class ReorderConfirmationService {
             JsonMapper.builder().addModule(new JavaTimeModule()).build();
 
     private final CartBuildingService cartBuildingService;
+    private final CartMessageService cartMessageService;
     private final CustomerOrderRepository customerOrderRepository;
     private final BaselineBasketRepository baselineBasketRepository;
     private final TrustLevelRepository trustLevelRepository;
@@ -264,7 +265,7 @@ public class ReorderConfirmationService {
         telegramOutboundService.sendMessageWithButtons(
                 chatId,
                 reorderMessageService.confirmedText(cart, delta.estimatedSavings(), slotFixed, edited),
-                checkoutButtons(cart));
+                cartMessageService.checkoutButtons(cart));
         log.info("reorder {} confirmed for user {}, edited: {}", order.getId(), user.getId(), edited);
     }
 
@@ -420,12 +421,6 @@ public class ReorderConfirmationService {
         } catch (NumberFormatException e) {
             return -1;
         }
-    }
-
-    private List<TelegramButton> checkoutButtons(CartSummary cart) {
-        return cart.checkoutWebLink() == null
-                ? List.of()
-                : List.of(TelegramButton.link("Оформити на silpo.ua", cart.checkoutWebLink()));
     }
 
     /** True when the tool answered without an error. Both calls here are best effort by design. */

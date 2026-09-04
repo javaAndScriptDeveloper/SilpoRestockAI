@@ -324,6 +324,21 @@ class ReorderConfirmationIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void theConfirmedMessageCarriesATappableCheckoutButtonOnTheMobileLink() throws Exception {
+        needs(List.of("Молоко"));
+        present();
+
+        tapButton(1, ReorderMessageService.CALLBACK_CONFIRM);
+
+        JsonNode confirmed = TELEGRAM.sentMessages().getLast();
+        JsonNode buttons = confirmed.path("reply_markup").path("inline_keyboard").get(0);
+        JsonNode checkoutButton = buttons.get(buttons.size() - 1);
+        assertThat(checkoutButton.path("url").asText()).isEqualTo("silpo://checkout/cart-9");
+        assertThat(checkoutButton.path("text").asText()).isEqualTo("Перейти до оплати");
+        assertThat(confirmed.path("text").asText()).contains("https://silpo.ua/checkout/cart-9");
+    }
+
+    @Test
     void refusingASubstituteMakesTheOrderTheNewBaselineAndResetsTrust() throws Exception {
         needs(List.of("Молоко", "Хліб"));
         present();
