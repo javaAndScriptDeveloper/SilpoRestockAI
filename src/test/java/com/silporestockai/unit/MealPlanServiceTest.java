@@ -230,6 +230,66 @@ class MealPlanServiceTest {
                         assertThat(meal.ingredients().getFirst().productId()).isEqualTo("p-1"));
     }
 
+    /**
+     * Production bug (2026-09-04): on the recipe path Claude's structured output filled {@code productId} with
+     * invented, non-UUID strings ("oats001", "banana001"...) even though nothing asked it to — the schema exposes
+     * the field for both generation paths. CartBuildingService.resolveProducts treats any non-blank productId as
+     * already resolved and skips search, so these fabricated ids went straight to Silpo and got rejected as invalid
+     * UUIDs, failing the whole cart. productId must only ever come from the READY_MEALS_ONLY candidate match — never
+     * trusted from Claude on any other path.
+     */
+    @Test
+    void recipePathNeverTrustsAProductIdClaudeInvented() {
+        UserProfileRepository userProfileRepository = mock(UserProfileRepository.class);
+        UserProfile profile = UserProfile.builder()
+                .id(UUID.randomUUID())
+                .userId(USER_ID)
+                .cookingTimePreference(CookingTimePreference.COOKS_BATCH)
+                .build();
+        when(userProfileRepository.findByUserId(USER_ID)).thenReturn(Optional.of(profile));
+        MealPlanRepository mealPlanRepository = mock(MealPlanRepository.class);
+        ArgumentCaptor<com.silporestockai.entity.MealPlan> savedCaptor =
+                ArgumentCaptor.forClass(com.silporestockai.entity.MealPlan.class);
+        when(mealPlanRepository.save(savedCaptor.capture())).thenAnswer(invocation -> invocation.getArgument(0));
+        InventoryTrendService inventoryTrendService = mock(InventoryTrendService.class);
+        when(inventoryTrendService.getRemovalCandidates(USER_ID)).thenReturn(List.of());
+        ClaudeApiClient claudeApiClient = mock(ClaudeApiClient.class);
+        List<PlannedIngredient> ingredientsWithInventedIds =
+                List.of(new PlannedIngredient("Вівсяні пластівці", BigDecimal.TEN, "г", "Крупи і бакалія", "oats001"));
+        List<PlannedMeal> meals = List.of(
+                new PlannedMeal(MealType.BREAKFAST, "Вівсянка", ingredientsWithInventedIds),
+                new PlannedMeal(MealType.LUNCH, "Вівсянка", ingredientsWithInventedIds),
+                new PlannedMeal(MealType.DINNER, "Вівсянка", ingredientsWithInventedIds));
+        WeeklyMealPlan planWithInventedIds = new WeeklyMealPlan(
+                Arrays.stream(DayOfWeek.values()).map(day -> new PlannedDay(day, meals)).toList());
+        when(claudeApiClient.completeStructured(anyString(), anyString(), eq(WeeklyMealPlan.class)))
+                .thenReturn(planWithInventedIds);
+
+        MealPlanService service = new MealPlanService(
+                userProfileRepository,
+                mealPlanRepository,
+                claudeApiClient,
+                inventoryTrendService,
+                Clock.fixed(Instant.parse("2026-09-07T00:00:00Z"), ZoneOffset.UTC),
+                new ByteArrayResource("RECIPE-PROMPT".getBytes()),
+                new ByteArrayResource("READY-MEALS-PROMPT".getBytes()),
+                new ByteArrayResource("GASTRITIS-ACUTE-PROMPT".getBytes()),
+                new ByteArrayResource("GASTRITIS-DIET5-PROMPT".getBytes()),
+                new ByteArrayResource("MASS-GAIN-PROMPT".getBytes()),
+                mock(ReadyMealCatalogService.class));
+
+        service.generateWeeklyPlan(USER_ID);
+
+        com.fasterxml.jackson.databind.ObjectMapper mapper =
+                new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules();
+        WeeklyMealPlan stored = mapper.convertValue(savedCaptor.getValue().getPlan(), WeeklyMealPlan.class);
+        assertThat(stored.days())
+                .allSatisfy(day -> assertThat(day.meals())
+                        .allSatisfy(meal -> assertThat(meal.ingredients())
+                                .allSatisfy(ingredient ->
+                                        assertThat(ingredient.productId()).isNull())));
+    }
+
     @Test
     void readyMealsOnlyRetriesWhenClaudeInventsAProductOutsideTheCandidateList() {
         UserProfileRepository userProfileRepository = mock(UserProfileRepository.class);

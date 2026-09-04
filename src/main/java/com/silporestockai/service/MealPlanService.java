@@ -155,9 +155,7 @@ public class MealPlanService {
                 throw new MealPlanGenerationException(userId, defects);
             }
         }
-        if (readyMealsOnly) {
-            plan = withResolvedProductIds(plan, candidates);
-        }
+        plan = readyMealsOnly ? withResolvedProductIds(plan, candidates) : withoutProductIds(plan);
         return persist(
                 userId,
                 plan,
@@ -225,6 +223,34 @@ public class MealPlanService {
                                                         ingredient.category(),
                                                         Objects.requireNonNull(byName.get(normalise(ingredient.name())))
                                                                 .productId()))
+                                                .toList()))
+                                .toList()))
+                .toList();
+        return new WeeklyMealPlan(days);
+    }
+
+    /**
+     * Strips any {@code productId} Claude may have filled in on every path except {@code READY_MEALS_ONLY} —
+     * {@code WeeklyMealPlan}'s schema exposes the field on every generation path, and nothing in the recipe or
+     * special-mode prompts tells the model to leave it blank, so it must never be trusted here. A non-null value
+     * from this path is what let a fabricated non-UUID id reach {@code silpo_add_or_update_cart_products} and get
+     * every line in the cart rejected.
+     */
+    private static WeeklyMealPlan withoutProductIds(WeeklyMealPlan plan) {
+        List<PlannedDay> days = plan.days().stream()
+                .map(day -> new PlannedDay(
+                        day.day(),
+                        day.meals().stream()
+                                .map(meal -> new PlannedMeal(
+                                        meal.type(),
+                                        meal.name(),
+                                        meal.ingredients().stream()
+                                                .map(ingredient -> new PlannedIngredient(
+                                                        ingredient.name(),
+                                                        ingredient.quantity(),
+                                                        ingredient.unit(),
+                                                        ingredient.category(),
+                                                        null))
                                                 .toList()))
                                 .toList()))
                 .toList();
