@@ -85,17 +85,26 @@ public class CartMessageService {
                     .append('.');
         }
         text.append("\n\nОплата — на боці «Сільпо».");
-        if (summary.checkoutMobileLink() != null) {
-            text.append("\nУ застосунку: ").append(summary.checkoutMobileLink());
-        }
+        text.append(checkoutFallbackLine(summary));
         return text.toString();
     }
 
-    /** A link button straight to checkout, or nothing when Silpo gave no link. */
+    /**
+     * A link button straight to checkout — the mobile deep link, which opens the Silpo app directly rather than a
+     * browser, so it never hits the in-app-browser session friction a web link opened inside Telegram's own
+     * browser can. Shared by every order-confirmation flow (task 10, 15, 19).
+     */
     public List<TelegramButton> checkoutButtons(CartSummary summary) {
-        return summary.checkoutWebLink() == null
-                ? List.of()
-                : List.of(TelegramButton.link("Оформити на silpo.ua", summary.checkoutWebLink()));
+        return List.of(TelegramButton.link("Перейти до оплати", summary.checkoutMobileLink()));
+    }
+
+    /**
+     * The web link, mentioned as a text fallback — the button above already covers the mobile case. Pulled out on
+     * its own so every confirmation message (task 10, 15) uses identical wording instead of each spelling it out
+     * separately.
+     */
+    public String checkoutFallbackLine(CartSummary summary) {
+        return "\nАбо в браузері: " + summary.checkoutWebLink();
     }
 
     /** Said instead of the cart when the bonus call failed but the order went through anyway. */

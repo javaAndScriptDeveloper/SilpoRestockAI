@@ -95,11 +95,27 @@ class CartMessageServiceTest {
     void theClosingMessageSaysWhereToPayAndWhetherBonusesWereSpent() {
         CartSummary cart = summary(twoItems().items(), new BigDecimal("73.5"), new BigDecimal("120"), true, List.of());
 
-        assertThat(service.confirmedText(cart, true)).contains("120").contains("silpo://checkout/cart-1");
+        assertThat(service.confirmedText(cart, true)).contains("120").contains("https://silpo.ua/checkout/cart-1");
         assertThat(service.confirmedText(cart, false)).doesNotContain("Списав бонусів");
+    }
+
+    @Test
+    void theCheckoutButtonOpensTheMobileDeepLinkNotTheWebPage() {
+        CartSummary cart = summary(twoItems().items(), new BigDecimal("73.5"), BigDecimal.ZERO, false, List.of());
+
         assertThat(service.checkoutButtons(cart))
                 .extracting(TelegramButton::url)
-                .containsExactly("https://silpo.ua/checkout/cart-1");
+                .containsExactly("silpo://checkout/cart-1");
+        assertThat(service.checkoutButtons(cart).getFirst().label()).isEqualTo("Перейти до оплати");
+    }
+
+    @Test
+    void theFallbackLineMentionsTheWebLinkNotTheMobileOne() {
+        CartSummary cart = summary(twoItems().items(), new BigDecimal("73.5"), BigDecimal.ZERO, false, List.of());
+
+        assertThat(service.checkoutFallbackLine(cart))
+                .contains("https://silpo.ua/checkout/cart-1")
+                .doesNotContain("silpo://checkout/cart-1");
     }
 
     @Test
