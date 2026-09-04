@@ -1,5 +1,6 @@
 package com.silporestockai.service;
 
+import com.silporestockai.client.claude.ClaudeApiClient;
 import com.silporestockai.config.SpecialModeProperties;
 import com.silporestockai.entity.MealPlan;
 import com.silporestockai.entity.ShoppingListItem;
@@ -9,11 +10,15 @@ import com.silporestockai.model.SpecialMode;
 import com.silporestockai.repository.UserProfileRepository;
 import com.silporestockai.repository.UserRepository;
 import com.silporestockai.service.telegram.TelegramOutboundService;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,17 +34,67 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class SpecialModeService {
 
     private final UserProfileRepository userProfileRepository;
+    private final UserRepository userRepository;
     private final MealPlanService mealPlanService;
     private final ShoppingListService shoppingListService;
     private final ShoppingListBuilderService shoppingListBuilderService;
     private final TelegramOutboundService telegramOutboundService;
+    private final ClaudeApiClient claudeApiClient;
     private final SpecialModeProperties specialModeProperties;
     private final Clock clock;
-    private final UserRepository userRepository;
+    private final String gastritisIntentSystemPrompt;
+
+    public SpecialModeService(
+            UserProfileRepository userProfileRepository,
+            UserRepository userRepository,
+            MealPlanService mealPlanService,
+            ShoppingListService shoppingListService,
+            ShoppingListBuilderService shoppingListBuilderService,
+            TelegramOutboundService telegramOutboundService,
+            ClaudeApiClient claudeApiClient,
+            SpecialModeProperties specialModeProperties,
+            Clock clock,
+            @Value("classpath:prompts/gastritis-intent-system.txt") Resource gastritisIntentSystemPromptResource) {
+        this.userProfileRepository = userProfileRepository;
+        this.userRepository = userRepository;
+        this.mealPlanService = mealPlanService;
+        this.shoppingListService = shoppingListService;
+        this.shoppingListBuilderService = shoppingListBuilderService;
+        this.telegramOutboundService = telegramOutboundService;
+        this.claudeApiClient = claudeApiClient;
+        this.specialModeProperties = specialModeProperties;
+        this.clock = clock;
+        this.gastritisIntentSystemPrompt = read(gastritisIntentSystemPromptResource);
+    }
+
+    /**
+     * Classifies free text for an acute-gastritis trigger via {@link ClaudeApiClient}. A classification failure
+     * (timeout, malformed response) is logged and treated as "no match" — the routing fallback's generic message
+     * is a safe default, and propagating the exception would break normal message handling for an unrelated cause.
+     */
+    public boolean detectGastritisIntent(String text) {
+        try {
+            GastritisIntent intent =
+                    claudeApiClient.completeStructured(gastritisIntentSystemPrompt, text, GastritisIntent.class);
+            return intent != null && intent.isIllnessTrigger() && intent.confidence() >= 0.7;
+        } catch (RuntimeException e) {
+            log.warn("could not classify gastritis intent for text, treating as no match", e);
+            return false;
+        }
+    }
+
+    private record GastritisIntent(boolean isIllnessTrigger, double confidence) {}
+
+    private static String read(Resource resource) {
+        try (var stream = resource.getInputStream()) {
+            return new String(stream.readAllBytes(), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new UncheckedIOException("could not read the gastritis intent system prompt", e);
+        }
+    }
 
     @Transactional
     public void triggerGastritis(User user) {

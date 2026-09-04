@@ -13,6 +13,7 @@ import com.silporestockai.service.GoogleAuthService;
 import com.silporestockai.service.ReorderConfirmationService;
 import com.silporestockai.service.ReorderService;
 import com.silporestockai.service.ShoppingListBuilderService;
+import com.silporestockai.service.SpecialModeService;
 import com.silporestockai.service.UserAccountService;
 import com.silporestockai.service.onboarding.OnboardingFlowService;
 import java.util.List;
@@ -52,6 +53,7 @@ public class TelegramRoutingService {
     private final VoiceReplyService voiceReplyService;
     private final UserRepository userRepository;
     private final TelegramOutboundService telegramOutboundService;
+    private final SpecialModeService specialModeService;
 
     /**
      * Off the webhook thread on purpose. A fridge photo means a vision call — the slowest and most expensive kind
@@ -199,6 +201,11 @@ public class TelegramRoutingService {
             // waiting on with small talk is worse than silence.
             telegramOutboundService.answerCallback(tap.callbackQueryId());
             log.debug("ignoring stale button tap {} in chat {}", tap.data(), tap.chatId());
+            return;
+        }
+        if (incoming instanceof TelegramIncomingUpdate.Text freeText
+                && specialModeService.detectGastritisIntent(freeText.text())) {
+            specialModeService.triggerGastritis(user);
             return;
         }
         telegramOutboundService.sendMessageWithMainMenu(

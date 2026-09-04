@@ -10,6 +10,7 @@ import com.silporestockai.entity.UserProfile;
 import com.silporestockai.model.BasketItem;
 import com.silporestockai.model.SpecialMode;
 import com.silporestockai.repository.BaselineBasketRepository;
+import com.silporestockai.repository.ConversationStateRepository;
 import com.silporestockai.repository.SilpoOAuthTokenRepository;
 import com.silporestockai.repository.UserProfileRepository;
 import com.silporestockai.repository.UserRepository;
@@ -32,6 +33,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.web.servlet.MockMvc;
 
 @DisplayName("SpecialModeService switches and cancels a special mode without touching the baseline")
 class SpecialModeIntegrationTest extends AbstractIntegrationTest {
@@ -45,6 +47,9 @@ class SpecialModeIntegrationTest extends AbstractIntegrationTest {
     private SpecialModeService specialModeService;
 
     @Autowired
+    private MockMvc mockMvc;
+
+    @Autowired
     private UserAccountService userAccountService;
 
     @Autowired
@@ -52,6 +57,9 @@ class SpecialModeIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
     private BaselineBasketRepository baselineBasketRepository;
+
+    @Autowired
+    private ConversationStateRepository conversationStateRepository;
 
     @Autowired
     private SilpoOAuthTokenRepository tokenRepository;
@@ -121,6 +129,7 @@ class SpecialModeIntegrationTest extends AbstractIntegrationTest {
         userProfileRepository.deleteAll();
         tokenRepository.deleteAll();
         userRepository.deleteAll();
+        conversationStateRepository.deleteAll();
 
         user = userAccountService.findOrCreate(CHAT_ID);
         userProfileRepository.save(UserProfile.builder()
@@ -159,6 +168,38 @@ class SpecialModeIntegrationTest extends AbstractIntegrationTest {
                 "items":[{"productId":"p-90","name":"Вівсянка","unit":"шт","quantity":1,"price":45}],\
                 "total":45,"validations":[],\
                 "checkoutWebLink":"https://silpo.ua/checkout/cart-s"}""");
+    }
+
+    private void sendText(int updateId, String text) throws Exception {
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/telegram/webhook")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"update_id":%d,"message":{"message_id":%d,"date":1,\
+                                "chat":{"id":%d,"type":"private"},"from":{"id":5,"is_bot":false,"first_name":"Тест"},\
+                                "text":"%s"}}""".formatted(updateId, updateId, CHAT_ID, text)))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status()
+                        .isOk());
+    }
+
+    @Test
+    void freeTextAboutGastritisTriggersTheMedicalMode() throws Exception {
+        CLAUDE.respondWithTexts(
+                "{\"isIllnessTrigger\":true,\"confidence\":0.95}", MealPlanIntegrationTest.fullWeekJson());
+
+        sendText(1, "я захворів, гастрит, два тижні дієтичного раціону");
+
+        UserProfile profile = userProfileRepository.findByUserId(user.getId()).orElseThrow();
+        assertThat(profile.getSpecialMode()).isEqualTo(SpecialMode.MEDICAL_GASTRITIS_ACUTE);
+    }
+
+    @Test
+    void unrelatedFreeTextDoesNotTriggerAnything() throws Exception {
+        CLAUDE.respondWithText("{\"isIllnessTrigger\":false,\"confidence\":0.9}");
+
+        sendText(1, "що там на вечерю сьогодні?");
+
+        UserProfile profile = userProfileRepository.findByUserId(user.getId()).orElseThrow();
+        assertThat(profile.getSpecialMode()).isNotEqualTo(SpecialMode.MEDICAL_GASTRITIS_ACUTE);
     }
 
     @Test
