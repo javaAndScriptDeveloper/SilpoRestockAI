@@ -65,6 +65,9 @@ public class MealPlanService {
     private final Clock clock;
     private final String recipeSystemPrompt;
     private final String readyMealsSystemPrompt;
+    private final String gastritisAcuteSystemPrompt;
+    private final String gastritisDiet5SystemPrompt;
+    private final String massGainSystemPrompt;
 
     public MealPlanService(
             UserProfileRepository userProfileRepository,
@@ -74,6 +77,11 @@ public class MealPlanService {
             Clock clock,
             @Value("classpath:prompts/meal-plan-system.txt") Resource recipeSystemPromptResource,
             @Value("classpath:prompts/meal-plan-ready-meals-system.txt") Resource readyMealsSystemPromptResource,
+            @Value("classpath:prompts/meal-plan-gastritis-acute-system.txt")
+                    Resource gastritisAcuteSystemPromptResource,
+            @Value("classpath:prompts/meal-plan-gastritis-diet5-system.txt")
+                    Resource gastritisDiet5SystemPromptResource,
+            @Value("classpath:prompts/meal-plan-mass-gain-system.txt") Resource massGainSystemPromptResource,
             ReadyMealCatalogService readyMealCatalogService) {
         this.userProfileRepository = userProfileRepository;
         this.mealPlanRepository = mealPlanRepository;
@@ -83,6 +91,9 @@ public class MealPlanService {
         this.clock = clock;
         this.recipeSystemPrompt = read(recipeSystemPromptResource);
         this.readyMealsSystemPrompt = read(readyMealsSystemPromptResource);
+        this.gastritisAcuteSystemPrompt = read(gastritisAcuteSystemPromptResource);
+        this.gastritisDiet5SystemPrompt = read(gastritisDiet5SystemPromptResource);
+        this.massGainSystemPrompt = read(massGainSystemPromptResource);
     }
 
     @Transactional
@@ -108,8 +119,11 @@ public class MealPlanService {
                         HttpStatus.PRECONDITION_REQUIRED,
                         "user %s has no profile yet; onboarding has to finish first".formatted(userId)));
 
-        boolean readyMealsOnly = profile.getCookingTimePreference() == CookingTimePreference.READY_MEALS_ONLY;
-        String systemPrompt = readyMealsOnly ? readyMealsSystemPrompt : recipeSystemPrompt;
+        String specialPrompt = specialSystemPromptFor(profile.getSpecialMode());
+        boolean readyMealsOnly =
+                specialPrompt == null && profile.getCookingTimePreference() == CookingTimePreference.READY_MEALS_ONLY;
+        String systemPrompt =
+                specialPrompt != null ? specialPrompt : (readyMealsOnly ? readyMealsSystemPrompt : recipeSystemPrompt);
         List<String> untouched = inventoryTrendService.getRemovalCandidates(userId);
 
         List<CatalogCandidate> candidates = List.of();
@@ -284,6 +298,19 @@ public class MealPlanService {
         LocalDate today = LocalDate.now(clock);
         int daysAhead = (DayOfWeek.MONDAY.getValue() - today.getDayOfWeek().getValue() + 7) % 7;
         return today.plusDays(daysAhead);
+    }
+
+    /** {@code null} for {@code NONE}/{@code BLACKOUT} (blackout never reaches this service) — falls back to the usual recipe/ready-meals split. */
+    private String specialSystemPromptFor(SpecialMode mode) {
+        if (mode == null) {
+            return null;
+        }
+        return switch (mode) {
+            case MEDICAL_GASTRITIS_ACUTE -> gastritisAcuteSystemPrompt;
+            case MEDICAL_DIET_TABLE_5 -> gastritisDiet5SystemPrompt;
+            case MASS_GAIN -> massGainSystemPrompt;
+            default -> null;
+        };
     }
 
     /** Everything the model needs about this household, in the user message rather than the system prompt. */
