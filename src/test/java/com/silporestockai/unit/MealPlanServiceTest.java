@@ -260,8 +260,9 @@ class MealPlanServiceTest {
                 new PlannedMeal(MealType.BREAKFAST, "Вівсянка", ingredientsWithInventedIds),
                 new PlannedMeal(MealType.LUNCH, "Вівсянка", ingredientsWithInventedIds),
                 new PlannedMeal(MealType.DINNER, "Вівсянка", ingredientsWithInventedIds));
-        WeeklyMealPlan planWithInventedIds = new WeeklyMealPlan(
-                Arrays.stream(DayOfWeek.values()).map(day -> new PlannedDay(day, meals)).toList());
+        WeeklyMealPlan planWithInventedIds = new WeeklyMealPlan(Arrays.stream(DayOfWeek.values())
+                .map(day -> new PlannedDay(day, meals))
+                .toList());
         when(claudeApiClient.completeStructured(anyString(), anyString(), eq(WeeklyMealPlan.class)))
                 .thenReturn(planWithInventedIds);
 

@@ -157,7 +157,8 @@ class BlackoutModeIntegrationTest extends AbstractIntegrationTest {
                 {"cartId":"cart-b","branchId":"branch-7","companyId":"company-3","deliveryType":"delivery",\
                 "items":[{"productId":"p-77","name":"Шпроти","unit":"шт","quantity":1,"price":72}],\
                 "total":72,"validations":[],\
-                "checkoutWebLink":"https://silpo.ua/checkout/cart-b"}""");
+                "checkoutWebLink":"https://silpo.ua/checkout/cart-b",\
+                "checkoutMobileLink":"silpo://checkout/cart-b"}""");
     }
 
     private void sendText(int updateId, String text) throws Exception {

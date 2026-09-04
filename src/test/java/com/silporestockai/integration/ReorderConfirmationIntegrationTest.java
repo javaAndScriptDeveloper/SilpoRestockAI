@@ -331,7 +331,8 @@ class ReorderConfirmationIntegrationTest extends AbstractIntegrationTest {
         tapButton(1, ReorderMessageService.CALLBACK_CONFIRM);
 
         JsonNode confirmed = TELEGRAM.sentMessages().getLast();
-        JsonNode buttons = confirmed.path("reply_markup").path("inline_keyboard").get(0);
+        JsonNode buttons =
+                confirmed.path("reply_markup").path("inline_keyboard").get(0);
         JsonNode checkoutButton = buttons.get(buttons.size() - 1);
         assertThat(checkoutButton.path("url").asText()).isEqualTo("silpo://checkout/cart-9");
         assertThat(checkoutButton.path("text").asText()).isEqualTo("Перейти до оплати");

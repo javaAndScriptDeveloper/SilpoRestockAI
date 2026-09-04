@@ -338,17 +338,13 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
     void searchesProductsWithTheFreshSlotNotTheCartsStaleOne() {
         UUID userId = connectedUser(8422L);
         MCP.respondToTool("silpo_get_my_shopping_cart", "{\"cartId\":\"cart-1\"}");
-        MCP.respondToTool(
-                "silpo_get_shopping_cart_by_id",
-                """
+        MCP.respondToTool("silpo_get_shopping_cart_by_id", """
                 {"cartId":"cart-1","branchId":"branch-7","companyId":"company-3","deliveryType":"delivery",\
                 "timeslot":{"start":"2026-09-03T06:00:00+00:00","end":"2026-09-03T07:30:00+00:00"},\
                 "items":[],"validations":[{"level":"error","type":"timeslot","message":"timeslot.not_found"}],\
                 "checkoutWebLink":"https://silpo.ua/checkout/cart-1",\
                 "checkoutMobileLink":"silpo://checkout/cart-1"}""");
-        MCP.respondToTool(
-                "silpo_get_time_slots",
-                """
+        MCP.respondToTool("silpo_get_time_slots", """
                 {"timeSlots":[{"start":"2026-09-05T06:00:00+00:00","end":"2026-09-05T07:30:00+00:00",\
                 "available":true}]}""");
         MCP.respondToTool("silpo_find_products_batch", """
