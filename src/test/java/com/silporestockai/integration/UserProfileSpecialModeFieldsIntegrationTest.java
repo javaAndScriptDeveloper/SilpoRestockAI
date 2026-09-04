@@ -10,7 +10,6 @@ import com.silporestockai.repository.UserProfileRepository;
 import com.silporestockai.repository.UserRepository;
 import com.silporestockai.service.UserAccountService;
 import java.math.BigDecimal;
-import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.UUID;
@@ -52,11 +51,9 @@ class UserProfileSpecialModeFieldsIntegrationTest extends AbstractIntegrationTes
                 .targetProteinG(160)
                 .build());
 
-        UserProfile reloaded =
-                userProfileRepository.findByUserId(user.getId()).orElseThrow();
+        UserProfile reloaded = userProfileRepository.findByUserId(user.getId()).orElseThrow();
 
-        assertThat(reloaded.getSpecialModeExpiresAt())
-                .isCloseTo(expiresAt, within(1, ChronoUnit.MILLIS));
+        assertThat(reloaded.getSpecialModeExpiresAt()).isCloseTo(expiresAt, within(1, ChronoUnit.MILLIS));
         assertThat(reloaded.getTargetWeightKg()).isEqualByComparingTo("82.5");
         assertThat(reloaded.getTargetCalories()).isEqualTo(3200);
         assertThat(reloaded.getTargetProteinG()).isEqualTo(160);

@@ -12,4 +12,5 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param sweepCron when the expiry sweep runs.
  */
 @ConfigurationProperties(prefix = "komora.special-mode")
-public record SpecialModeProperties(Duration gastritisAcuteDuration, Duration gastritisDiet5Duration, String sweepCron) {}
+public record SpecialModeProperties(
+        Duration gastritisAcuteDuration, Duration gastritisDiet5Duration, String sweepCron) {}
