@@ -64,6 +64,15 @@ public class AdHocOrderService {
             "зефір",
             "цукерки");
 
+    /**
+     * Task 32: rehydration and sorbent/detox-category search terms. Not a single hardcoded brand — Silpo is a
+     * grocery retailer, not a pharmacy, and which of these a branch actually stocks varies; the shared
+     * search-then-report-what's-missing pipeline ({@link CartBuildingService#buildCart}) already handles telling
+     * the user honestly what wasn't found, the same way it does for every other search-first flow.
+     */
+    private static final List<String> HANGOVER_RELIEF_TERMS = List.of(
+            "вода мінеральна", "електроліти", "регідрон", "ізотонік", "сорбент", "активоване вугілля", "ентеросгель");
+
     private final CartBuildingService cartBuildingService;
     private final CartConfirmationService cartConfirmationService;
     private final TelegramOutboundService telegramOutboundService;
@@ -100,6 +109,28 @@ public class AdHocOrderService {
                                 totalSavings.stripTrailingZeros().toPlainString()));
         cartConfirmationService.present(user, items, OrderType.AD_HOC);
         log.info("presented an ad-hoc snack cart of {} items to user {}", items.size(), userId);
+    }
+
+    /**
+     * "Голова після вчорашнього, привезіть мінералку і щось від інтоксикації якнайшвидше" (task 32). Unlike
+     * {@link #buildAdHocOrder}, this isn't promotion-filtered — availability, not price, is the point — so it
+     * reuses {@link BlackoutModeService}'s exact category-search shape: unresolved {@link ShoppingListItem}s, real
+     * search left to {@link CartBuildingService#buildCart}, and the earliest offered delivery slot (the standard
+     * flow's own default — nothing here biases toward a household's historical pattern the way {@code
+     * ReorderService} does).
+     */
+    public void buildHangoverReliefOrder(User user) {
+        List<ShoppingListItem> items = HANGOVER_RELIEF_TERMS.stream()
+                .map(name -> ShoppingListItem.builder()
+                        .id(UUID.randomUUID())
+                        .userId(user.getId())
+                        .name(name)
+                        .quantity(BigDecimal.ONE)
+                        .unit("шт")
+                        .build())
+                .toList();
+        cartConfirmationService.present(user, items, OrderType.AD_HOC);
+        log.info("presented a hangover-relief cart to user {}", user.getId());
     }
 
     /** Active promotions at this branch, filtered down to the curated snack/treat keyword list. */

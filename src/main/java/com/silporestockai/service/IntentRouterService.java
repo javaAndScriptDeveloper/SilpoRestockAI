@@ -41,10 +41,12 @@ public class IntentRouterService {
             — «Я захворів, гастрит» — тимчасово перемкнутись на щадне харчування.
             — «Зроби менш калорійним» — зменшити калорійність поточного плану.
             — «Хочу набрати масу» / «більше протеїну» — почати набір маси.
-            — «Шукай тільки український виробник» — фільтрувати товари за походженням.""";
+            — «Шукай тільки український виробник» — фільтрувати товари за походженням.
+            — «Голова після вчорашнього» — швидке замовлення регідратації й сорбентів.""";
 
     private final ClaudeApiClient claudeApiClient;
     private final AdHocScheduleService adHocScheduleService;
+    private final AdHocOrderService adHocOrderService;
     private final SpecialModeService specialModeService;
     private final MealPlanService mealPlanService;
     private final ShoppingListService shoppingListService;
@@ -55,6 +57,7 @@ public class IntentRouterService {
     public IntentRouterService(
             ClaudeApiClient claudeApiClient,
             AdHocScheduleService adHocScheduleService,
+            AdHocOrderService adHocOrderService,
             SpecialModeService specialModeService,
             MealPlanService mealPlanService,
             ShoppingListService shoppingListService,
@@ -63,6 +66,7 @@ public class IntentRouterService {
             @Value("classpath:prompts/intent-router-system.txt") Resource systemPromptResource) {
         this.claudeApiClient = claudeApiClient;
         this.adHocScheduleService = adHocScheduleService;
+        this.adHocOrderService = adHocOrderService;
         this.specialModeService = specialModeService;
         this.mealPlanService = mealPlanService;
         this.shoppingListService = shoppingListService;
@@ -97,6 +101,7 @@ public class IntentRouterService {
                 specialModeService.startMassGainSetup(user);
             }
             case FILTER_UA_PRODUCER_ONLY -> specialModeService.toggleUaOnly(user);
+            case HANGOVER_RELIEF -> adHocOrderService.buildHangoverReliefOrder(user);
             case LIST_VIEW -> shoppingListBuilderService.askForInput(user);
             case HELP -> telegramOutboundService.sendMessage(user.getTelegramChatId(), HELP_TEXT);
             case UNKNOWN -> askClarifyingQuestion(user);
@@ -161,6 +166,7 @@ public class IntentRouterService {
         SPECIAL_MODE_LEANER,
         SPECIAL_MODE_MASS_GAIN,
         FILTER_UA_PRODUCER_ONLY,
+        HANGOVER_RELIEF,
         LIST_VIEW,
         HELP,
         UNKNOWN

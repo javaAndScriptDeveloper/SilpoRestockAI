@@ -102,6 +102,15 @@ class AdHocOrderIntegrationTest extends AbstractIntegrationTest {
         }
     }
 
+    private static List<String> searchedTerms() {
+        List<String> terms = new ArrayList<>();
+        MCP.callArguments("silpo_find_products_batch")
+                .getLast()
+                .path("products")
+                .forEach(term -> terms.add(term.asText()));
+        return terms;
+    }
+
     @DynamicPropertySource
     static void stubs(DynamicPropertyRegistry registry) {
         registry.add("telegram.bot-token", () -> BOT_TOKEN);
@@ -167,6 +176,16 @@ class AdHocOrderIntegrationTest extends AbstractIntegrationTest {
                 {"name":"Шоколад Milka","productId":"p-91","price":30,"oldPrice":50},\
                 {"name":"Пральний порошок Persil","productId":"p-92","price":100,"oldPrice":140},\
                 {"name":"Печиво Oreo","productId":"p-93","price":25}]}""");
+        // Only some hangover-relief search terms find anything — the rest stays honestly unresolved.
+        MCP.respondToTool("silpo_find_products_batch", """
+                {"queries":[\
+                {"query":"вода мінеральна","products":[{"name":"Моршинська","productId":"p-70"}]},\
+                {"query":"електроліти","products":[{"name":"Regidron Bio","productId":"p-71"}]},\
+                {"query":"регідрон","products":[]},\
+                {"query":"ізотонік","products":[]},\
+                {"query":"сорбент","products":[]},\
+                {"query":"активоване вугілля","products":[]},\
+                {"query":"ентеросгель","products":[]}]}""");
     }
 
     private void tapButton(int updateId, String data) throws Exception {
@@ -239,5 +258,28 @@ class AdHocOrderIntegrationTest extends AbstractIntegrationTest {
         assertThat(customerOrderRepository.findByUserIdAndStatus(user.getId(), OrderStatus.DRAFT))
                 .isEmpty();
         assertThat(TELEGRAM.sentMessages()).isNotEmpty();
+    }
+
+    @Test
+    void hangoverReliefSearchesRehydrationAndSorbentTerms() {
+        adHocOrderService.buildHangoverReliefOrder(user);
+
+        assertThat(searchedTerms()).contains("вода мінеральна", "електроліти", "регідрон", "сорбент", "ентеросгель");
+    }
+
+    @Test
+    void hangoverReliefIsHonestAboutWhatWasNotFoundRatherThanFailingSilently() {
+        adHocOrderService.buildHangoverReliefOrder(user);
+
+        CustomerOrder draft = customerOrderRepository
+                .findByUserIdAndStatus(user.getId(), OrderStatus.DRAFT)
+                .getFirst();
+        assertThat(draft.getType()).isEqualTo(OrderType.AD_HOC);
+        // Only "вода мінеральна" and "електроліти" resolved to a real product in the stub above; the rest
+        // (регідрон, ізотонік, сорбент, активоване вугілля, ентеросгель) come back empty, and the shared
+        // cart-building pipeline reports them honestly rather than silently dropping them.
+        assertThat(TELEGRAM.sentMessages().getLast().path("text").asText())
+                .contains("Не знайшов")
+                .contains("сорбент");
     }
 }
