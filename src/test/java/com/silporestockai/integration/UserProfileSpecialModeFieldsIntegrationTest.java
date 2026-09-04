@@ -12,6 +12,7 @@ import com.silporestockai.service.UserAccountService;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -57,5 +58,33 @@ class UserProfileSpecialModeFieldsIntegrationTest extends AbstractIntegrationTes
         assertThat(reloaded.getTargetWeightKg()).isEqualByComparingTo("82.5");
         assertThat(reloaded.getTargetCalories()).isEqualTo(3200);
         assertThat(reloaded.getTargetProteinG()).isEqualTo(160);
+    }
+
+    @Test
+    void findsOnlyProfilesWithAnExpiredSpecialMode() {
+        User due = userAccountService.findOrCreate(9002L);
+        userProfileRepository.save(UserProfile.builder()
+                .id(UUID.randomUUID())
+                .userId(due.getId())
+                .specialMode(SpecialMode.MEDICAL_GASTRITIS_ACUTE)
+                .specialModeExpiresAt(Instant.now().minusSeconds(60))
+                .build());
+        User notYetDue = userAccountService.findOrCreate(9003L);
+        userProfileRepository.save(UserProfile.builder()
+                .id(UUID.randomUUID())
+                .userId(notYetDue.getId())
+                .specialMode(SpecialMode.MASS_GAIN)
+                .specialModeExpiresAt(Instant.now().plusSeconds(3600))
+                .build());
+        User noExpiry = userAccountService.findOrCreate(9004L);
+        userProfileRepository.save(UserProfile.builder()
+                .id(UUID.randomUUID())
+                .userId(noExpiry.getId())
+                .specialMode(SpecialMode.MASS_GAIN)
+                .build());
+
+        List<UserProfile> expired = userProfileRepository.findAllWithExpiredSpecialMode(Instant.now());
+
+        assertThat(expired).extracting(UserProfile::getUserId).containsExactly(due.getId());
     }
 }
