@@ -356,6 +356,21 @@ hackathon jury demo.
 5. Save the recording somewhere durable and link it from the "Сценарій демо-запису" Notion page and from
    Notion task 28 itself, then mark task 28's acceptance criteria checked off there.
 
+### Task 32: verify the real Silpo catalog actually has rehydration/sorbent products
+
+`AdHocOrderService.buildHangoverReliefOrder` searches for "вода мінеральна", "електроліти", "регідрон",
+"ізотонік", "сорбент", "активоване вугілля", "ентеросгель" — a guess at what a grocery retailer's catalog
+taxonomy might expose, not a verified one. Before this feature is demo-ready:
+
+1. With a real, OAuth-connected Silpo guest account, trigger it live: «голова після вчорашнього, привезіть
+   мінералку і щось від інтоксикації якнайшвидше».
+2. Check the resulting cart against `docs/RUNBOOK.md`'s own MCP console log — how many of the 7 terms
+   actually resolved to a real product? If most come back empty, the search terms need adjusting to match
+   Silpo's real category names, not this list's guesses.
+3. Confirm the "Не знайшов: ..." line only appears for genuinely-missing terms, and the delivery slot
+   picked really is the earliest one offered (compare against `silpo_get_time_slots`'s raw response in the
+   console log).
+
 ### Task 31: verify free-text intents live in Telegram
 
 The integration tests script every intent against a stubbed classifier response — they prove the dispatch
@@ -370,6 +385,7 @@ below, type the phrase into a real chat with an onboarded profile and confirm th
 | «зроби менш калорійним» | A new plan, without switching to a named special mode |
 | «хочу набрати масу» / «більше протеїну» | A cross-sell line about protein/gainer, then "Яка зараз вага?" |
 | «шукай тільки український виробник» | A confirmation the UA-only filter is on |
+| «голова після вчорашнього, привезіть мінералку» | A small cart, rehydration/sorbent items only |
 | «покажи список» | The current shopping list |
 | «що ти вмієш?» | The static Інструкція text |
 | something genuinely ambiguous, e.g. «зроби щось» | A clarifying question, not a guess |
