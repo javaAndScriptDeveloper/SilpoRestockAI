@@ -6,6 +6,7 @@ import com.silporestockai.model.TelegramButton;
 import com.silporestockai.model.TelegramIncomingUpdate;
 import com.silporestockai.repository.UserRepository;
 import com.silporestockai.service.BlackoutModeService;
+import com.silporestockai.service.CalendarViewService;
 import com.silporestockai.service.CartConfirmationService;
 import com.silporestockai.service.CheckinFlowService;
 import com.silporestockai.service.ConversationStateService;
@@ -56,6 +57,7 @@ public class TelegramRoutingService {
     private final TelegramOutboundService telegramOutboundService;
     private final SpecialModeService specialModeService;
     private final IntentRouterService intentRouterService;
+    private final CalendarViewService calendarViewService;
 
     /**
      * Off the webhook thread on purpose. A fridge photo means a vision call — the slowest and most expensive kind
@@ -207,6 +209,14 @@ public class TelegramRoutingService {
         }
         if (incoming instanceof TelegramIncomingUpdate.Text masgain && matches(masgain.text(), "/masgain", "")) {
             specialModeService.startMassGainSetup(user);
+            return;
+        }
+        if (incoming instanceof TelegramIncomingUpdate.ButtonTap tap
+                && tap.data().startsWith(CalendarViewService.CALLBACK_DAY_PREFIX)) {
+            // Stateless by design: the day-selector keyboard works from any conversation state, and every tap
+            // re-reads the current plan rather than trusting anything cached in conversation_state.
+            telegramOutboundService.answerCallback(tap.callbackQueryId());
+            calendarViewService.showDay(user, tap.data().substring(CalendarViewService.CALLBACK_DAY_PREFIX.length()));
             return;
         }
         if (incoming instanceof TelegramIncomingUpdate.ButtonTap tap) {

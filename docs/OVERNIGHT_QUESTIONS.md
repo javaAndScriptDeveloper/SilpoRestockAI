@@ -104,3 +104,24 @@ file has its own substantial, currently-green test suite (18 tests across 3 file
 risk touching for a pure cleanup with zero behavioral value. Safe to delete in daylight, in one small pass:
 `SpecialModeService.detectGastritisIntent` + `GastritisIntent` + the constructor's
 `gastritisIntentSystemPromptResource` param + `src/main/resources/prompts/gastritis-intent-system.txt`.
+
+## Task 30: "Календар" button name collides with an already-built feature
+
+**Question:** task 30's own Context section says "the 'Календар' button already exists... but no task in
+the backlog actually implements what happens when the user taps it" — but that's not accurate against the
+actual code: `/calendar` (and the `MainMenuKeyboard` button that used to trigger it) already routes to
+`TelegramRoutingService.offerCalendar`, which offers *Google* Calendar OAuth (task 18, already Done and
+already covered by `CalendarIntegrationIntegrationTest`). Task 30 wants a completely different feature — an
+in-bot, day-by-day view of the meal plan, no Google account involved. The task's assumption that this
+label is currently unimplemented doesn't hold; the label is already spoken for by an unrelated, working
+feature.
+
+**Decision:** built the in-bot view as `CalendarViewService`, triggered by a *new*, separately-worded
+free-text intent (`CALENDAR_VIEW` — "покажи календар", "план по днях", "що на цей тиждень") through
+`IntentRouterService`, not by reusing the word "Календар" or the `/calendar` command. This avoids
+colliding with task 18's already-shipped Google-sync feature and fits the chat-first direction task 31
+already established for tonight's other new capabilities. `/calendar` keeps meaning what it already means.
+
+**Why safe to decide alone:** every acceptance criterion is about the *view itself* (day-selectable
+breakdown, no ingredient leakage, READY_MEALS_ONLY/special-mode correctness) — none of them specify the
+exact trigger phrase or button label, so there was no requirement to actually contradict.

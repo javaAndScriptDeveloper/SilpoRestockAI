@@ -42,7 +42,8 @@ public class IntentRouterService {
             — «Зроби менш калорійним» — зменшити калорійність поточного плану.
             — «Хочу набрати масу» / «більше протеїну» — почати набір маси.
             — «Шукай тільки український виробник» — фільтрувати товари за походженням.
-            — «Голова після вчорашнього» — швидке замовлення регідратації й сорбентів.""";
+            — «Голова після вчорашнього» — швидке замовлення регідратації й сорбентів.
+            — «Покажи календар» — раціон по днях тижня.""";
 
     private final ClaudeApiClient claudeApiClient;
     private final AdHocScheduleService adHocScheduleService;
@@ -51,6 +52,7 @@ public class IntentRouterService {
     private final MealPlanService mealPlanService;
     private final ShoppingListService shoppingListService;
     private final ShoppingListBuilderService shoppingListBuilderService;
+    private final CalendarViewService calendarViewService;
     private final TelegramOutboundService telegramOutboundService;
     private final String systemPrompt;
 
@@ -62,6 +64,7 @@ public class IntentRouterService {
             MealPlanService mealPlanService,
             ShoppingListService shoppingListService,
             ShoppingListBuilderService shoppingListBuilderService,
+            CalendarViewService calendarViewService,
             TelegramOutboundService telegramOutboundService,
             @Value("classpath:prompts/intent-router-system.txt") Resource systemPromptResource) {
         this.claudeApiClient = claudeApiClient;
@@ -71,6 +74,7 @@ public class IntentRouterService {
         this.mealPlanService = mealPlanService;
         this.shoppingListService = shoppingListService;
         this.shoppingListBuilderService = shoppingListBuilderService;
+        this.calendarViewService = calendarViewService;
         this.telegramOutboundService = telegramOutboundService;
         this.systemPrompt = read(systemPromptResource);
     }
@@ -103,6 +107,7 @@ public class IntentRouterService {
             case FILTER_UA_PRODUCER_ONLY -> specialModeService.toggleUaOnly(user);
             case HANGOVER_RELIEF -> adHocOrderService.buildHangoverReliefOrder(user);
             case LIST_VIEW -> shoppingListBuilderService.askForInput(user);
+            case CALENDAR_VIEW -> calendarViewService.showWeek(user);
             case HELP -> telegramOutboundService.sendMessage(user.getTelegramChatId(), HELP_TEXT);
             case UNKNOWN -> askClarifyingQuestion(user);
         }
@@ -168,6 +173,7 @@ public class IntentRouterService {
         FILTER_UA_PRODUCER_ONLY,
         HANGOVER_RELIEF,
         LIST_VIEW,
+        CALENDAR_VIEW,
         HELP,
         UNKNOWN
     }

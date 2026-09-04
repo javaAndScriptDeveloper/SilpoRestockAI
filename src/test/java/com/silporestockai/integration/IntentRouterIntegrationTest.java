@@ -189,6 +189,18 @@ class IntentRouterIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void calendarViewIntentShowsTheDaySelectorNotTheShoppingList() throws Exception {
+        CLAUDE.respondWithText(
+                "{\"intent\":\"CALENDAR_VIEW\",\"confidence\":0.9,\"themeDescription\":null,\"targetDateTimeIso\":null}");
+
+        sendText(1, "покажи календар");
+
+        // No plan exists yet for this user, so the honest "no plan" message is what proves dispatch reached
+        // CalendarViewService rather than some other handler.
+        assertThat(TELEGRAM.sentMessages().getLast().path("text").asText()).contains("немає");
+    }
+
+    @Test
     void existingSlashCommandsStillWorkUnchangedWithoutAClassificationCall() throws Exception {
         // The additive-rollout guarantee: /uaonly still reaches SpecialModeService directly, no
         // classification call happens for it at all.
