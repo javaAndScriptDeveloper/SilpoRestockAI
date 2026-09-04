@@ -357,6 +357,12 @@ class SpecialModeIntegrationTest extends AbstractIntegrationTest {
         specialModeService.triggerGastritis(user);
         CLAUDE.reset();
         CLAUDE.respondWithText(MealPlanIntegrationTest.fullWeekJson());
+        // triggerGastritis's regeneration leaves this chat mid shopping-list-builder flow
+        // (ConversationFlow.LIST_BUILDING); the router's flow-gate runs before any command
+        // block, so /normal would otherwise be swallowed as a list-edit instruction instead
+        // of reaching SpecialModeService.cancel. Clear it, same as a real user finishing or
+        // dismissing the list-approval screen before their next command reaches the router.
+        conversationStateRepository.deleteAll();
 
         sendText(2, "/normal");
 
