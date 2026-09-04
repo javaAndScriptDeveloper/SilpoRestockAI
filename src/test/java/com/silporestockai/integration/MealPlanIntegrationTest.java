@@ -145,6 +145,32 @@ class MealPlanIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void usesTheGastritisAcutePromptWhenTheProfileIsInThatSpecialMode() {
+        UUID userId = profiledUser(8108L, List.of(), List.of());
+        userProfileRepository.findByUserId(userId).ifPresent(profile -> {
+            profile.setSpecialMode(com.silporestockai.model.SpecialMode.MEDICAL_GASTRITIS_ACUTE);
+            userProfileRepository.save(profile);
+        });
+        CLAUDE.respondWithText(fullWeekJson());
+
+        mealPlanService.regenerateWithAdjustment(userId, null);
+
+        String sent = CLAUDE.requests().getFirst().toString();
+        assertThat(sent).contains("гострим гастритом");
+    }
+
+    @Test
+    void usesTheNormalPromptWhenSpecialModeIsNone() {
+        UUID userId = profiledUser(8109L, List.of(), List.of());
+        CLAUDE.respondWithText(fullWeekJson());
+
+        mealPlanService.generateWeeklyPlan(userId);
+
+        String sent = CLAUDE.requests().getFirst().toString();
+        assertThat(sent).doesNotContain("гострим гастритом");
+    }
+
+    @Test
     void refusesToGenerateForAUserWithoutAProfile() {
         UUID userId = userAccountService.findOrCreate(8103L).getId();
 

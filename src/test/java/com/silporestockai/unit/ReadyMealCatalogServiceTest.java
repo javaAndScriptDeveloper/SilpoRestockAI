@@ -14,10 +14,12 @@ import com.silporestockai.exception.CartBuildException;
 import com.silporestockai.model.CartContext;
 import com.silporestockai.model.CatalogCandidate;
 import com.silporestockai.model.OfferedSlot;
+import com.silporestockai.repository.UserProfileRepository;
 import com.silporestockai.service.CartBuildingService;
 import com.silporestockai.service.ReadyMealCatalogService;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -30,15 +32,18 @@ class ReadyMealCatalogServiceTest {
 
     private SilpoMcpClient silpoMcpClient;
     private CartBuildingService cartBuildingService;
+    private UserProfileRepository userProfileRepository;
     private ReadyMealCatalogService service;
 
     private void setUp() {
         silpoMcpClient = mock(SilpoMcpClient.class);
         cartBuildingService = mock(CartBuildingService.class);
+        userProfileRepository = mock(UserProfileRepository.class);
         when(cartBuildingService.getOrCreateCartContext(USER_ID)).thenReturn(CONTEXT);
         when(cartBuildingService.firstDeliverableSlot(USER_ID, CONTEXT))
                 .thenReturn(new OfferedSlot("slot-1", "slot-1", null));
-        service = new ReadyMealCatalogService(silpoMcpClient, cartBuildingService);
+        when(userProfileRepository.findByUserId(USER_ID)).thenReturn(Optional.empty());
+        service = new ReadyMealCatalogService(silpoMcpClient, cartBuildingService, userProfileRepository);
     }
 
     @Test

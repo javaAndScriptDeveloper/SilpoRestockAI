@@ -16,5 +16,7 @@ public enum ConversationFlow {
     /** Reviewing a delta reorder: substitutes, delivery slot, confirm (task 15). */
     REORDER_CONFIRMATION,
     /** Building a shopping list from a photo, a receipt or a description, and getting it approved. */
-    LIST_BUILDING
+    LIST_BUILDING,
+    /** Collecting mass-gain parameters (weight, calorie/protein target) before generating that plan. */
+    SPECIAL_MODE_SETUP
 }

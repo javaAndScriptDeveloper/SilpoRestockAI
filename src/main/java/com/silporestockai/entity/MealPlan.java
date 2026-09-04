@@ -1,8 +1,11 @@
 package com.silporestockai.entity;
 
 import com.silporestockai.model.ShoppingListSourceType;
+import com.silporestockai.model.SpecialMode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Transient;
@@ -53,6 +56,10 @@ public class MealPlan {
 
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "special_mode", length = 64)
+    private SpecialMode specialMode;
 
     /**
      * Which generation path produced this plan — {@code MealPlanService} sets it right after generating, so

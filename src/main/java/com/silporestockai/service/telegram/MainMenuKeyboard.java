@@ -19,6 +19,7 @@ public final class MainMenuKeyboard {
     public static final String VOICE = "🎙 Голосові";
     public static final String BLACKOUT = "🌙 Блекаут";
     public static final String CALENDAR = "📅 Календар";
+    public static final String NORMAL = "↩️ Звичайний режим";
 
     private MainMenuKeyboard() {}
 

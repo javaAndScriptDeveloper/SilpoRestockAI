@@ -55,6 +55,9 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
     @Autowired
     private TokenCipher tokenCipher;
 
+    @Autowired
+    private com.silporestockai.repository.UserProfileRepository userProfileRepository;
+
     private static StubMcpServer startMcp() {
         try {
             return new StubMcpServer(List.of(
@@ -85,6 +88,7 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
     @BeforeEach
     void clean() {
         MCP.reset();
+        userProfileRepository.deleteAll();
         tokenRepository.deleteAll();
         userRepository.deleteAll();
     }
@@ -240,6 +244,25 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
         assertThat(search.path("products").get(0).asText()).isEqualTo("цибуля");
         JsonNode added = MCP.callArguments("silpo_add_or_update_cart_products").getFirst();
         assertThat(added.has("shoppingCartId")).isTrue();
+    }
+
+    @Test
+    void biasesSearchTermsTowardUkrainianProducersWhenTheFlagIsSet() {
+        UUID userId = connectedUser(9201L);
+        userProfileRepository.save(com.silporestockai.entity.UserProfile.builder()
+                .id(UUID.randomUUID())
+                .userId(userId)
+                .onlyUaProducer(true)
+                .build());
+        scriptCartTools();
+        scriptProductTools();
+
+        cartBuildingService.buildCart(userId, List.of(item("молоко", "1", "л")));
+
+        JsonNode search = MCP.callArguments("silpo_find_products_batch").getFirst();
+        List<String> searched = new ArrayList<>();
+        search.path("products").forEach(term -> searched.add(term.asText()));
+        assertThat(searched).anyMatch(term -> term.contains("молоко") && term.contains("українського виробництва"));
     }
 
     /**

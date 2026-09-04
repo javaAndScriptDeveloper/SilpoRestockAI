@@ -6,6 +6,7 @@ import com.silporestockai.client.mcp.SilpoMcpClient;
 import com.silporestockai.exception.CartBuildException;
 import com.silporestockai.model.CartContext;
 import com.silporestockai.model.CatalogCandidate;
+import com.silporestockai.repository.UserProfileRepository;
 import com.silporestockai.utils.McpResponses;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -51,6 +52,7 @@ public class ReadyMealCatalogService {
 
     private final SilpoMcpClient silpoMcpClient;
     private final CartBuildingService cartBuildingService;
+    private final UserProfileRepository userProfileRepository;
 
     /**
      * Every real ready-to-eat product Silpo currently offers this household's branch, deduplicated by
@@ -62,6 +64,14 @@ public class ReadyMealCatalogService {
         // should not spend an AI call curating a menu it can never actually order.
         cartBuildingService.firstDeliverableSlot(userId, context);
 
+        boolean onlyUaProducer = userProfileRepository
+                .findByUserId(userId)
+                .map(profile -> Boolean.TRUE.equals(profile.getOnlyUaProducer()))
+                .orElse(false);
+        List<String> searchTerms = CATEGORY_SEARCH_TERMS.stream()
+                .map(term -> CartBuildingService.biasedSearchTerm(term, onlyUaProducer))
+                .toList();
+
         JsonNode found = call(
                 userId,
                 TOOL_FIND_PRODUCTS,
@@ -70,7 +80,7 @@ public class ReadyMealCatalogService {
                         "deliveryType", nullSafe(context.deliveryType()),
                         "timeslotStart", nullSafe(context.timeslotStart()),
                         "timeslotEnd", nullSafe(context.timeslotEnd()),
-                        "products", CATEGORY_SEARCH_TERMS));
+                        "products", searchTerms));
 
         Map<String, CatalogCandidate> byProductId = new LinkedHashMap<>();
         for (JsonNode query : McpResponses.findArray(found, McpResponses.QUERIES)) {

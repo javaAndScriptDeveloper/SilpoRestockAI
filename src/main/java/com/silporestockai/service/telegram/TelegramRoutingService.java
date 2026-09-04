@@ -13,6 +13,7 @@ import com.silporestockai.service.GoogleAuthService;
 import com.silporestockai.service.ReorderConfirmationService;
 import com.silporestockai.service.ReorderService;
 import com.silporestockai.service.ShoppingListBuilderService;
+import com.silporestockai.service.SpecialModeService;
 import com.silporestockai.service.UserAccountService;
 import com.silporestockai.service.onboarding.OnboardingFlowService;
 import java.util.List;
@@ -52,6 +53,7 @@ public class TelegramRoutingService {
     private final VoiceReplyService voiceReplyService;
     private final UserRepository userRepository;
     private final TelegramOutboundService telegramOutboundService;
+    private final SpecialModeService specialModeService;
 
     /**
      * Off the webhook thread on purpose. A fridge photo means a vision call — the slowest and most expensive kind
@@ -162,6 +164,10 @@ public class TelegramRoutingService {
             reorderConfirmationService.handle(user, incoming);
             return;
         }
+        if (flow == ConversationFlow.SPECIAL_MODE_SETUP) {
+            specialModeService.handle(user, incoming);
+            return;
+        }
         if (incoming instanceof TelegramIncomingUpdate.Text list
                 && matches(list.text(), "/list", MainMenuKeyboard.LIST)) {
             shoppingListBuilderService.askForInput(user);
@@ -193,6 +199,19 @@ public class TelegramRoutingService {
             offerCalendar(user, incoming.chatId());
             return;
         }
+        if (incoming instanceof TelegramIncomingUpdate.Text normal
+                && matches(normal.text(), "/normal", MainMenuKeyboard.NORMAL)) {
+            specialModeService.cancel(user);
+            return;
+        }
+        if (incoming instanceof TelegramIncomingUpdate.Text uaOnly && matches(uaOnly.text(), "/uaonly", "")) {
+            specialModeService.toggleUaOnly(user);
+            return;
+        }
+        if (incoming instanceof TelegramIncomingUpdate.Text masgain && matches(masgain.text(), "/masgain", "")) {
+            specialModeService.startMassGainSetup(user);
+            return;
+        }
         if (incoming instanceof TelegramIncomingUpdate.ButtonTap tap) {
             // A keyboard left over from a conversation that has already ended — a second tap on confirm, most
             // often. Acknowledge it so Telegram stops spinning and say nothing: answering a button nobody is
@@ -201,9 +220,15 @@ public class TelegramRoutingService {
             log.debug("ignoring stale button tap {} in chat {}", tap.data(), tap.chatId());
             return;
         }
+        if (incoming instanceof TelegramIncomingUpdate.Text freeText
+                && specialModeService.detectGastritisIntent(freeText.text())) {
+            specialModeService.triggerGastritis(user);
+            return;
+        }
         telegramOutboundService.sendMessageWithMainMenu(
                 incoming.chatId(),
-                "Профіль уже є. Обери дію нижче або напиши /list, /reorder, /voice, /blackout чи /calendar.");
+                "Профіль уже є. Обери дію нижче або напиши /list, /reorder, /voice, /blackout, /calendar, "
+                        + "/masgain, /uaonly чи /normal.");
     }
 
     /** A command matches whether it was typed as a slash command or tapped as its own main-menu button. */

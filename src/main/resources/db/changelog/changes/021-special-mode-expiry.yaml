@@ -1,0 +1,31 @@
+databaseChangeLog:
+  - changeSet:
+      id: 021-special-mode-expiry
+      author: komora
+      comment: >-
+        When the current special mode (if any) ends, and the extra parameters a mass-gain plan needs.
+        special_mode on meal_plan records which mode (if any) produced that plan row, for future
+        UI/debugging use — BaselineBasket, not MealPlan, is what actually protects the household's normal
+        basket (see task 25 design doc).
+      changes:
+        - addColumn:
+            tableName: user_profile
+            columns:
+              - column:
+                  name: special_mode_expires_at
+                  type: TIMESTAMP WITH TIME ZONE
+              - column:
+                  name: target_weight_kg
+                  type: NUMERIC(5, 2)
+              - column:
+                  name: target_calories
+                  type: INT
+              - column:
+                  name: target_protein_g
+                  type: INT
+        - addColumn:
+            tableName: meal_plan
+            columns:
+              - column:
+                  name: special_mode
+                  type: VARCHAR(64)

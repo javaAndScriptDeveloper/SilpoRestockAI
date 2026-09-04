@@ -11,6 +11,7 @@ import com.silporestockai.model.CartContext;
 import com.silporestockai.model.CartSummary;
 import com.silporestockai.model.OfferedSlot;
 import com.silporestockai.model.ResolvedProduct;
+import com.silporestockai.repository.UserProfileRepository;
 import com.silporestockai.utils.McpResponses;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -66,6 +67,7 @@ public class CartBuildingService {
     private static final int SEARCH_BATCH_SIZE = 30;
 
     private final SilpoMcpClient silpoMcpClient;
+    private final UserProfileRepository userProfileRepository;
 
     /** Steps 1 to 6, in the documented order. Unresolved items are reported, not fatal. */
     public CartSummary buildCart(UUID userId, List<ShoppingListItem> items) {
@@ -359,6 +361,10 @@ public class CartBuildingService {
                 .filter(item -> item.getSilpoProductId() == null
                         || item.getSilpoProductId().isBlank())
                 .toList();
+        boolean onlyUaProducer = userProfileRepository
+                .findByUserId(userId)
+                .map(profile -> Boolean.TRUE.equals(profile.getOnlyUaProducer()))
+                .orElse(false);
         for (int start = 0; start < needsSearch.size(); start += SEARCH_BATCH_SIZE) {
             List<ShoppingListItem> chunk =
                     needsSearch.subList(start, Math.min(needsSearch.size(), start + SEARCH_BATCH_SIZE));
@@ -372,7 +378,7 @@ public class CartBuildingService {
                             "timeslotEnd", nullSafe(context.timeslotEnd()),
                             "products",
                                     chunk.stream()
-                                            .map(ShoppingListItem::getName)
+                                            .map(item -> biasedSearchTerm(item.getName(), onlyUaProducer))
                                             .toList()));
             for (JsonNode query : McpResponses.findArray(found, McpResponses.QUERIES)) {
                 String queryText =
@@ -380,7 +386,8 @@ public class CartBuildingService {
                 ShoppingListItem item = queryText == null
                         ? null
                         : chunk.stream()
-                                .filter(candidate -> candidate.getName().equalsIgnoreCase(queryText))
+                                .filter(candidate -> biasedSearchTerm(candidate.getName(), onlyUaProducer)
+                                        .equalsIgnoreCase(queryText))
                                 .findFirst()
                                 .orElse(null);
                 if (item == null) {
@@ -620,6 +627,15 @@ public class CartBuildingService {
 
     private static String nullSafe(String value) {
         return value == null ? "" : value;
+    }
+
+    /**
+     * Best-effort UA-producer preference: no producer/country field exists anywhere in this app's observed MCP
+     * product data (never exercised against a live server — see task 25's design doc), so this biases Silpo's own
+     * search ranking via the query text instead of filtering results client-side. Not a guaranteed filter.
+     */
+    static String biasedSearchTerm(String itemName, boolean onlyUaProducer) {
+        return onlyUaProducer ? itemName + " українського виробництва" : itemName;
     }
 
     private static BigDecimal quantityOf(ShoppingListItem item) {

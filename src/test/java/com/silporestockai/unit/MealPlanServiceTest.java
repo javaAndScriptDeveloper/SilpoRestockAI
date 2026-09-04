@@ -89,6 +89,9 @@ class MealPlanServiceTest {
                 Clock.fixed(Instant.parse("2026-09-07T00:00:00Z"), ZoneOffset.UTC),
                 new ByteArrayResource("RECIPE-PROMPT".getBytes()),
                 new ByteArrayResource("READY-MEALS-PROMPT".getBytes()),
+                new ByteArrayResource("GASTRITIS-ACUTE-PROMPT".getBytes()),
+                new ByteArrayResource("GASTRITIS-DIET5-PROMPT".getBytes()),
+                new ByteArrayResource("MASS-GAIN-PROMPT".getBytes()),
                 readyMealCatalogService);
 
         service.generateWeeklyPlan(USER_ID);
@@ -129,6 +132,9 @@ class MealPlanServiceTest {
                 Clock.fixed(Instant.parse("2026-09-07T00:00:00Z"), ZoneOffset.UTC),
                 new ByteArrayResource("RECIPE-PROMPT".getBytes()),
                 new ByteArrayResource("READY-MEALS-PROMPT".getBytes()),
+                new ByteArrayResource("GASTRITIS-ACUTE-PROMPT".getBytes()),
+                new ByteArrayResource("GASTRITIS-DIET5-PROMPT".getBytes()),
+                new ByteArrayResource("MASS-GAIN-PROMPT".getBytes()),
                 mock(ReadyMealCatalogService.class));
 
         service.generateWeeklyPlan(USER_ID);
@@ -167,6 +173,9 @@ class MealPlanServiceTest {
                 Clock.fixed(Instant.parse("2026-09-07T00:00:00Z"), ZoneOffset.UTC),
                 new ByteArrayResource("RECIPE-PROMPT".getBytes()),
                 new ByteArrayResource("READY-MEALS-PROMPT".getBytes()),
+                new ByteArrayResource("GASTRITIS-ACUTE-PROMPT".getBytes()),
+                new ByteArrayResource("GASTRITIS-DIET5-PROMPT".getBytes()),
+                new ByteArrayResource("MASS-GAIN-PROMPT".getBytes()),
                 readyMealCatalogService);
 
         service.generateWeeklyPlan(USER_ID);
@@ -206,6 +215,9 @@ class MealPlanServiceTest {
                 Clock.fixed(Instant.parse("2026-09-07T00:00:00Z"), ZoneOffset.UTC),
                 new ByteArrayResource("RECIPE-PROMPT".getBytes()),
                 new ByteArrayResource("READY-MEALS-PROMPT".getBytes()),
+                new ByteArrayResource("GASTRITIS-ACUTE-PROMPT".getBytes()),
+                new ByteArrayResource("GASTRITIS-DIET5-PROMPT".getBytes()),
+                new ByteArrayResource("MASS-GAIN-PROMPT".getBytes()),
                 readyMealCatalogService);
 
         service.generateWeeklyPlan(USER_ID);
@@ -256,6 +268,9 @@ class MealPlanServiceTest {
                 Clock.fixed(Instant.parse("2026-09-07T00:00:00Z"), ZoneOffset.UTC),
                 new ByteArrayResource("RECIPE-PROMPT".getBytes()),
                 new ByteArrayResource("READY-MEALS-PROMPT".getBytes()),
+                new ByteArrayResource("GASTRITIS-ACUTE-PROMPT".getBytes()),
+                new ByteArrayResource("GASTRITIS-DIET5-PROMPT".getBytes()),
+                new ByteArrayResource("MASS-GAIN-PROMPT".getBytes()),
                 readyMealCatalogService);
 
         service.generateWeeklyPlan(USER_ID);
@@ -288,6 +303,9 @@ class MealPlanServiceTest {
                 Clock.fixed(Instant.parse("2026-09-07T00:00:00Z"), ZoneOffset.UTC),
                 new ByteArrayResource("RECIPE-PROMPT".getBytes()),
                 new ByteArrayResource("READY-MEALS-PROMPT".getBytes()),
+                new ByteArrayResource("GASTRITIS-ACUTE-PROMPT".getBytes()),
+                new ByteArrayResource("GASTRITIS-DIET5-PROMPT".getBytes()),
+                new ByteArrayResource("MASS-GAIN-PROMPT".getBytes()),
                 readyMealCatalogService);
 
         assertThatThrownBy(() -> service.generateWeeklyPlan(USER_ID))
