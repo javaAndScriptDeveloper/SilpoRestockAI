@@ -383,4 +383,38 @@ class SpecialModeIntegrationTest extends AbstractIntegrationTest {
                         .getOnlyUaProducer())
                 .isTrue();
     }
+
+    @Test
+    void masgainCollectsParametersThenGeneratesAHigherCaloriePlan() throws Exception {
+        CLAUDE.respondWithText(MealPlanIntegrationTest.fullWeekJson());
+
+        sendText(1, "/masgain");
+        sendText(2, "82.5");
+        sendText(3, "3200");
+        sendText(4, "160");
+
+        UserProfile profile = userProfileRepository.findByUserId(user.getId()).orElseThrow();
+        assertThat(profile.getSpecialMode()).isEqualTo(SpecialMode.MASS_GAIN);
+        assertThat(profile.getTargetWeightKg()).isEqualByComparingTo("82.5");
+        assertThat(profile.getTargetCalories()).isEqualTo(3200);
+        assertThat(profile.getTargetProteinG()).isEqualTo(160);
+        assertThat(CLAUDE.requests().getLast().toString()).contains("набору маси");
+    }
+
+    @Test
+    void masgainRefusesToStartWhileAnotherModeIsActive() throws Exception {
+        specialModeService.triggerGastritis(user);
+        CLAUDE.reset();
+        // triggerGastritis's regeneration leaves this chat mid shopping-list-builder flow
+        // (ConversationFlow.LIST_BUILDING); the router's flow-gate runs before any command
+        // block, so /masgain would otherwise be swallowed as a list-edit instruction instead
+        // of reaching SpecialModeService.startMassGainSetup. Clear it, same as
+        // normalCommandCancelsAnActiveSpecialMode does above.
+        conversationStateRepository.deleteAll();
+
+        sendText(2, "/masgain");
+
+        assertThat(TELEGRAM.sentMessages().getLast().toString()).contains("вже активний");
+        assertThat(CLAUDE.callCount()).isZero();
+    }
 }

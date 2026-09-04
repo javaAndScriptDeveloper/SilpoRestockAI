@@ -367,6 +367,18 @@ public class MealPlanService {
                     .append(profile.getSpecialMode().name())
                     .append('\n');
         }
+        if (profile.getSpecialMode() == SpecialMode.MASS_GAIN) {
+            if (profile.getTargetCalories() != null) {
+                text.append("Цільова калорійність на день: ")
+                        .append(profile.getTargetCalories())
+                        .append(" ккал\n");
+            }
+            if (profile.getTargetProteinG() != null) {
+                text.append("Цільовий білок на день: ")
+                        .append(profile.getTargetProteinG())
+                        .append(" г\n");
+            }
+        }
         if (!untouched.isEmpty()) {
             // The whole point of the trend counter: what the household demonstrably does not eat, said plainly.
             text.append("Не пропонуй ці продукти — їх стабільно не їдять: ")

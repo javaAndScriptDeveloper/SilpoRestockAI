@@ -164,6 +164,10 @@ public class TelegramRoutingService {
             reorderConfirmationService.handle(user, incoming);
             return;
         }
+        if (flow == ConversationFlow.SPECIAL_MODE_SETUP) {
+            specialModeService.handle(user, incoming);
+            return;
+        }
         if (incoming instanceof TelegramIncomingUpdate.Text list
                 && matches(list.text(), "/list", MainMenuKeyboard.LIST)) {
             shoppingListBuilderService.askForInput(user);
@@ -202,6 +206,10 @@ public class TelegramRoutingService {
         }
         if (incoming instanceof TelegramIncomingUpdate.Text uaOnly && matches(uaOnly.text(), "/uaonly", "")) {
             specialModeService.toggleUaOnly(user);
+            return;
+        }
+        if (incoming instanceof TelegramIncomingUpdate.Text masgain && matches(masgain.text(), "/masgain", "")) {
+            specialModeService.startMassGainSetup(user);
             return;
         }
         if (incoming instanceof TelegramIncomingUpdate.ButtonTap tap) {

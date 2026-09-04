@@ -2,20 +2,26 @@ package com.silporestockai.service;
 
 import com.silporestockai.client.claude.ClaudeApiClient;
 import com.silporestockai.config.SpecialModeProperties;
+import com.silporestockai.entity.ConversationState;
 import com.silporestockai.entity.MealPlan;
 import com.silporestockai.entity.ShoppingListItem;
 import com.silporestockai.entity.User;
 import com.silporestockai.entity.UserProfile;
+import com.silporestockai.model.ConversationFlow;
 import com.silporestockai.model.SpecialMode;
+import com.silporestockai.model.TelegramIncomingUpdate;
 import com.silporestockai.repository.UserProfileRepository;
 import com.silporestockai.repository.UserRepository;
 import com.silporestockai.service.telegram.TelegramOutboundService;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
@@ -45,6 +51,7 @@ public class SpecialModeService {
     private final ClaudeApiClient claudeApiClient;
     private final SpecialModeProperties specialModeProperties;
     private final Clock clock;
+    private final ConversationStateService conversationStateService;
     private final String gastritisIntentSystemPrompt;
 
     public SpecialModeService(
@@ -57,6 +64,7 @@ public class SpecialModeService {
             ClaudeApiClient claudeApiClient,
             SpecialModeProperties specialModeProperties,
             Clock clock,
+            ConversationStateService conversationStateService,
             @Value("classpath:prompts/gastritis-intent-system.txt") Resource gastritisIntentSystemPromptResource) {
         this.userProfileRepository = userProfileRepository;
         this.userRepository = userRepository;
@@ -67,6 +75,7 @@ public class SpecialModeService {
         this.claudeApiClient = claudeApiClient;
         this.specialModeProperties = specialModeProperties;
         this.clock = clock;
+        this.conversationStateService = conversationStateService;
         this.gastritisIntentSystemPrompt = read(gastritisIntentSystemPromptResource);
     }
 
@@ -114,6 +123,74 @@ public class SpecialModeService {
                 "user {} entered MEDICAL_GASTRITIS_ACUTE, expires {}", user.getId(), profile.getSpecialModeExpiresAt());
         telegramOutboundService.sendMessage(
                 user.getTelegramChatId(), "Розумію, гастрит. Перемикаю на щадне харчування — складаю новий план.");
+        regenerateAndPresent(user);
+    }
+
+    private static final String STEP_ASK_WEIGHT = "ASK_WEIGHT";
+    private static final String STEP_ASK_CALORIES = "ASK_CALORIES";
+    private static final String STEP_ASK_PROTEIN = "ASK_PROTEIN";
+    private static final String KEY_WEIGHT = "weightKg";
+    private static final String KEY_CALORIES = "targetCalories";
+
+    public void startMassGainSetup(User user) {
+        UserProfile profile = requireProfile(user);
+        if (isActive(profile)) {
+            telegramOutboundService.sendMessage(
+                    user.getTelegramChatId(),
+                    "У вас вже активний інший режим харчування. Спершу завершіть його: /normal.");
+            return;
+        }
+        conversationStateService.save(
+                user.getTelegramChatId(), ConversationFlow.SPECIAL_MODE_SETUP, STEP_ASK_WEIGHT, Map.of());
+        telegramOutboundService.sendMessage(user.getTelegramChatId(), "Набір маси. Яка зараз вага, кг?");
+    }
+
+    /** Everything a chat sitting in {@link ConversationFlow#SPECIAL_MODE_SETUP} can send. */
+    public void handle(User user, TelegramIncomingUpdate incoming) {
+        long chatId = incoming.chatId();
+        if (!(incoming instanceof TelegramIncomingUpdate.Text text)) {
+            telegramOutboundService.sendMessage(chatId, "Напиши, будь ласка, число.");
+            return;
+        }
+        ConversationState state = conversationStateService.load(chatId);
+        BigDecimal number;
+        try {
+            number = new BigDecimal(text.text().trim().replace(',', '.'));
+        } catch (NumberFormatException e) {
+            telegramOutboundService.sendMessage(chatId, "Не зрозумів число, спробуй ще раз.");
+            return;
+        }
+        Map<String, Object> context = new LinkedHashMap<>(state.getContext());
+        switch (state.getCurrentStep()) {
+            case STEP_ASK_WEIGHT -> {
+                context.put(KEY_WEIGHT, number.toPlainString());
+                conversationStateService.save(chatId, ConversationFlow.SPECIAL_MODE_SETUP, STEP_ASK_CALORIES, context);
+                telegramOutboundService.sendMessage(chatId, "Скільки калорій на день — ціль?");
+            }
+            case STEP_ASK_CALORIES -> {
+                context.put(KEY_CALORIES, number.intValue());
+                conversationStateService.save(chatId, ConversationFlow.SPECIAL_MODE_SETUP, STEP_ASK_PROTEIN, context);
+                telegramOutboundService.sendMessage(chatId, "Скільки грамів білка на день — ціль?");
+            }
+            case STEP_ASK_PROTEIN -> {
+                finishMassGainSetup(user, context, number.intValue());
+                conversationStateService.save(chatId, ConversationFlow.NONE, null, Map.of());
+            }
+            default -> telegramOutboundService.sendMessage(chatId, "Напиши /masgain, щоб почати заново.");
+        }
+    }
+
+    private void finishMassGainSetup(User user, Map<String, Object> context, int targetProteinG) {
+        UserProfile profile = requireProfile(user);
+        Instant now = clock.instant();
+        profile.setSpecialMode(SpecialMode.MASS_GAIN);
+        profile.setSpecialModeStartedAt(now);
+        profile.setTargetWeightKg(new BigDecimal(context.get(KEY_WEIGHT).toString()));
+        profile.setTargetCalories(Integer.parseInt(context.get(KEY_CALORIES).toString()));
+        profile.setTargetProteinG(targetProteinG);
+        userProfileRepository.save(profile);
+        log.info("user {} entered MASS_GAIN", user.getId());
+        telegramOutboundService.sendMessage(user.getTelegramChatId(), "Готую план для набору маси.");
         regenerateAndPresent(user);
     }
 
