@@ -351,4 +351,30 @@ class SpecialModeIntegrationTest extends AbstractIntegrationTest {
         assertThat(secondSweep).isZero();
         assertThat(CLAUDE.callCount()).isZero();
     }
+
+    @Test
+    void normalCommandCancelsAnActiveSpecialMode() throws Exception {
+        specialModeService.triggerGastritis(user);
+        CLAUDE.reset();
+        CLAUDE.respondWithText(MealPlanIntegrationTest.fullWeekJson());
+
+        sendText(2, "/normal");
+
+        assertThat(userProfileRepository
+                        .findByUserId(user.getId())
+                        .orElseThrow()
+                        .getSpecialMode())
+                .isEqualTo(SpecialMode.NONE);
+    }
+
+    @Test
+    void uaonlyCommandTogglesTheFlag() throws Exception {
+        sendText(1, "/uaonly");
+
+        assertThat(userProfileRepository
+                        .findByUserId(user.getId())
+                        .orElseThrow()
+                        .getOnlyUaProducer())
+                .isTrue();
+    }
 }

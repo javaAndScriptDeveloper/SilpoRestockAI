@@ -195,6 +195,15 @@ public class TelegramRoutingService {
             offerCalendar(user, incoming.chatId());
             return;
         }
+        if (incoming instanceof TelegramIncomingUpdate.Text normal
+                && matches(normal.text(), "/normal", MainMenuKeyboard.NORMAL)) {
+            specialModeService.cancel(user);
+            return;
+        }
+        if (incoming instanceof TelegramIncomingUpdate.Text uaOnly && matches(uaOnly.text(), "/uaonly", "")) {
+            specialModeService.toggleUaOnly(user);
+            return;
+        }
         if (incoming instanceof TelegramIncomingUpdate.ButtonTap tap) {
             // A keyboard left over from a conversation that has already ended — a second tap on confirm, most
             // often. Acknowledge it so Telegram stops spinning and say nothing: answering a button nobody is
@@ -210,7 +219,8 @@ public class TelegramRoutingService {
         }
         telegramOutboundService.sendMessageWithMainMenu(
                 incoming.chatId(),
-                "Профіль уже є. Обери дію нижче або напиши /list, /reorder, /voice, /blackout чи /calendar.");
+                "Профіль уже є. Обери дію нижче або напиши /list, /reorder, /voice, /blackout, /calendar, "
+                        + "/masgain, /uaonly чи /normal.");
     }
 
     /** A command matches whether it was typed as a slash command or tapped as its own main-menu button. */
