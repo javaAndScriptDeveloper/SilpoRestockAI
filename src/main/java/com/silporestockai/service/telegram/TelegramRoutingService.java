@@ -192,6 +192,10 @@ public class TelegramRoutingService {
             onboardingFlowService.handleReedit(user, incoming);
             return;
         }
+        if (flow == ConversationFlow.SCHEDULED_TASK_EDIT) {
+            scheduledTaskManagementService.handleEditReply(user, incoming);
+            return;
+        }
         if (incoming instanceof TelegramIncomingUpdate.Text list
                 && matches(list.text(), "/list", MainMenuKeyboard.LIST)) {
             shoppingListBuilderService.askForInput(user);
@@ -241,7 +245,8 @@ public class TelegramRoutingService {
             specialModeService.startMassGainSetup(user);
             return;
         }
-        if (incoming instanceof TelegramIncomingUpdate.ButtonTap tap && tap.data().startsWith("sched:")) {
+        if (incoming instanceof TelegramIncomingUpdate.ButtonTap tap
+                && tap.data().startsWith("sched:")) {
             scheduledTaskManagementService.handleButtonTap(user, tap);
             return;
         }

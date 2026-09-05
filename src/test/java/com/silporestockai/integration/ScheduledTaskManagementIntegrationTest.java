@@ -124,21 +124,17 @@ class ScheduledTaskManagementIntegrationTest extends AbstractIntegrationTest {
     }
 
     private void sendText(int updateId, String text) throws Exception {
-        deliver(
-                """
+        deliver("""
                 {"update_id":%d,"message":{"message_id":%d,"date":1,\
                 "chat":{"id":%d,"type":"private"},"from":{"id":5,"is_bot":false,"first_name":"Тест"},\
-                "text":"%s"}}"""
-                        .formatted(updateId, updateId, CHAT_ID, text));
+                "text":"%s"}}""".formatted(updateId, updateId, CHAT_ID, text));
     }
 
     private void tapButton(int updateId, String data) throws Exception {
-        deliver(
-                """
+        deliver("""
                 {"update_id":%d,"callback_query":{"id":"cb-%d","chat_instance":"ci",\
                 "from":{"id":5,"is_bot":false,"first_name":"Тест"},"data":"%s",\
-                "message":{"message_id":%d,"date":1,"chat":{"id":%d,"type":"private"}}}}"""
-                        .formatted(updateId, updateId, data, updateId, CHAT_ID));
+                "message":{"message_id":%d,"date":1,"chat":{"id":%d,"type":"private"}}}}""".formatted(updateId, updateId, data, updateId, CHAT_ID));
     }
 
     private UUID onboardedUser() {
@@ -202,7 +198,9 @@ class ScheduledTaskManagementIntegrationTest extends AbstractIntegrationTest {
         sendText(1, "🗓 Заплановані");
 
         var sent = TELEGRAM.sentMessages().getLast();
-        assertThat(sent.path("text").asText()).contains("вино та сир зі знижкою").contains("вересня");
+        assertThat(sent.path("text").asText())
+                .contains("вино та сир зі знижкою")
+                .contains("вересня");
         var row = sent.path("reply_markup").path("inline_keyboard").get(0);
         assertThat(row.get(0).path("text").asText()).isEqualTo("Редагувати");
         assertThat(row.get(0).path("callback_data").asText()).isEqualTo("sched:edit:" + task.getId());
@@ -213,12 +211,16 @@ class ScheduledTaskManagementIntegrationTest extends AbstractIntegrationTest {
     @Test
     void cancellingSetsStatusAndTheSweepNeverFiresIt() throws Exception {
         UUID userId = onboardedUser();
-        ScheduledAdHocTask task = pendingTask(userId, "сир на вечір", Instant.now().minusSeconds(60));
+        ScheduledAdHocTask task =
+                pendingTask(userId, "сир на вечір", Instant.now().minusSeconds(60));
 
         tapButton(1, "sched:cancel:" + task.getId());
 
         assertThat(lastMessageText()).contains("Скасовано").contains("сир на вечір");
-        assertThat(scheduledAdHocTaskRepository.findById(task.getId()).orElseThrow().getStatus())
+        assertThat(scheduledAdHocTaskRepository
+                        .findById(task.getId())
+                        .orElseThrow()
+                        .getStatus())
                 .isEqualTo(ScheduledAdHocTaskStatus.CANCELLED);
 
         int fired = adHocScheduleService.sweepDue();
@@ -235,5 +237,58 @@ class ScheduledTaskManagementIntegrationTest extends AbstractIntegrationTest {
         tapButton(1, "sched:cancel:" + task.getId());
 
         assertThat(lastMessageText()).contains("вже неактуальне");
+    }
+
+    @Test
+    void editingTheThemeUpdatesTheSameRowNotADuplicate() throws Exception {
+        UUID userId = onboardedUser();
+        ScheduledAdHocTask task = pendingTask(userId, "вино", Instant.parse("2026-09-11T18:00:00Z"));
+
+        tapButton(1, "sched:edit:" + task.getId());
+        assertThat(conversationStateService.load(CHAT_ID).getCurrentFlow())
+                .isEqualTo(com.silporestockai.model.ConversationFlow.SCHEDULED_TASK_EDIT);
+
+        CLAUDE.respondWithText("{\"themeDescription\":\"вино та сир\",\"targetDateTimeIso\":null}");
+        sendText(2, "зроби ще й сир");
+
+        assertThat(scheduledAdHocTaskRepository.findAll()).hasSize(1);
+        ScheduledAdHocTask updated =
+                scheduledAdHocTaskRepository.findById(task.getId()).orElseThrow();
+        assertThat(updated.getThemeDescription()).isEqualTo("вино та сир");
+        assertThat(updated.getTriggerAt()).isEqualTo(Instant.parse("2026-09-11T18:00:00Z"));
+        assertThat(conversationStateService.load(CHAT_ID).getCurrentFlow())
+                .isEqualTo(com.silporestockai.model.ConversationFlow.NONE);
+    }
+
+    @Test
+    void editingOnlyTheTimeLeavesTheThemeAlone() throws Exception {
+        UUID userId = onboardedUser();
+        ScheduledAdHocTask task = pendingTask(userId, "вино", Instant.parse("2026-09-11T18:00:00Z"));
+        tapButton(1, "sched:edit:" + task.getId());
+
+        CLAUDE.respondWithText("{\"themeDescription\":null,\"targetDateTimeIso\":\"2026-09-12T20:00:00Z\"}");
+        sendText(2, "перенеси на суботу ввечері");
+
+        ScheduledAdHocTask updated =
+                scheduledAdHocTaskRepository.findById(task.getId()).orElseThrow();
+        assertThat(updated.getThemeDescription()).isEqualTo("вино");
+        assertThat(updated.getTriggerAt()).isEqualTo(Instant.parse("2026-09-12T20:00:00Z"));
+    }
+
+    @Test
+    void anUnextractableEditReplyAsksAgainWithoutResettingTheFlow() throws Exception {
+        UUID userId = onboardedUser();
+        ScheduledAdHocTask task = pendingTask(userId, "вино", Instant.parse("2026-09-11T18:00:00Z"));
+        tapButton(1, "sched:edit:" + task.getId());
+
+        CLAUDE.respondWithText("{\"themeDescription\":null,\"targetDateTimeIso\":null}");
+        sendText(2, "хм не знаю");
+
+        assertThat(lastMessageText()).contains("Не зрозумів");
+        assertThat(conversationStateService.load(CHAT_ID).getCurrentFlow())
+                .isEqualTo(com.silporestockai.model.ConversationFlow.SCHEDULED_TASK_EDIT);
+        ScheduledAdHocTask unchanged =
+                scheduledAdHocTaskRepository.findById(task.getId()).orElseThrow();
+        assertThat(unchanged.getThemeDescription()).isEqualTo("вино");
     }
 }
