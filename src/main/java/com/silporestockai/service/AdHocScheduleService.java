@@ -40,8 +40,7 @@ public class AdHocScheduleService {
                 .status(ScheduledAdHocTaskStatus.PENDING)
                 .createdAt(Instant.now())
                 .build());
-        telegramOutboundService.sendMessage(
-                user.getTelegramChatId(), "Зроблю це найближчим часом: %s.".formatted(themeDescription));
+        telegramOutboundService.sendMessage(user.getTelegramChatId(), themeDescription);
         log.info("scheduled an ad-hoc purchase for user {} at {}", user.getId(), triggerAt);
     }
 

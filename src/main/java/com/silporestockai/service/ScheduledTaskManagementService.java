@@ -13,11 +13,8 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -34,12 +31,6 @@ import org.springframework.stereotype.Service;
 @Slf4j
 @Service
 public class ScheduledTaskManagementService {
-
-    // Locale.forLanguageTag("uk") explicitly — see AdHocScheduleService's identical formatter for why the
-    // JVM default locale cannot be trusted here.
-    private static final DateTimeFormatter DISPLAY = DateTimeFormatter.ofPattern(
-                    "d MMMM, HH:mm", Locale.forLanguageTag("uk"))
-            .withZone(ZoneId.of("Europe/Kyiv"));
 
     private static final String PREFIX_EDIT = "sched:edit:";
     private static final String PREFIX_CANCEL = "sched:cancel:";
@@ -76,7 +67,7 @@ public class ScheduledTaskManagementService {
         for (ScheduledAdHocTask task : pending) {
             telegramOutboundService.sendMessageWithButtons(
                     chatId,
-                    "%s — заплановано на %s".formatted(task.getThemeDescription(), DISPLAY.format(task.getTriggerAt())),
+                    task.getThemeDescription(),
                     List.of(
                             TelegramButton.callback("Редагувати", PREFIX_EDIT + task.getId()),
                             TelegramButton.callback("Скасувати", PREFIX_CANCEL + task.getId())));
@@ -154,9 +145,7 @@ public class ScheduledTaskManagementService {
         }
         scheduledAdHocTaskRepository.save(task);
         conversationStateService.save(chatId, ConversationFlow.NONE, null, Map.of());
-        telegramOutboundService.sendMessage(
-                chatId,
-                "Оновлено: %s — %s.".formatted(task.getThemeDescription(), DISPLAY.format(task.getTriggerAt())));
+        telegramOutboundService.sendMessage(chatId, "Оновлено: " + task.getThemeDescription() + ".");
     }
 
     /** {@code Optional.empty()} covers both "no such task" and "not PENDING any more" — both mean the same thing to the user. */

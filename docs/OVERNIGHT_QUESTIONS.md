@@ -311,3 +311,20 @@ match reusing `IntentRouterService.sendHelp`) to run immediately after the onboa
 interrupted, so navigating away mid-flow and coming back leaves it exactly where it was — verified with a
 new regression test (`thePersistentMenuButtonWorksAsGlobalNavigationEvenMidFlow`) that reproduces the exact
 bug report (tap while `LIST_BUILDING` is active) before the fix, and passes after it.
+
+**Follow-up, same live-test session:** the fix above only moved the *text* navigation buttons (`Список`,
+`Анкета`, `Заплановані`, `Інструкція`). The user immediately hit the same bug one layer down: the inline
+Редагувати/Скасувати `ButtonTap`s on a scheduled-task message were still checked *after* the flow-specific
+dispatch, so the same stuck `LIST_BUILDING` state swallowed those too — "buttons seem to do nothing." The
+general principle this revealed: a `ButtonTap` whose callback data is self-contained (carries the resource
+id it acts on, like `sched:edit:<uuid>`) never needs `conversation_state` to interpret, unlike `cart:*`/
+`re:*`/`onb:*` taps, which are deliberately state-gated because their own callback data (`cart:confirm`,
+`re:slot:0`, ...) doesn't name which draft/order/step it belongs to — only conversation_state does. Moved
+the `sched:` and calendar-day-prefix (`cal:`) `ButtonTap` checks up next to the text navigation checks, for
+the same reason. New regression test: `editAndCancelButtonsWorkEvenWhenAnUnrelatedFlowIsStuckActive`.
+
+**Also fixed in the same pass, per the user's explicit request:** the scheduled-task messages ("Зроблю це
+найближчим часом: ...", the "🗓 Заплановані" listing, "Оновлено: ...") stopped showing any trigger date/time
+at all — now just the bare theme description. Showing a specific time was actively misleading once
+scheduling always fires ASAP (see the deadline entry above): it looked like a real appointment when it
+never was one.

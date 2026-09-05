@@ -192,6 +192,21 @@ public class TelegramRoutingService {
             intentRouterService.sendHelp(user);
             return;
         }
+        // Same reasoning as the text buttons above, for button taps whose callback data is self-contained
+        // (carries its own id, needs no conversation_state to interpret): a stuck flow must not be able to
+        // swallow a tap on a message that flow didn't even send. cart:*/re:*/onb:* taps are correctly NOT
+        // here — those rely on conversation_state to know which draft/order/step they refer to.
+        if (incoming instanceof TelegramIncomingUpdate.ButtonTap tap
+                && tap.data().startsWith("sched:")) {
+            scheduledTaskManagementService.handleButtonTap(user, tap);
+            return;
+        }
+        if (incoming instanceof TelegramIncomingUpdate.ButtonTap tap
+                && tap.data().startsWith(CalendarViewService.CALLBACK_DAY_PREFIX)) {
+            telegramOutboundService.answerCallback(tap.callbackQueryId());
+            calendarViewService.showDay(user, tap.data().substring(CalendarViewService.CALLBACK_DAY_PREFIX.length()));
+            return;
+        }
 
         ConversationFlow flow = conversationStateService.load(incoming.chatId()).getCurrentFlow();
         if (flow == ConversationFlow.CART_CONFIRMATION) {
@@ -254,19 +269,6 @@ public class TelegramRoutingService {
         }
         if (incoming instanceof TelegramIncomingUpdate.Text masgain && matches(masgain.text(), "/masgain", "")) {
             specialModeService.startMassGainSetup(user);
-            return;
-        }
-        if (incoming instanceof TelegramIncomingUpdate.ButtonTap tap
-                && tap.data().startsWith("sched:")) {
-            scheduledTaskManagementService.handleButtonTap(user, tap);
-            return;
-        }
-        if (incoming instanceof TelegramIncomingUpdate.ButtonTap tap
-                && tap.data().startsWith(CalendarViewService.CALLBACK_DAY_PREFIX)) {
-            // Stateless by design: the day-selector keyboard works from any conversation state, and every tap
-            // re-reads the current plan rather than trusting anything cached in conversation_state.
-            telegramOutboundService.answerCallback(tap.callbackQueryId());
-            calendarViewService.showDay(user, tap.data().substring(CalendarViewService.CALLBACK_DAY_PREFIX.length()));
             return;
         }
         if (incoming instanceof TelegramIncomingUpdate.ButtonTap tap) {

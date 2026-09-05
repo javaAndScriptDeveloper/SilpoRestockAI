@@ -208,16 +208,16 @@ class ScheduledTaskManagementIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void pendingTasksRenderWithThemeTimeAndButtons() throws Exception {
+    void pendingTasksRenderWithThemeAndButtons() throws Exception {
         UUID userId = onboardedUser();
         ScheduledAdHocTask task = pendingTask(userId, "вино та сир зі знижкою", Instant.parse("2026-09-11T18:00:00Z"));
 
         sendText(1, "🗓 Заплановані");
 
         var sent = TELEGRAM.sentMessages().getLast();
-        assertThat(sent.path("text").asText())
-                .contains("вино та сир зі знижкою")
-                .contains("вересня");
+        // No trigger time shown at all — when it actually fires is an implementation detail nobody asked
+        // for; see docs/OVERNIGHT_QUESTIONS.md's live-test-bug entries.
+        assertThat(sent.path("text").asText()).isEqualTo("вино та сир зі знижкою");
         var row = sent.path("reply_markup").path("inline_keyboard").get(0);
         assertThat(row.get(0).path("text").asText()).isEqualTo("Редагувати");
         assertThat(row.get(0).path("callback_data").asText()).isEqualTo("sched:edit:" + task.getId());
@@ -307,5 +307,29 @@ class ScheduledTaskManagementIntegrationTest extends AbstractIntegrationTest {
         ScheduledAdHocTask unchanged =
                 scheduledAdHocTaskRepository.findById(task.getId()).orElseThrow();
         assertThat(unchanged.getThemeDescription()).isEqualTo("вино");
+    }
+
+    @Test
+    void editAndCancelButtonsWorkEvenWhenAnUnrelatedFlowIsStuckActive() throws Exception {
+        // A live bug found right after the text-navigation fix above: the inline Редагувати/Скасувати
+        // buttons on a scheduled-task message are ButtonTaps whose callback data carries the task id
+        // directly — they need no conversation_state to interpret — but were still checked *after* the
+        // flow-specific dispatch, so a stuck flow (e.g. LIST_BUILDING, never resolved) swallowed them too.
+        UUID userId = onboardedUser();
+        ScheduledAdHocTask task =
+                pendingTask(userId, "сир на вечір", Instant.now().plusSeconds(3600));
+        conversationStateService.save(
+                CHAT_ID,
+                com.silporestockai.model.ConversationFlow.LIST_BUILDING,
+                "AWAITING_APPROVAL",
+                java.util.Map.of());
+
+        tapButton(1, "sched:cancel:" + task.getId());
+
+        assertThat(scheduledAdHocTaskRepository
+                        .findById(task.getId())
+                        .orElseThrow()
+                        .getStatus())
+                .isEqualTo(ScheduledAdHocTaskStatus.CANCELLED);
     }
 }
