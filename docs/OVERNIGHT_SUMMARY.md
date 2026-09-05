@@ -133,3 +133,74 @@ addressed. 19 commits, all on `main`, all unpushed (same standing pattern as ses
 19 commits added this session, on top of session 1's 10 — all on `main`, all unpushed, same standing
 pattern. `git log --oneline ca4345a^..HEAD` shows this session's full sequence. Full `make test` confirmed
 green after every task before its commit, not just at the end.
+
+---
+
+# Session 3 — static product audit, 2026-09-06
+
+**Mode:** read-only audit of the Telegram surface (`controller.telegram`, `service.telegram`, every
+service that builds a keyboard or handles an intent) against the Notion source of truth — the
+Development Plan database (tasks 01–42), «Сценарій демо-запису» and «Selling Points та Пітч-аргументи»
+— then small, separately committed fixes. No live run, no integration tests against real Silpo/Claude.
+Every change has automated coverage; the full suite result is at the bottom.
+
+**Commits:** 11 code commits + this docs commit, all on `main`, all unpushed (same standing pattern).
+
+## Found and fixed
+
+| # | Finding | Where | Fix |
+|---|---|---|---|
+| 1 | Yesterday's last commit over-trimmed the scheduled-purchase confirmation: the bot answered «замов вино до п'ятниці» with just "вино" — the person's words echoed back with nothing decided. RUNBOOK still expected "Зроблю це найближчим часом: …". | `AdHocScheduleService` | Sentence restored, still with no date. |
+| 2 | **«📝 Список» never showed the list.** The button (and the LIST_VIEW intent) always opened "Що беремо на цей тиждень? — фото / чек / напиши", even seconds after a weekly plan had put a full list on screen. Demo step 4 ("кнопка «Список» → список за категоріями") would not have worked as written. | `ShoppingListBuilderService`, `TelegramRoutingService`, `IntentRouterService` | New `showCurrentOrAsk`: an ACTIVE list is shown with its Замовити/Змінити buttons (no model call); the question only when there is nothing to show. |
+| 3 | **Every cart confirmation lied about the baseline.** "Зберіг цей кошик як еталонний набір" was said for blackout, hangover and Friday-snack orders too, but `CartConfirmationService` only stores a baseline for `INITIAL`. Ad-hoc carts also opened with "на тиждень". | `CartMessageService`, `CartConfirmationService` | `cartText`/`confirmedText` take the `OrderType`; only INITIAL claims the baseline, the rest say it is untouched. |
+| 4 | **Check-in prompts wiped any newer flow's state.** `isBusyElsewhere` knew only ONBOARDING and CART_CONFIRMATION; a sweep landing mid-`REORDER_CONFIRMATION` (or SPECIAL_MODE_SETUP, SCHEDULED_TASK_EDIT, LIST_BUILDING, PROFILE_REEDIT) overwrote `conversation_state` and the buttons on screen went silently dead — the same bug shape as the two live-test fixes from 05.09, from the other side. | `CheckinPromptService` | Busy = any flow other than NONE / CHECK_IN. Cost: a check-in waits for the next hourly sweep while a flow is open. |
+| 5 | Dead code flagged for daylight deletion in `OVERNIGHT_QUESTIONS.md`: `detectGastritisIntent`, its record, its prompt, and the `ClaudeApiClient` dependency it kept alive. | `SpecialModeService` | Deleted; constructor collapses to `@RequiredArgsConstructor`. |
+| 6 | **Four capabilities reachable only by slash commands** nobody would type unprompted — the exact gap task 29 found for `/blackout`: return to normal mode (`/normal`, the brief's flow-9 last step), start a reorder (`/reorder`, which demo step 8 depended on), connect Google Calendar (`/calendar`), and a concrete list edit («прибери молоко зі списку», which task 31 names but which was folded into LIST_VIEW and asked the person to repeat themselves). | `IntentRouterService`, `intent-router-system.txt` | Intents `SPECIAL_MODE_END`, `REORDER`, `LIST_MODIFY`, `CALENDAR_CONNECT`. Command bodies moved out of the routing service into `ReorderConfirmationService.startNow` / `CalendarIntegrationService.offerConnection`; slash commands call the same methods. |
+| 7 | `/start` after onboarding went to the classifier → "Не зовсім зрозумів", to the one word every Telegram user knows and the thing the failure-recovery message tells people to type. | `TelegramRoutingService` | Re-sends the keyboard with "Я тут…", no model call. |
+| 8 | **Voice notes and photos outside a flow got "Скористайся кнопками нижче".** The brief puts text and voice on equal footing; the STT client already existed for check-ins. | `IntentRouterService.routeVoice`, `TelegramRoutingService` | Voice → transcribe → route as text (honest "не розбираю" without an STT key). Photo → opens the list builder with it, list shown for approval, nothing ordered. |
+| 9 | Four reply-keyboard labels in one row get truncated on a phone ("Заплан…"). | `MainMenuKeyboard` | 2×2. |
+| 10 | **«🗓 Заплановані» was empty almost every time.** Since the deadline fix a task is PENDING for one sweep at most, so "Немає запланованих замовлень" right after «замов вино» read as "I lost your request". | `ScheduledTaskManagementService`, repository | "Нещодавно виконав: ✅ …" tail (last 5 FIRED; CANCELLED stay out) — task 33's optional point 7, made necessary by ASAP scheduling. |
+| 11 | Copy: register slipped to «ви» in six places (failure recovery, special-mode refusals, reorder confirmation, ready-meals caveat, unresolved-items line); refusals said "type /normal" / "type /masgain"; list-cancel said "напиши /list"; reorder had «Інший слот» vs the cart's «Інший час»; the mass-gain cross-sell ended in "можу підказати, якщо цікаво" with nothing handling "цікаво". | see commit `Speak in one voice…` | Unified to «ти», pointed at buttons/sentences the router understands, cross-sell now names the «додай протеїн» edit that works (via LIST_MODIFY). |
+
+Also: `SPECIAL_MODE_LEANER` now passes the person's own sentence to the planner, so «мінус 200 ккал на
+день» (brief flow 6) keeps its number; the «Інструкція» text was rewritten to open with what the four
+buttons do and give one example per intent; the clarifying question points at the «Інструкція» button.
+
+## Added beyond the backlog (and why) — documented post-factum in Notion
+
+- **#43** «Chat-first gaps» — items 6, 7, 8 above. The pitch's central claim ("кожна нова фіча — новий
+  обробник намірів, не нова кнопка") was untrue for four capabilities; a jury member typing any of
+  those sentences would have hit a clarifying question.
+- **#44** «Copy audit» — items 1, 3, 11. One voice, and no confirmation text that contradicts what the
+  code does.
+- **#45** «Product-audit fixes» — items 2, 4, 5, 9, 10. All either a button that did not do what its
+  name says, or a silent dead-buttons bug.
+
+Docs synced: RUNBOOK's task-31 checklist gained rows for every new phrase and now says four buttons in
+two rows; the Notion demo script's step 2 (menu), step 8 (reorder by chat, not `/reorder`), step 13
+(«повертай звичайний раціон», voice variant) and its changelog were updated.
+
+## Left as larger, deliberately untouched work
+
+- **Not-started tasks #35–#42** — untouched, per the session rules.
+- **Deadline vs. trigger-time model** for one-off purchases: everything fires on the next sweep, so
+  `trigger_at` (and the «Редагувати» → "нова дата" path of task 33) is effectively decorative. A real
+  "by Friday, but wait for the promo" model needs a product decision, not a patch.
+- **Slash commands** remain as a second entry point (task 31's additive-rollout decision stands).
+  Deleting them is safe once the live-classification checklist in RUNBOOK has been walked.
+- **Check-in while a list awaits approval**: fix 4 means a household that never taps Замовити on a
+  regenerated list gets no check-in prompt until they do. Visible and recoverable, unlike the dead
+  buttons it replaces — but if `LIST_BUILDING/AWAITING_APPROVAL` should not count as busy, that is a
+  one-line change in `CheckinPromptService.isBusyElsewhere`.
+- **Live classification accuracy** for the new phrases is, as for every intent, a human-in-Telegram
+  check (RUNBOOK → Task 31).
+
+## Verification
+
+Every commit was compiled and its own test classes run before landing (targeted runs, all green:
+IntentRouter 14, ScheduledTaskManagement 11, ShoppingListBuilder 11, CartConfirmation, CartMessage 12,
+CheckinPrompt, SpecialMode 15, ReorderConfirmation 13, Calendar, FailureRecovery, Webhook 8,
+Outbound 6, ArchUnit 14).
+
+Final gate after the last code commit: full `./gradlew test` — **58 classes, 386 tests, 0 failures,
+0 errors, 0 skipped** (`make check` formatting included via `spotlessApply` before every commit).

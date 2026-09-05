@@ -408,9 +408,18 @@ below, type the phrase into a real chat with an onboarded profile and confirm th
 | something genuinely ambiguous, e.g. «зроби щось» | A clarifying question, not a guess |
 | «/blackout» (typed, not tapped) | Still works exactly as before — no classification call happens |
 | «світло вимкнули, немає струму» | A small cart, no-cooking-needed items only (task 29's chat-only blackout) |
+| «що треба докупити?» | "Дивлюсь, що треба докупити." then a delta reorder (or "Поки нічого докуповувати") — same as typed /reorder (task 43) |
+| «я в порядку, повертай звичайний раціон» | Special mode ends and a normal plan is regenerated; with no mode active, "Звичайний режим і так активний" (task 43) |
+| «прибери молоко зі списку, додай яйця» | The current list is edited straight away and shown for approval — no "Що беремо на цей тиждень?" question in between (task 43) |
+| «підключи гугл календар» | The Google Calendar consent link (or "уже підключено" / "не налаштований на сервері") — same as typed /calendar (task 43) |
+| a voice note saying any of the above, with STT_API_KEY set | Transcribed and handled exactly like the typed sentence; without the key, "Голосові поки не розбираю" (task 43) |
+| a photo of a fridge or shelf, with no conversation open | "Хвилинку, складаю список." then a list built from the photo, shown for approval (task 43) |
+| «/start» after onboarding | "Я тут…" plus the keyboard; no clarifying question, no model call (task 43) |
 
-Also confirm the persistent keyboard shows exactly three buttons (Список / Анкета / Інструкція) after
-onboarding finishes, and:
+Also confirm the persistent keyboard shows exactly four buttons in two rows (Список / Заплановані, then
+Анкета / Інструкція — task 33 added the fourth, task 45 split the rows) after onboarding finishes, that
+tapping «📝 Список» while a list is on screen shows that list again (not the "Що беремо на цей тиждень?"
+question — task 45), and:
 
 | Type this | Expect |
 |---|---|
