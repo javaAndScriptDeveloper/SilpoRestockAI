@@ -174,6 +174,34 @@ class ShoppingListBuilderIntegrationTest extends AbstractIntegrationTest {
         assertThat(conversationStateService.load(CHAT_ID).getCurrentFlow()).isEqualTo(ConversationFlow.LIST_BUILDING);
     }
 
+    /**
+     * The button is named «Список». When a list exists, it shows that list — it does not restart the "what do we
+     * buy this week" question over the top of the one the household already has on screen.
+     */
+    @Test
+    void theMainMenuButtonShowsTheLiveListWhenThereIsOne() throws Exception {
+        shoppingListItemRepository.save(ShoppingListItem.builder()
+                .id(UUID.randomUUID())
+                .userId(user.getId())
+                .name("Гречка")
+                .quantity(BigDecimal.ONE)
+                .unit("кг")
+                .status(com.silporestockai.model.ShoppingListStatus.ACTIVE)
+                .build());
+
+        sendText(1, com.silporestockai.service.telegram.MainMenuKeyboard.LIST);
+
+        assertThat(CLAUDE.callCount()).isZero();
+        assertThat(lastMessageText()).contains("Гречка").doesNotContain("фото чека");
+        var buttons = TELEGRAM.sentMessages()
+                .getLast()
+                .path("reply_markup")
+                .path("inline_keyboard")
+                .get(0);
+        assertThat(buttons.get(0).path("text").asText()).isEqualTo("Замовити");
+        assertThat(conversationStateService.load(CHAT_ID).getCurrentFlow()).isEqualTo(ConversationFlow.LIST_BUILDING);
+    }
+
     @Test
     void aDescriptionBecomesAListShownForApproval() throws Exception {
         sendText(1, "/list");

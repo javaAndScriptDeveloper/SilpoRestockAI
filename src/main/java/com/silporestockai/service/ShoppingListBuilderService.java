@@ -78,6 +78,23 @@ public class ShoppingListBuilderService {
         this.systemPrompt = read(systemPromptResource);
     }
 
+    /**
+     * What the «Список» button does: shows the list the household currently has on the table, or — when there
+     * is none yet, or the last one was already ordered — opens the conversation that builds one.
+     *
+     * <p>Previously the button always asked "Що беремо на цей тиждень?", even seconds after a weekly plan had
+     * put a full list on screen — the one thing the button's own name promises to show. Task 29 defines it as
+     * "активний основний список", and the demo script's step 4 is literally "кнопка «Список» → список".
+     */
+    public void showCurrentOrAsk(User user) {
+        List<ShoppingListItem> items = currentItems(user.getId());
+        if (items.isEmpty()) {
+            askForInput(user);
+            return;
+        }
+        present(user, items);
+    }
+
     /** Opens the conversation: a photo, a receipt, or a sentence. */
     public void askForInput(User user) {
         long chatId = user.getTelegramChatId();

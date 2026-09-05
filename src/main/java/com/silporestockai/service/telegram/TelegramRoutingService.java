@@ -174,7 +174,7 @@ public class TelegramRoutingService {
         // exactly where the user left it.
         if (incoming instanceof TelegramIncomingUpdate.Text list
                 && matches(list.text(), "/list", MainMenuKeyboard.LIST)) {
-            shoppingListBuilderService.askForInput(user);
+            shoppingListBuilderService.showCurrentOrAsk(user);
             return;
         }
         if (incoming instanceof TelegramIncomingUpdate.Text form

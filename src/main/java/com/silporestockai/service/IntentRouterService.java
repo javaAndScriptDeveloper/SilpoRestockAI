@@ -119,7 +119,7 @@ public class IntentRouterService {
                         user.getTelegramChatId(), "Збираю щось на поїсти без плити й холодильника.");
                 blackoutModeService.buildBlackoutOrder(user);
             }
-            case LIST_VIEW -> shoppingListBuilderService.askForInput(user);
+            case LIST_VIEW -> shoppingListBuilderService.showCurrentOrAsk(user);
             case CALENDAR_VIEW -> calendarViewService.showWeek(user);
             case HELP -> sendHelp(user);
             case UNKNOWN -> askClarifyingQuestion(user);
