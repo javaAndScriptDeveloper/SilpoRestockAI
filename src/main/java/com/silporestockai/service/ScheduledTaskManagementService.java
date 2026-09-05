@@ -62,7 +62,6 @@ public class ScheduledTaskManagementService {
         long chatId = user.getTelegramChatId();
         if (pending.isEmpty()) {
             telegramOutboundService.sendMessage(chatId, "Немає запланованих замовлень.");
-            return;
         }
         for (ScheduledAdHocTask task : pending) {
             telegramOutboundService.sendMessageWithButtons(
@@ -72,6 +71,25 @@ public class ScheduledTaskManagementService {
                             TelegramButton.callback("Редагувати", PREFIX_EDIT + task.getId()),
                             TelegramButton.callback("Скасувати", PREFIX_CANCEL + task.getId())));
         }
+        showRecentlyFired(user, chatId);
+    }
+
+    /**
+     * The tail of the view: what already fired. Task 33's spec lists this as optional — it stopped being optional
+     * once scheduling started firing on the very next sweep (see {@link AdHocScheduleService}): a task is PENDING
+     * for at most fifteen minutes, so a view of pending tasks alone is empty almost every time anyone opens it,
+     * and "Немає запланованих замовлень" right after «замов вино» reads as "I lost your request". Naming the
+     * last few that ran is the reassurance the button exists for.
+     */
+    private void showRecentlyFired(User user, long chatId) {
+        List<ScheduledAdHocTask> fired = scheduledAdHocTaskRepository.findTop5ByUserIdAndStatusOrderByCreatedAtDesc(
+                user.getId(), ScheduledAdHocTaskStatus.FIRED);
+        if (fired.isEmpty()) {
+            return;
+        }
+        StringBuilder text = new StringBuilder("Нещодавно виконав:");
+        fired.forEach(task -> text.append("\n✅ ").append(task.getThemeDescription()));
+        telegramOutboundService.sendMessage(chatId, text.toString());
     }
 
     public void handleButtonTap(User user, TelegramIncomingUpdate.ButtonTap tap) {

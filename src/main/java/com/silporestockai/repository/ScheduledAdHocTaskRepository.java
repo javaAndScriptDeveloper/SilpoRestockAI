@@ -11,4 +11,8 @@ public interface ScheduledAdHocTaskRepository extends JpaRepository<ScheduledAdH
     List<ScheduledAdHocTask> findByStatusAndTriggerAtBefore(ScheduledAdHocTaskStatus status, Instant instant);
 
     List<ScheduledAdHocTask> findByUserIdAndStatusOrderByTriggerAtAsc(UUID userId, ScheduledAdHocTaskStatus status);
+
+    /** The most recent few in a given status — the "did that actually happen?" tail of the Заплановані view. */
+    List<ScheduledAdHocTask> findTop5ByUserIdAndStatusOrderByCreatedAtDesc(
+            UUID userId, ScheduledAdHocTaskStatus status);
 }

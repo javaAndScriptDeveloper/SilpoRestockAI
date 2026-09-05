@@ -190,6 +190,35 @@ class ScheduledTaskManagementIntegrationTest extends AbstractIntegrationTest {
         assertThat(lastMessageText()).contains("Немає запланованих замовлень");
     }
 
+    /**
+     * A task is PENDING for one sweep at most, so the view is nearly always "empty" — what already ran is the
+     * part a person actually opens it to see.
+     */
+    @Test
+    void recentlyFiredTasksAreListedAfterThePendingOnes() throws Exception {
+        UUID userId = onboardedUser();
+        ScheduledAdHocTask done =
+                pendingTask(userId, "вино та сир зі знижкою", Instant.now().minusSeconds(900));
+        done.setStatus(ScheduledAdHocTaskStatus.FIRED);
+        scheduledAdHocTaskRepository.save(done);
+        ScheduledAdHocTask cancelled =
+                pendingTask(userId, "передумав", Instant.now().minusSeconds(800));
+        cancelled.setStatus(ScheduledAdHocTaskStatus.CANCELLED);
+        scheduledAdHocTaskRepository.save(cancelled);
+
+        sendText(1, "🗓 Заплановані");
+
+        List<String> texts = TELEGRAM.sentMessages().stream()
+                .map(message -> message.path("text").asText())
+                .toList();
+        assertThat(texts).hasSize(2);
+        assertThat(texts.get(0)).contains("Немає запланованих замовлень");
+        assertThat(texts.get(1))
+                .contains("Нещодавно виконав")
+                .contains("вино та сир зі знижкою")
+                .doesNotContain("передумав");
+    }
+
     @Test
     void thePersistentMenuButtonWorksAsGlobalNavigationEvenMidFlow() throws Exception {
         onboardedUser();
