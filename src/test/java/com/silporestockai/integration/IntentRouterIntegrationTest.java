@@ -158,6 +158,12 @@ class IntentRouterIntegrationTest extends AbstractIntegrationTest {
         assertThat(scheduledAdHocTaskRepository.findAll()).hasSize(1);
         assertThat(scheduledAdHocTaskRepository.findAll().getFirst().getThemeDescription())
                 .isEqualTo("вино та сир зі знижкою");
+        // The confirmation says what will happen, not just echoes the theme back — and names no date, because
+        // the task fires on the next sweep regardless of the deadline mentioned.
+        assertThat(TELEGRAM.sentMessages().getLast().path("text").asText())
+                .contains("найближчим часом")
+                .contains("вино та сир зі знижкою")
+                .doesNotContain("вересня");
     }
 
     @Test

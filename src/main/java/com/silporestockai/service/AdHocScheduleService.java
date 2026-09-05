@@ -40,7 +40,10 @@ public class AdHocScheduleService {
                 .status(ScheduledAdHocTaskStatus.PENDING)
                 .createdAt(Instant.now())
                 .build());
-        telegramOutboundService.sendMessage(user.getTelegramChatId(), themeDescription);
+        // No date here on purpose (see the class javadoc) — but the theme alone, echoed back bare, reads like
+        // the bot repeating the person's words with nothing decided. Say what will happen.
+        telegramOutboundService.sendMessage(
+                user.getTelegramChatId(), "Зроблю це найближчим часом: %s.".formatted(themeDescription));
         log.info("scheduled an ad-hoc purchase for user {} at {}", user.getId(), triggerAt);
     }
 
