@@ -20,5 +20,7 @@ public enum ConversationFlow {
     /** Collecting mass-gain parameters (weight, calorie/protein target) before generating that plan. */
     SPECIAL_MODE_SETUP,
     /** The Анкета button reopens the profile form after onboarding; awaiting its resubmission or a regenerate confirm. */
-    PROFILE_REEDIT
+    PROFILE_REEDIT,
+    /** Editing one pending scheduled_ad_hoc_task's time or theme — awaiting the free-text replacement value. */
+    SCHEDULED_TASK_EDIT
 }

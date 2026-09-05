@@ -9,4 +9,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface ScheduledAdHocTaskRepository extends JpaRepository<ScheduledAdHocTask, UUID> {
     List<ScheduledAdHocTask> findByStatusAndTriggerAtBefore(ScheduledAdHocTaskStatus status, Instant instant);
+
+    List<ScheduledAdHocTask> findByUserIdAndStatusOrderByTriggerAtAsc(UUID userId, ScheduledAdHocTaskStatus status);
 }
