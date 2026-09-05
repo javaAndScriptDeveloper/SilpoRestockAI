@@ -38,9 +38,18 @@ update_env_and_restart() {
     # Both the "gradlew bootRun" wrapper shell and the actual forked JVM (whose command line
     # doesn't contain that string at all) hold state that matters here: killing only the wrapper
     # leaves the JVM running and bound to :8080, so the next start fails with "port already in use".
-    fuser -k 8080/tcp 2>/dev/null
+    # A fixed sleep after the kill signal isn't enough either — a JVM shutdown under load can take
+    # longer than that, and starting the next instance while the old one is still unbinding fails
+    # the same way. Poll until the port is actually free (or give up after 20s and try anyway).
     pkill -f "gradlew bootRun" 2>/dev/null
-    sleep 3
+    fuser -k 8080/tcp 2>/dev/null
+    for _ in $(seq 1 20); do
+        fuser 8080/tcp >/dev/null 2>&1 || break
+        sleep 1
+    done
+    if fuser 8080/tcp >/dev/null 2>&1; then
+        echo "$(date -Iseconds) WARNING: :8080 still held after 20s, starting anyway"
+    fi
     ( cd "$APP_DIR" && mkdir -p logs && nohup make run > logs/app.log 2>&1 & disown )
 }
 
