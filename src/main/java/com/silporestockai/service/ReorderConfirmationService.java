@@ -81,6 +81,7 @@ public class ReorderConfirmationService {
             JsonMapper.builder().addModule(new JavaTimeModule()).build();
 
     private final CartBuildingService cartBuildingService;
+    private final ReorderService reorderService;
     private final CartMessageService cartMessageService;
     private final CustomerOrderRepository customerOrderRepository;
     private final BaselineBasketRepository baselineBasketRepository;
@@ -91,6 +92,16 @@ public class ReorderConfirmationService {
     private final SilpoMcpClient silpoMcpClient;
     private final ApplicationEventPublisher events;
     private final Clock clock;
+
+    /**
+     * A reorder on request rather than on schedule. The reorder cycle deliberately has no scheduler of its own
+     * (task 14's notes), so this is how a person — «що треба докупити?», or the typed {@code /reorder} — or a demo
+     * starts one: the same delta the cycle would build, handed to the same confirmation.
+     */
+    public void startNow(User user) {
+        telegramOutboundService.sendMessage(user.getTelegramChatId(), "Дивлюсь, що треба докупити.");
+        present(user, reorderService.buildScheduledDeltaOrder(user.getId()));
+    }
 
     /** Chooses a slot, writes the draft, and shows the order. */
     public void present(User user, DeltaOrder order) {

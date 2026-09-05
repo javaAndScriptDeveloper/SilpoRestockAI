@@ -2,7 +2,10 @@ package com.silporestockai.service;
 
 import com.silporestockai.client.google.GoogleCalendarApiClient;
 import com.silporestockai.config.GoogleCalendarProperties;
+import com.silporestockai.entity.User;
 import com.silporestockai.model.OrderConfirmedEvent;
+import com.silporestockai.model.TelegramButton;
+import com.silporestockai.service.telegram.TelegramOutboundService;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
@@ -34,6 +37,28 @@ public class CalendarIntegrationService {
     private final GoogleCalendarProperties properties;
     private final GoogleAuthService googleAuthService;
     private final GoogleCalendarApiClient calendarApiClient;
+    private final TelegramOutboundService telegramOutboundService;
+
+    /**
+     * Offers the connection. Opt-in, and only ever opt-in: a calendar nobody connected is never touched. Reached by
+     * «підключи гугл календар» through the intent router, or the typed {@code /calendar}.
+     */
+    public void offerConnection(User user) {
+        long chatId = user.getTelegramChatId();
+        if (!googleAuthService.configured()) {
+            telegramOutboundService.sendMessage(chatId, "Календар зараз не налаштований на сервері.");
+            return;
+        }
+        if (googleAuthService.isConnected(user.getId())) {
+            telegramOutboundService.sendMessage(chatId, "Календар уже підключено — додаю туди слоти доставки.");
+            return;
+        }
+        telegramOutboundService.sendMessageWithButtons(
+                chatId,
+                "Підключи Google Календар — і я вноситиму туди вікна доставки.",
+                List.of(TelegramButton.link(
+                        "Підключити календар", googleAuthService.buildAuthorizationUrl(user.getId()))));
+    }
 
     @Async("applicationTaskExecutor")
     @EventListener

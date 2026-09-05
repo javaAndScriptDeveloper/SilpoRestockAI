@@ -2,24 +2,21 @@ package com.silporestockai.service.telegram;
 
 import com.silporestockai.entity.User;
 import com.silporestockai.model.ConversationFlow;
-import com.silporestockai.model.TelegramButton;
 import com.silporestockai.model.TelegramIncomingUpdate;
 import com.silporestockai.repository.UserRepository;
 import com.silporestockai.service.BlackoutModeService;
+import com.silporestockai.service.CalendarIntegrationService;
 import com.silporestockai.service.CalendarViewService;
 import com.silporestockai.service.CartConfirmationService;
 import com.silporestockai.service.CheckinFlowService;
 import com.silporestockai.service.ConversationStateService;
-import com.silporestockai.service.GoogleAuthService;
 import com.silporestockai.service.IntentRouterService;
 import com.silporestockai.service.ReorderConfirmationService;
-import com.silporestockai.service.ReorderService;
 import com.silporestockai.service.ScheduledTaskManagementService;
 import com.silporestockai.service.ShoppingListBuilderService;
 import com.silporestockai.service.SpecialModeService;
 import com.silporestockai.service.UserAccountService;
 import com.silporestockai.service.onboarding.OnboardingFlowService;
-import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -35,8 +32,10 @@ import org.telegram.telegrambots.meta.api.objects.message.Message;
  * <p>This class and {@code TelegramWebhookController} are the only places that see the Telegram SDK. Everything
  * downstream receives records that carry no SDK types.
  *
- * <p>Dispatch is deliberately thin: the user row is resolved here, and everything else is decided by whether that
- * user has a profile yet. Tasks 10 to 12 add the cart and check-in flows next to the onboarding branch.
+ * <p>Dispatch is deliberately thin: the user row is resolved here, then — in this order — the onboarding gate, the
+ * persistent-menu buttons and self-contained button taps (global navigation, always live), the active conversation
+ * flow, the typed slash commands, and finally free text through {@code IntentRouterService}. No business logic
+ * lives here; every branch is one call into the service that owns that capability.
  */
 @Slf4j
 @Service
@@ -49,9 +48,8 @@ public class TelegramRoutingService {
     private final CartConfirmationService cartConfirmationService;
     private final CheckinFlowService checkinFlowService;
     private final ReorderConfirmationService reorderConfirmationService;
-    private final GoogleAuthService googleAuthService;
+    private final CalendarIntegrationService calendarIntegrationService;
     private final BlackoutModeService blackoutModeService;
-    private final ReorderService reorderService;
     private final ShoppingListBuilderService shoppingListBuilderService;
     private final VoiceReplyService voiceReplyService;
     private final UserRepository userRepository;
@@ -106,23 +104,6 @@ public class TelegramRoutingService {
                 turningOn
                         ? "Тепер відповідатиму ще й голосом. Щоб вимкнути — надішли /voice ще раз."
                         : "Вимкнув голосові відповіді.");
-    }
-
-    /** Opt-in, and only ever opt-in: a calendar nobody connected is never touched. */
-    private void offerCalendar(User user, long chatId) {
-        if (!googleAuthService.configured()) {
-            telegramOutboundService.sendMessage(chatId, "Календар зараз не налаштований на сервері.");
-            return;
-        }
-        if (googleAuthService.isConnected(user.getId())) {
-            telegramOutboundService.sendMessage(chatId, "Календар уже підключено — додаю туди слоти доставки.");
-            return;
-        }
-        telegramOutboundService.sendMessageWithButtons(
-                chatId,
-                "Підключи Google Календар — і я вноситиму туди вікна доставки.",
-                List.of(TelegramButton.link(
-                        "Підключити календар", googleAuthService.buildAuthorizationUrl(user.getId()))));
     }
 
     private Optional<TelegramIncomingUpdate> toIncoming(Update update) {
@@ -242,10 +223,7 @@ public class TelegramRoutingService {
             return;
         }
         if (incoming instanceof TelegramIncomingUpdate.Text reorder && matches(reorder.text(), "/reorder", "")) {
-            // The reorder cycle has no scheduler by design (see task 14's notes), so this is how a person — or a
-            // demo — starts one. It builds the same delta the cycle would and hands it to the same confirmation.
-            telegramOutboundService.sendMessage(incoming.chatId(), "Дивлюсь, що треба докупити.");
-            reorderConfirmationService.present(user, reorderService.buildScheduledDeltaOrder(user.getId()));
+            reorderConfirmationService.startNow(user);
             return;
         }
         if (incoming instanceof TelegramIncomingUpdate.Text blackout && matches(blackout.text(), "/blackout", "")) {
@@ -256,7 +234,7 @@ public class TelegramRoutingService {
             return;
         }
         if (incoming instanceof TelegramIncomingUpdate.Text text && matches(text.text(), "/calendar", "")) {
-            offerCalendar(user, incoming.chatId());
+            calendarIntegrationService.offerConnection(user);
             return;
         }
         if (incoming instanceof TelegramIncomingUpdate.Text normal && matches(normal.text(), "/normal", "")) {

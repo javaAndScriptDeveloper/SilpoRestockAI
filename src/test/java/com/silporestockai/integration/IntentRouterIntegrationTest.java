@@ -241,6 +241,64 @@ class IntentRouterIntegrationTest extends AbstractIntegrationTest {
                 .isEqualTo(com.silporestockai.model.ConversationFlow.CART_CONFIRMATION);
     }
 
+    private static String classified(String intent) {
+        return "{\"intent\":\"%s\",\"confidence\":0.9,\"themeDescription\":null,\"targetDateTimeIso\":null}"
+                .formatted(intent);
+    }
+
+    /**
+     * The product brief's flow 9 ends with "за командою «я в порядку» агент повертається до звичайного профілю"
+     * — until now only the typed /normal did that. No mode is active here, so SpecialModeService's own
+     * "already normal" answer is what proves the dispatch reached it.
+     */
+    @Test
+    void specialModeEndIntentReachesTheCancelPathFromFreeText() throws Exception {
+        CLAUDE.respondWithText(classified("SPECIAL_MODE_END"));
+
+        sendText(1, "я в порядку, повертай звичайний раціон");
+
+        assertThat(TELEGRAM.sentMessages().getLast().path("text").asText()).contains("Звичайний режим і так активний");
+    }
+
+    /** «Що треба докупити?» does what the typed /reorder does. Nothing is running low, so nothing is ordered. */
+    @Test
+    void reorderIntentStartsADeltaReorderFromFreeText() throws Exception {
+        CLAUDE.respondWithText(classified("REORDER"));
+
+        sendText(1, "що треба докупити?");
+
+        assertThat(TELEGRAM.sentMessages())
+                .anyMatch(message -> message.path("text").asText().contains("Дивлюсь, що треба докупити"));
+        assertThat(TELEGRAM.sentMessages().getLast().path("text").asText()).contains("нічого докуповувати");
+    }
+
+    /**
+     * A concrete edit goes straight to the list builder with the person's sentence, skipping the "Що беремо на
+     * цей тиждень?" opener that would have asked them to say it again.
+     */
+    @Test
+    void listModifyIntentEditsTheListWithoutAskingTheOpeningQuestion() throws Exception {
+        CLAUDE.respondWithTexts(
+                classified("LIST_MODIFY"), "{\"items\":[{\"name\":\"Яйця С1\",\"quantity\":10,\"unit\":\"шт\"}]}");
+
+        sendText(1, "додай яйця до списку");
+
+        assertThat(CLAUDE.callCount()).isEqualTo(2);
+        assertThat(CLAUDE.requests().getLast().toString()).contains("додай яйця до списку");
+        String last = TELEGRAM.sentMessages().getLast().path("text").asText();
+        assertThat(last).contains("Яйця С1").doesNotContain("фото чека");
+    }
+
+    /** No Google credentials in this context, so the honest "not configured" answer proves the dispatch. */
+    @Test
+    void calendarConnectIntentReachesTheGoogleCalendarOffer() throws Exception {
+        CLAUDE.respondWithText(classified("CALENDAR_CONNECT"));
+
+        sendText(1, "підключи гугл календар");
+
+        assertThat(TELEGRAM.sentMessages().getLast().path("text").asText()).contains("Календар зараз не налаштований");
+    }
+
     @Test
     void existingSlashCommandsStillWorkUnchangedWithoutAClassificationCall() throws Exception {
         // The additive-rollout guarantee: /uaonly still reaches SpecialModeService directly, no

@@ -33,17 +33,25 @@ public class IntentRouterService {
     private static final double CONFIDENCE_THRESHOLD = 0.6;
 
     private static final String HELP_TEXT = """
-            Ось що можна написати мені звичайним текстом:
+            Кнопки внизу:
+            📝 Список — поточний список покупок: замовити або змінити.
+            🗓 Заплановані — разові замовлення, які ще не виконав: змінити або скасувати.
+            🧾 Анкета — склад сім'ї, дієта, бюджет.
+            ❓ Інструкція — це повідомлення.
 
-            — «Список» — показати поточний список покупок.
-            — «Закажи до п'ятниці вино та сир по знижці» — разове замовлення на конкретний час.
-            — «Я захворів, гастрит» — тимчасово перемкнутись на щадне харчування.
-            — «Зроби менш калорійним» — зменшити калорійність поточного плану.
-            — «Хочу набрати масу» / «більше протеїну» — почати набір маси.
-            — «Шукай тільки український виробник» — фільтрувати товари за походженням.
-            — «Голова після вчорашнього» — швидке замовлення регідратації й сорбентів.
-            — «Світло вимкнули» — замовлення того, що не потребує плити й холодильника.
-            — «Покажи календар» — раціон по днях тижня.""";
+            Усе інше — просто напиши. Наприклад:
+            — «Замов до п'ятниці вино та сир зі знижкою» — разове замовлення поза тижневим планом.
+            — «Що треба докупити?» — зберу дозамовлення того, що закінчується.
+            — «Прибери молоко зі списку, додай яйця» — правка поточного списку.
+            — «Я захворів, гастрит» — тимчасово щадне харчування, потім сам поверну звичайне.
+            — «Зроби менш калорійним» — той самий раціон, менше калорій.
+            — «Хочу набрати масу» — план під набір маси.
+            — «Повертаємось до звичайного раціону» — вимкнути будь-який спецрежим.
+            — «Шукай тільки українського виробника» — фільтр на всі наступні пошуки.
+            — «Голова після вчорашнього» — мінералка й сорбенти, найближча доставка.
+            — «Світло вимкнули» — їжа без плити й холодильника.
+            — «Що їмо в середу?» — раціон по днях.
+            — «Підключи Google Календар» — вноситиму доставки в календар.""";
 
     private final ClaudeApiClient claudeApiClient;
     private final AdHocScheduleService adHocScheduleService;
@@ -54,6 +62,8 @@ public class IntentRouterService {
     private final ShoppingListService shoppingListService;
     private final ShoppingListBuilderService shoppingListBuilderService;
     private final CalendarViewService calendarViewService;
+    private final CalendarIntegrationService calendarIntegrationService;
+    private final ReorderConfirmationService reorderConfirmationService;
     private final TelegramOutboundService telegramOutboundService;
     private final String systemPrompt;
 
@@ -67,6 +77,8 @@ public class IntentRouterService {
             ShoppingListService shoppingListService,
             ShoppingListBuilderService shoppingListBuilderService,
             CalendarViewService calendarViewService,
+            CalendarIntegrationService calendarIntegrationService,
+            ReorderConfirmationService reorderConfirmationService,
             TelegramOutboundService telegramOutboundService,
             @Value("classpath:prompts/intent-router-system.txt") Resource systemPromptResource) {
         this.claudeApiClient = claudeApiClient;
@@ -78,6 +90,8 @@ public class IntentRouterService {
         this.shoppingListService = shoppingListService;
         this.shoppingListBuilderService = shoppingListBuilderService;
         this.calendarViewService = calendarViewService;
+        this.calendarIntegrationService = calendarIntegrationService;
+        this.reorderConfirmationService = reorderConfirmationService;
         this.telegramOutboundService = telegramOutboundService;
         this.systemPrompt = read(systemPromptResource);
     }
@@ -105,7 +119,12 @@ public class IntentRouterService {
         switch (intent) {
             case AD_HOC_SCHEDULED_PURCHASE -> scheduleAdHoc(user, classified);
             case SPECIAL_MODE_MEDICAL_GASTRITIS -> specialModeService.triggerGastritis(user);
-            case SPECIAL_MODE_LEANER -> adjustPlan(user, "Зроби раціон менш калорійним.");
+            // The person's own sentence goes to the planner, not a paraphrase of it: «мінус 200 ккал на день»
+            // carries a number the plan should respect, and a fixed "make it leaner" would drop it.
+            case SPECIAL_MODE_LEANER ->
+                adjustPlan(user, "Зроби раціон менш калорійним. Людина написала: «" + text + "».");
+            case SPECIAL_MODE_END -> specialModeService.cancel(user);
+            case REORDER -> reorderConfirmationService.startNow(user);
             case SPECIAL_MODE_MASS_GAIN -> {
                 telegramOutboundService.sendMessage(
                         user.getTelegramChatId(),
@@ -120,7 +139,12 @@ public class IntentRouterService {
                 blackoutModeService.buildBlackoutOrder(user);
             }
             case LIST_VIEW -> shoppingListBuilderService.showCurrentOrAsk(user);
+            // Straight into the edit, skipping the "Що беремо на цей тиждень?" opener — the person already
+            // said what to change; asking them to say it again is the failure mode task 31 was built to remove.
+            case LIST_MODIFY ->
+                shoppingListBuilderService.buildAndShow(user, "Поточний список треба змінити так: " + text, null);
             case CALENDAR_VIEW -> calendarViewService.showWeek(user);
+            case CALENDAR_CONNECT -> calendarIntegrationService.offerConnection(user);
             case HELP -> sendHelp(user);
             case UNKNOWN -> askClarifyingQuestion(user);
         }
@@ -149,7 +173,7 @@ public class IntentRouterService {
     private void askClarifyingQuestion(User user) {
         telegramOutboundService.sendMessage(
                 user.getTelegramChatId(),
-                "Не зовсім зрозумів. Напиши, будь ласка, інакше, або напиши «Інструкція», щоб побачити приклади.");
+                "Не зовсім зрозумів. Напиши інакше — або натисни «Інструкція», там приклади того, що я вмію.");
     }
 
     private static IntentType parse(String raw) {
@@ -173,14 +197,18 @@ public class IntentRouterService {
 
     private enum IntentType {
         AD_HOC_SCHEDULED_PURCHASE,
+        REORDER,
         SPECIAL_MODE_MEDICAL_GASTRITIS,
         SPECIAL_MODE_LEANER,
         SPECIAL_MODE_MASS_GAIN,
+        SPECIAL_MODE_END,
         FILTER_UA_PRODUCER_ONLY,
         HANGOVER_RELIEF,
         BLACKOUT,
         LIST_VIEW,
+        LIST_MODIFY,
         CALENDAR_VIEW,
+        CALENDAR_CONNECT,
         HELP,
         UNKNOWN
     }
