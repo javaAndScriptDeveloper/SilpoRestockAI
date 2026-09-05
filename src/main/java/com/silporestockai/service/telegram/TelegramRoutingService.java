@@ -269,6 +269,24 @@ public class TelegramRoutingService {
             intentRouterService.route(user, freeText.text());
             return;
         }
+        if (incoming instanceof TelegramIncomingUpdate.Voice voice) {
+            // The product brief puts text and voice on equal footing ("відповідає текстом або голосовим") — but
+            // outside a check-in a voice note used to get "use the buttons below". It is the same request as the
+            // typed sentence; transcribe it and route it as one.
+            if (!intentRouterService.voiceSupported()) {
+                telegramOutboundService.sendMessage(
+                        incoming.chatId(), "Голосові поки не розбираю. Напиши, будь ласка, текстом.");
+                return;
+            }
+            intentRouterService.routeVoice(user, telegramOutboundService.downloadFile(voice.fileId()));
+            return;
+        }
+        if (incoming instanceof TelegramIncomingUpdate.Photo) {
+            // A photo with no conversation open is a fridge, a shelf or a receipt — exactly what the list builder
+            // asks for when it opens. Build a list from it and show it; nothing is ordered without approval.
+            shoppingListBuilderService.handle(user, incoming);
+            return;
+        }
         telegramOutboundService.sendMessageWithMainMenu(
                 incoming.chatId(), "Скористайся кнопками нижче або напиши, що потрібно.");
     }

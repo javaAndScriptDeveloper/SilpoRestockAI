@@ -1,6 +1,7 @@
 package com.silporestockai.service;
 
 import com.silporestockai.client.claude.ClaudeApiClient;
+import com.silporestockai.client.stt.SpeechToTextClient;
 import com.silporestockai.entity.MealPlan;
 import com.silporestockai.entity.ShoppingListItem;
 import com.silporestockai.entity.User;
@@ -54,6 +55,7 @@ public class IntentRouterService {
             — «Підключи Google Календар» — вноситиму доставки в календар.""";
 
     private final ClaudeApiClient claudeApiClient;
+    private final SpeechToTextClient speechToTextClient;
     private final AdHocScheduleService adHocScheduleService;
     private final AdHocOrderService adHocOrderService;
     private final SpecialModeService specialModeService;
@@ -69,6 +71,7 @@ public class IntentRouterService {
 
     public IntentRouterService(
             ClaudeApiClient claudeApiClient,
+            SpeechToTextClient speechToTextClient,
             AdHocScheduleService adHocScheduleService,
             AdHocOrderService adHocOrderService,
             SpecialModeService specialModeService,
@@ -82,6 +85,7 @@ public class IntentRouterService {
             TelegramOutboundService telegramOutboundService,
             @Value("classpath:prompts/intent-router-system.txt") Resource systemPromptResource) {
         this.claudeApiClient = claudeApiClient;
+        this.speechToTextClient = speechToTextClient;
         this.adHocScheduleService = adHocScheduleService;
         this.adHocOrderService = adHocOrderService;
         this.specialModeService = specialModeService;
@@ -99,6 +103,29 @@ public class IntentRouterService {
     /** The static "❓ Інструкція" content — a persistent-menu button, so it never needs a classification call. */
     public void sendHelp(User user) {
         telegramOutboundService.sendMessage(user.getTelegramChatId(), HELP_TEXT);
+    }
+
+    /** Whether a voice note can be routed at all — decides what the routing layer says to one when it cannot. */
+    public boolean voiceSupported() {
+        return speechToTextClient.isConfigured();
+    }
+
+    /**
+     * A voice note is the same request as the typed sentence — the product brief puts text and voice on equal
+     * footing for every flow, not just check-ins. Transcribe, then route exactly as text. A transcription failure
+     * gets the same clarifying question as an unclassifiable sentence: there is nothing else to do with it.
+     */
+    public void routeVoice(User user, byte[] audio) {
+        String transcript;
+        try {
+            transcript = speechToTextClient.transcribe(audio, "voice.ogg");
+        } catch (RuntimeException e) {
+            log.warn("could not transcribe a voice note for user {}", user.getId(), e);
+            askClarifyingQuestion(user);
+            return;
+        }
+        log.info("voice note from user {} transcribed, routing as text", user.getId());
+        route(user, transcript);
     }
 
     public void route(User user, String text) {

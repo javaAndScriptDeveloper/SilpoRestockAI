@@ -15,6 +15,7 @@ import com.silporestockai.repository.UserRepository;
 import com.silporestockai.service.UserAccountService;
 import com.silporestockai.support.StubAnthropicServer;
 import com.silporestockai.support.StubMcpServer;
+import com.silporestockai.support.StubSttServer;
 import com.silporestockai.support.StubTelegramServer;
 import com.silporestockai.utils.TokenCipher;
 import java.io.IOException;
@@ -39,6 +40,7 @@ class IntentRouterIntegrationTest extends AbstractIntegrationTest {
     private static final StubTelegramServer TELEGRAM = startTelegram();
     private static final StubMcpServer MCP = startMcp();
     private static final StubAnthropicServer CLAUDE = startClaude();
+    private static final StubSttServer STT = startStt();
 
     @Autowired
     private MockMvc mockMvc;
@@ -96,6 +98,14 @@ class IntentRouterIntegrationTest extends AbstractIntegrationTest {
         }
     }
 
+    private static StubSttServer startStt() {
+        try {
+            return new StubSttServer();
+        } catch (IOException e) {
+            throw new IllegalStateException("could not start the STT stub", e);
+        }
+    }
+
     @DynamicPropertySource
     static void stubs(DynamicPropertyRegistry registry) {
         registry.add("telegram.bot-token", () -> BOT_TOKEN);
@@ -103,6 +113,8 @@ class IntentRouterIntegrationTest extends AbstractIntegrationTest {
         registry.add("silpo.mcp.endpoint", MCP::endpoint);
         registry.add("claude.api-key", () -> "sk-ant-stub-key");
         registry.add("claude.base-url", CLAUDE::baseUrl);
+        registry.add("stt.api-key", () -> "stub-stt-key");
+        registry.add("stt.endpoint", STT::endpoint);
     }
 
     @AfterAll
@@ -110,6 +122,7 @@ class IntentRouterIntegrationTest extends AbstractIntegrationTest {
         TELEGRAM.close();
         MCP.close();
         CLAUDE.close();
+        STT.close();
     }
 
     @BeforeEach
@@ -239,6 +252,54 @@ class IntentRouterIntegrationTest extends AbstractIntegrationTest {
                         .orElseThrow()
                         .getCurrentFlow())
                 .isEqualTo(com.silporestockai.model.ConversationFlow.CART_CONFIRMATION);
+    }
+
+    private void sendVoice(int updateId) throws Exception {
+        mockMvc.perform(post("/telegram/webhook")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"update_id":%d,"message":{"message_id":%d,"date":1,\
+                                "chat":{"id":%d,"type":"private"},"from":{"id":5,"is_bot":false,"first_name":"Тест"},\
+                                "voice":{"file_id":"voice-1","file_unique_id":"u1","duration":4,\
+                                "mime_type":"audio/ogg"}}}""".formatted(updateId, updateId, CHAT_ID)))
+                .andExpect(status().isOk());
+    }
+
+    private void sendPhoto(int updateId) throws Exception {
+        mockMvc.perform(post("/telegram/webhook")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"update_id":%d,"message":{"message_id":%d,"date":1,\
+                                "chat":{"id":%d,"type":"private"},"from":{"id":5,"is_bot":false,"first_name":"Тест"},\
+                                "photo":[{"file_id":"photo-1","file_unique_id":"p1","width":90,"height":90}]}}""".formatted(updateId, updateId, CHAT_ID)))
+                .andExpect(status().isOk());
+    }
+
+    /** A voice note outside any flow is the same request as the typed sentence: transcribed, then classified. */
+    @Test
+    void aVoiceNoteOutsideAnyFlowIsTranscribedAndRoutedLikeText() throws Exception {
+        STT.respondWith("що ти вмієш");
+        CLAUDE.respondWithText(classified("HELP"));
+
+        sendVoice(1);
+
+        assertThat(CLAUDE.callCount()).isEqualTo(1);
+        assertThat(TELEGRAM.sentMessages().getLast().path("text").asText()).contains("Кнопки внизу");
+    }
+
+    /** A photo with no conversation open opens the list builder with it — a fridge, a shelf, a receipt. */
+    @Test
+    void aPhotoOutsideAnyFlowBuildsAListFromIt() throws Exception {
+        CLAUDE.respondWithText("{\"items\":[{\"name\":\"Молоко 2.5%\",\"quantity\":2,\"unit\":\"л\"}]}");
+
+        sendPhoto(1);
+
+        assertThat(TELEGRAM.sentMessages().getLast().path("text").asText()).contains("Молоко 2.5%");
+        assertThat(conversationStateRepository
+                        .findById(user.getTelegramChatId())
+                        .orElseThrow()
+                        .getCurrentFlow())
+                .isEqualTo(com.silporestockai.model.ConversationFlow.LIST_BUILDING);
     }
 
     private static String classified(String intent) {
