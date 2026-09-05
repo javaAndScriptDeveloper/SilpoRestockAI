@@ -212,7 +212,7 @@ claude:
   # Cheap and fast, for calls with no judgement call to make — today, only rewriting a message for speech.
   # A call on every outbound message once a chat turns /voice on must not cost what a meal plan costs.
   fast-model: ${ANTHROPIC_FAST_MODEL:claude-haiku-4-5-20251001}
-  max-tokens: ${ANTHROPIC_MAX_TOKENS:4096}
+  max-tokens: ${ANTHROPIC_MAX_TOKENS:8192}
   # Meal plan generation is a long call; keep this well above a normal HTTP timeout.
   timeout: ${ANTHROPIC_TIMEOUT:120s}
   # Overridden by tests to point the SDK at a local stub. Not a production knob.

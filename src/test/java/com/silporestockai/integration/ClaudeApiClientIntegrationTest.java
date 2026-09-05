@@ -62,7 +62,7 @@ class ClaudeApiClientIntegrationTest extends AbstractIntegrationTest {
         assertThat(answer).isEqualTo("сир, молоко, хліб");
         var request = STUB.requests().getFirst();
         assertThat(request.path("model").asText()).isEqualTo("claude-sonnet-5");
-        assertThat(request.path("max_tokens").asInt()).isEqualTo(4096);
+        assertThat(request.path("max_tokens").asInt()).isEqualTo(8192);
         assertThat(request.path("system").asText()).contains("Ти помічник із закупів.");
         assertThat(request.path("messages").get(0).path("role").asText()).isEqualTo("user");
     }
