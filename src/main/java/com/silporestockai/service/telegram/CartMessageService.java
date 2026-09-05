@@ -3,6 +3,7 @@ package com.silporestockai.service.telegram;
 import com.silporestockai.model.BasketItem;
 import com.silporestockai.model.CartSummary;
 import com.silporestockai.model.OfferedSlot;
+import com.silporestockai.model.OrderType;
 import com.silporestockai.model.TelegramButton;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -29,9 +30,16 @@ public class CartMessageService {
     public static final String CALLBACK_SLOT_PREFIX = "cart:slot:";
     public static final String CALLBACK_CANCEL = "cart:cancel";
 
-    /** The cart itself: what is in it, what could not be found, what Silpo warned about, what it costs. */
-    public String cartText(CartSummary summary, OfferedSlot slot) {
-        StringBuilder text = new StringBuilder("Зібрав кошик на тиждень:\n");
+    /**
+     * The cart itself: what is in it, what could not be found, what Silpo warned about, what it costs.
+     *
+     * <p>The opening line depends on what kind of order this is. A blackout lunch or a Friday-night snack cart is
+     * not "на тиждень", and a household reading that over an emergency lunch would rightly wonder what happened
+     * to their week.
+     */
+    public String cartText(CartSummary summary, OfferedSlot slot, OrderType type) {
+        StringBuilder text =
+                new StringBuilder(type == OrderType.AD_HOC ? "Зібрав кошик:\n" : "Зібрав кошик на тиждень:\n");
         for (BasketItem item : summary.items()) {
             text.append("\n— ").append(item.name());
             if (item.quantity() != null) {
@@ -94,10 +102,22 @@ public class CartMessageService {
         return buttons;
     }
 
-    /** Said once the order is stored. Payment is Silpo's page, not ours — there is no MCP payment tool. */
-    public String confirmedText(CartSummary summary, boolean bonusesApplied) {
-        StringBuilder text = new StringBuilder("Підтвердив. Зберіг цей кошик як еталонний набір — далі буду ")
-                .append("порівнювати з ним, коли питатиму, що закінчилось.");
+    /**
+     * Said once the order is stored. Payment is Silpo's page, not ours — there is no MCP payment tool.
+     *
+     * <p>Only an {@link OrderType#INITIAL} order becomes the baseline ({@code CartConfirmationService.confirm}), so
+     * only that one may say so. Every other order used to make the same claim, which was simply untrue — and a
+     * person who then reported «шпроти закінчились» at the next check-in would have been told the bot didn't know
+     * that item.
+     */
+    public String confirmedText(CartSummary summary, boolean bonusesApplied, OrderType type) {
+        StringBuilder text = new StringBuilder("Підтвердив. ");
+        if (type == OrderType.INITIAL) {
+            text.append("Зберіг цей кошик як еталонний набір — далі буду порівнювати з ним, коли питатиму, ")
+                    .append("що закінчилось.");
+        } else {
+            text.append("Еталонний набір лишаю як був.");
+        }
         if (bonusesApplied) {
             text.append("\nСписав бонусів: ")
                     .append(amount(summary.bonusAvailable()))

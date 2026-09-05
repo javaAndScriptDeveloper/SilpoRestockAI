@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.silporestockai.model.BasketItem;
 import com.silporestockai.model.CartSummary;
 import com.silporestockai.model.OfferedSlot;
+import com.silporestockai.model.OrderType;
 import com.silporestockai.model.TelegramButton;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -49,7 +50,7 @@ class CartMessageServiceTest {
 
     @Test
     void listsEveryItemWithItsQuantityAndTheTotal() {
-        String text = service.cartText(twoItems(), SLOT);
+        String text = service.cartText(twoItems(), SLOT, OrderType.INITIAL);
 
         assertThat(text)
                 .contains("Цибуля")
@@ -62,8 +63,10 @@ class CartMessageServiceTest {
 
     @Test
     void mentionsTheDeliverySlotOrSaysNoneIsChosenYet() {
-        assertThat(service.cartText(twoItems(), SLOT)).contains("Доставка:").contains("18:00 - 20:00");
-        assertThat(service.cartText(twoItems(), null)).contains("слот ще не обрано");
+        assertThat(service.cartText(twoItems(), SLOT, OrderType.INITIAL))
+                .contains("Доставка:")
+                .contains("18:00 - 20:00");
+        assertThat(service.cartText(twoItems(), null, OrderType.INITIAL)).contains("слот ще не обрано");
     }
 
     @Test
@@ -71,7 +74,7 @@ class CartMessageServiceTest {
         CartSummary cart = summary(
                 twoItems().items(), new BigDecimal("73.5"), BigDecimal.ZERO, false, List.of("трюфелі", "хамон"));
 
-        assertThat(service.cartText(cart, SLOT))
+        assertThat(service.cartText(cart, SLOT, OrderType.INITIAL))
                 .contains("Не знайшов")
                 .contains("трюфелі")
                 .contains("хамон");
@@ -117,8 +120,29 @@ class CartMessageServiceTest {
     void theClosingMessageSaysWhereToPayAndWhetherBonusesWereSpent() {
         CartSummary cart = summary(twoItems().items(), new BigDecimal("73.5"), new BigDecimal("120"), true, List.of());
 
-        assertThat(service.confirmedText(cart, true)).contains("120").contains("https://silpo.ua/checkout/cart-1");
-        assertThat(service.confirmedText(cart, false)).doesNotContain("Списав бонусів");
+        assertThat(service.confirmedText(cart, true, OrderType.INITIAL))
+                .contains("120")
+                .contains("https://silpo.ua/checkout/cart-1");
+        assertThat(service.confirmedText(cart, false, OrderType.INITIAL)).doesNotContain("Списав бонусів");
+    }
+
+    @Test
+    void onlyTheFirstOrderClaimsToHaveBecomeTheBaseline() {
+        CartSummary cart = twoItems();
+
+        // CartConfirmationService.confirm stores a baseline for INITIAL only; the wording must not promise more.
+        assertThat(service.confirmedText(cart, false, OrderType.INITIAL)).contains("еталонний набір");
+        assertThat(service.confirmedText(cart, false, OrderType.AD_HOC))
+                .doesNotContain("Зберіг цей кошик як еталонний")
+                .contains("лишаю як був");
+    }
+
+    @Test
+    void anAdHocCartIsNotCalledAWeeklyOne() {
+        assertThat(service.cartText(twoItems(), SLOT, OrderType.INITIAL)).startsWith("Зібрав кошик на тиждень");
+        assertThat(service.cartText(twoItems(), SLOT, OrderType.AD_HOC))
+                .startsWith("Зібрав кошик:")
+                .doesNotContain("на тиждень");
     }
 
     @Test
@@ -149,7 +173,7 @@ class CartMessageServiceTest {
                 false,
                 List.of());
 
-        assertThat(service.cartText(cart, SLOT)).contains("Молоко");
+        assertThat(service.cartText(cart, SLOT, OrderType.INITIAL)).contains("Молоко");
         assertThat(service.checkoutButtons(summary(List.of(), BigDecimal.ZERO, BigDecimal.ZERO, false, List.of())))
                 .isNotNull();
     }

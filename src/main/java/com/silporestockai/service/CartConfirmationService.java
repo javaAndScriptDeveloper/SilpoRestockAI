@@ -136,7 +136,7 @@ public class CartConfirmationService {
 
         telegramOutboundService.sendMessageWithButtons(
                 chatId,
-                cartMessageService.cartText(summary, selectedSlot),
+                cartMessageService.cartText(summary, selectedSlot, type),
                 cartMessageService.cartButtons(summary, !slots.isEmpty()));
         log.info("presented cart {} as draft order {} to user {}", summary.cartId(), order.getId(), user.getId());
     }
@@ -179,7 +179,7 @@ public class CartConfirmationService {
             telegramOutboundService.sendMessageWithButtons(
                     tap.chatId(), cartMessageService.slotMenuText(), cartMessageService.slotButtons(slotsOf(state)));
         } else if (data.startsWith(CartMessageService.CALLBACK_SLOT_PREFIX)) {
-            pickSlot(user, state, summary, data.substring(CartMessageService.CALLBACK_SLOT_PREFIX.length()));
+            pickSlot(user, state, order, summary, data.substring(CartMessageService.CALLBACK_SLOT_PREFIX.length()));
         } else if (CartMessageService.CALLBACK_CANCEL.equals(data)) {
             cancel(user, order);
         } else {
@@ -187,7 +187,8 @@ public class CartConfirmationService {
         }
     }
 
-    private void pickSlot(User user, ConversationState state, CartSummary summary, String indexRaw) {
+    private void pickSlot(
+            User user, ConversationState state, CustomerOrder order, CartSummary summary, String indexRaw) {
         List<OfferedSlot> slots = slotsOf(state);
         int index;
         try {
@@ -204,7 +205,7 @@ public class CartConfirmationService {
                 user.getTelegramChatId(), ConversationFlow.CART_CONFIRMATION, STEP_AWAITING_DECISION, context);
         telegramOutboundService.sendMessageWithButtons(
                 user.getTelegramChatId(),
-                cartMessageService.cartText(summary, slots.get(index)),
+                cartMessageService.cartText(summary, slots.get(index), order.getType()),
                 cartMessageService.cartButtons(summary, !slots.isEmpty()));
     }
 
@@ -250,7 +251,7 @@ public class CartConfirmationService {
         }
         telegramOutboundService.sendMessageWithButtons(
                 chatId,
-                cartMessageService.confirmedText(summary, bonusesApplied),
+                cartMessageService.confirmedText(summary, bonusesApplied, order.getType()),
                 cartMessageService.checkoutButtons(summary));
         log.info("order {} confirmed for user {}, bonuses applied: {}", order.getId(), user.getId(), bonusesApplied);
     }
