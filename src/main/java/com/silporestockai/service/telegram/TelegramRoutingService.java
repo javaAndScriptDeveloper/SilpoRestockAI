@@ -58,6 +58,7 @@ public class TelegramRoutingService {
     private final SpecialModeService specialModeService;
     private final IntentRouterService intentRouterService;
     private final CalendarViewService calendarViewService;
+    private final TelegramFailureRecoveryService failureRecoveryService;
 
     /**
      * Off the webhook thread on purpose. A fridge photo means a vision call — the slowest and most expensive kind
@@ -68,7 +69,20 @@ public class TelegramRoutingService {
      */
     @Async("applicationTaskExecutor")
     public void route(Update update) {
-        toIncoming(update).ifPresentOrElse(this::handle, () -> log.debug("ignoring unsupported Telegram update"));
+        toIncoming(update)
+                .ifPresentOrElse(
+                        incoming -> {
+                            try {
+                                handle(incoming);
+                            } catch (RuntimeException e) {
+                                // This method runs @Async: nothing above it ever sees this exception, so
+                                // without this catch it would be silently logged by Spring's default
+                                // async-uncaught-exception handler and the chat would just go quiet
+                                // (task 26). See TelegramFailureRecoveryService's own javadoc.
+                                failureRecoveryService.recover(incoming.chatId(), e);
+                            }
+                        },
+                        () -> log.debug("ignoring unsupported Telegram update"));
     }
 
     /**
