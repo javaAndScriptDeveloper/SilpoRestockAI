@@ -241,6 +241,10 @@ public class TelegramRoutingService {
             specialModeService.startMassGainSetup(user);
             return;
         }
+        if (incoming instanceof TelegramIncomingUpdate.ButtonTap tap && tap.data().startsWith("sched:")) {
+            scheduledTaskManagementService.handleButtonTap(user, tap);
+            return;
+        }
         if (incoming instanceof TelegramIncomingUpdate.ButtonTap tap
                 && tap.data().startsWith(CalendarViewService.CALLBACK_DAY_PREFIX)) {
             // Stateless by design: the day-selector keyboard works from any conversation state, and every tap

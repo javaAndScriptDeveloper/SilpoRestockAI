@@ -209,4 +209,31 @@ class ScheduledTaskManagementIntegrationTest extends AbstractIntegrationTest {
         assertThat(row.get(1).path("text").asText()).isEqualTo("Скасувати");
         assertThat(row.get(1).path("callback_data").asText()).isEqualTo("sched:cancel:" + task.getId());
     }
+
+    @Test
+    void cancellingSetsStatusAndTheSweepNeverFiresIt() throws Exception {
+        UUID userId = onboardedUser();
+        ScheduledAdHocTask task = pendingTask(userId, "сир на вечір", Instant.now().minusSeconds(60));
+
+        tapButton(1, "sched:cancel:" + task.getId());
+
+        assertThat(lastMessageText()).contains("Скасовано").contains("сир на вечір");
+        assertThat(scheduledAdHocTaskRepository.findById(task.getId()).orElseThrow().getStatus())
+                .isEqualTo(ScheduledAdHocTaskStatus.CANCELLED);
+
+        int fired = adHocScheduleService.sweepDue();
+        assertThat(fired).isZero();
+    }
+
+    @Test
+    void cancellingAnAlreadyFiredTaskSaysSoInsteadOfCrashing() throws Exception {
+        UUID userId = onboardedUser();
+        ScheduledAdHocTask task = pendingTask(userId, "щось", Instant.now().minusSeconds(60));
+        task.setStatus(ScheduledAdHocTaskStatus.FIRED);
+        scheduledAdHocTaskRepository.save(task);
+
+        tapButton(1, "sched:cancel:" + task.getId());
+
+        assertThat(lastMessageText()).contains("вже неактуальне");
+    }
 }

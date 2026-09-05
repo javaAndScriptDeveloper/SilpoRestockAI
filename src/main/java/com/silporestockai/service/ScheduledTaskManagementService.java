@@ -4,12 +4,15 @@ import com.silporestockai.entity.ScheduledAdHocTask;
 import com.silporestockai.entity.User;
 import com.silporestockai.model.ScheduledAdHocTaskStatus;
 import com.silporestockai.model.TelegramButton;
+import com.silporestockai.model.TelegramIncomingUpdate;
 import com.silporestockai.repository.ScheduledAdHocTaskRepository;
 import com.silporestockai.service.telegram.TelegramOutboundService;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -28,6 +31,9 @@ public class ScheduledTaskManagementService {
     // JVM default locale cannot be trusted here.
     private static final DateTimeFormatter DISPLAY = DateTimeFormatter.ofPattern("d MMMM, HH:mm", Locale.forLanguageTag("uk"))
             .withZone(ZoneId.of("Europe/Kyiv"));
+
+    private static final String PREFIX_EDIT = "sched:edit:";
+    private static final String PREFIX_CANCEL = "sched:cancel:";
 
     private final ScheduledAdHocTaskRepository scheduledAdHocTaskRepository;
     private final TelegramOutboundService telegramOutboundService;
@@ -49,5 +55,31 @@ public class ScheduledTaskManagementService {
                             TelegramButton.callback("Редагувати", "sched:edit:" + task.getId()),
                             TelegramButton.callback("Скасувати", "sched:cancel:" + task.getId())));
         }
+    }
+
+    public void handleButtonTap(User user, TelegramIncomingUpdate.ButtonTap tap) {
+        telegramOutboundService.answerCallback(tap.callbackQueryId());
+        long chatId = user.getTelegramChatId();
+        if (tap.data().startsWith(PREFIX_CANCEL)) {
+            UUID taskId = UUID.fromString(tap.data().substring(PREFIX_CANCEL.length()));
+            Optional<ScheduledAdHocTask> task = pendingTaskOwnedBy(user, taskId);
+            if (task.isEmpty()) {
+                telegramOutboundService.sendMessage(chatId, "Це замовлення вже неактуальне.");
+                return;
+            }
+            task.get().setStatus(ScheduledAdHocTaskStatus.CANCELLED);
+            scheduledAdHocTaskRepository.save(task.get());
+            telegramOutboundService.sendMessage(chatId, "Скасовано: " + task.get().getThemeDescription() + ".");
+            return;
+        }
+        log.debug("ignoring unrecognised scheduled-task callback {} for user {}", tap.data(), user.getId());
+    }
+
+    /** {@code Optional.empty()} covers both "no such task" and "not PENDING any more" — both mean the same thing to the user. */
+    private Optional<ScheduledAdHocTask> pendingTaskOwnedBy(User user, UUID taskId) {
+        return scheduledAdHocTaskRepository
+                .findById(taskId)
+                .filter(task -> task.getUserId().equals(user.getId()))
+                .filter(task -> task.getStatus() == ScheduledAdHocTaskStatus.PENDING);
     }
 }
