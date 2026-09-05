@@ -18,5 +18,7 @@ public enum ConversationFlow {
     /** Building a shopping list from a photo, a receipt or a description, and getting it approved. */
     LIST_BUILDING,
     /** Collecting mass-gain parameters (weight, calorie/protein target) before generating that plan. */
-    SPECIAL_MODE_SETUP
+    SPECIAL_MODE_SETUP,
+    /** The Анкета button reopens the profile form after onboarding; awaiting its resubmission or a regenerate confirm. */
+    PROFILE_REEDIT
 }

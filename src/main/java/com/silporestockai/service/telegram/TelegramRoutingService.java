@@ -186,9 +186,18 @@ public class TelegramRoutingService {
             specialModeService.handle(user, incoming);
             return;
         }
+        if (flow == ConversationFlow.PROFILE_REEDIT) {
+            onboardingFlowService.handleReedit(user, incoming);
+            return;
+        }
         if (incoming instanceof TelegramIncomingUpdate.Text list
                 && matches(list.text(), "/list", MainMenuKeyboard.LIST)) {
             shoppingListBuilderService.askForInput(user);
+            return;
+        }
+        if (incoming instanceof TelegramIncomingUpdate.Text form
+                && matches(form.text(), "/anketa", MainMenuKeyboard.FORM)) {
+            onboardingFlowService.reopenForm(user);
             return;
         }
         if (incoming instanceof TelegramIncomingUpdate.Text voice && matches(voice.text(), "/voice", "")) {

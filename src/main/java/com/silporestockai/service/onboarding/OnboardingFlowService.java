@@ -145,6 +145,18 @@ public class OnboardingFlowService {
         return userProfileRepository.findByUserId(userId).isPresent();
     }
 
+    /** Placeholder — replaced with the real prefill-and-send logic in a later task. */
+    public void reopenForm(User user) {
+        conversationStateService.save(
+                user.getTelegramChatId(), ConversationFlow.PROFILE_REEDIT, "AWAITING_FORM", Map.of());
+        telegramOutboundService.sendMessage(user.getTelegramChatId(), "Відкриваю анкету.");
+    }
+
+    /** Placeholder — replaced with the real form-resubmission/confirm handling in later tasks. */
+    public void handleReedit(User user, TelegramIncomingUpdate incoming) {
+        telegramOutboundService.sendMessage(user.getTelegramChatId(), "TODO");
+    }
+
     public void handle(User user, TelegramIncomingUpdate incoming) {
         long chatId = incoming.chatId();
         ConversationState state = conversationStateService.load(chatId);
