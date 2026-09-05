@@ -436,6 +436,19 @@ of task 33 is explicitly a live-chat check:
 | Tap «Редагувати» on another task, reply with a new theme | "Оновлено: ..." with the new theme, trigger time unchanged |
 | Tap «Скасувати» on a pending task | "Скасовано: ...", and it never fires (wait past its original trigger time, or shorten the sweep interval per this runbook's demo-prep steps, and confirm no order shows up) |
 
+### Task 34: verify the delivery-slot picker end-to-end
+
+Task 34's Notion page was empty when this was built — see `docs/OVERNIGHT_QUESTIONS.md`'s "Task 34" entry
+for the scoping reasoning. Nothing here has automated coverage of Silpo's *own* checkout page, only this
+bot's side of the conversation:
+
+| Do this | Expect |
+|---|---|
+| Get a cart to the confirmation step | The message now includes a "Доставка: ..." line naming a real time window |
+| Tap «Інший час» | A menu of the other windows Silpo is currently offering for that branch |
+| Pick a different one, then tap «Підтвердити» | Confirmation text unchanged in shape, but the delivery slot booked with Silpo is the one just picked — open the checkout link and confirm the window shown there matches |
+| Tap «Підтвердити» without ever opening «Інший час» | Works exactly as before task 34 — no extra Silpo call, no behavior change |
+
 ---
 
 ## 8. The scheduled check-in
