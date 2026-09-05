@@ -134,7 +134,7 @@ public class MealPlanService {
                 // Zero real candidates means there is nothing for Claude to curate — asking it anyway would just
                 // reproduce the original bug in a new form (an invented dish with no candidate behind it).
                 throw new MealPlanGenerationException(
-                        userId, List.of("Сільпо не має готових страв, які підходять під ваші обмеження цього тижня"));
+                        userId, List.of("Сільпо не має готових страв, які підходять під твої обмеження цього тижня"));
             }
             userPrompt = curationPrompt(profile, adjustment, untouched, candidates);
         } else {

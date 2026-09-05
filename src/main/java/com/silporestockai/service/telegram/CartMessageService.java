@@ -55,13 +55,13 @@ public class CartMessageService {
         if (!summary.unresolved().isEmpty()) {
             text.append("\n\nНе знайшов: ")
                     .append(String.join(", ", summary.unresolved()))
-                    .append(" — можете додати вручну пізніше.");
+                    .append(" — можеш додати вручну пізніше.");
         }
         for (String validation : summary.validations()) {
             text.append("\n⚠ ").append(validation);
         }
         text.append("\n\nРазом: ").append(money(summary.total())).append(" грн");
-        text.append("\n\nДоставка: ").append(slot == null ? "слот ще не обрано" : slot.label());
+        text.append("\n\nДоставка: ").append(slot == null ? "час ще не обрано" : slot.label());
         if (summary.bonusDecisionPending()) {
             text.append("\nНа рахунку ")
                     .append(amount(summary.bonusAvailable()))

@@ -155,7 +155,10 @@ public class IntentRouterService {
             case SPECIAL_MODE_MASS_GAIN -> {
                 telegramOutboundService.sendMessage(
                         user.getTelegramChatId(),
-                        "До речі, для набору маси часто беруть протеїн або гейнер — можу підказати, якщо цікаво.");
+                        // Not "можу підказати, якщо цікаво" — nothing handled "цікаво", so the offer was a dead
+                        // end. LIST_MODIFY does handle «додай протеїн», so point there.
+                        "Під набір маси часто беруть протеїн або гейнер. Коли список буде готовий, напиши "
+                                + "«додай протеїн» — додам.");
                 specialModeService.startMassGainSetup(user);
             }
             case FILTER_UA_PRODUCER_ONLY -> specialModeService.toggleUaOnly(user);

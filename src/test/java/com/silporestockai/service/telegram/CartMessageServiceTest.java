@@ -66,7 +66,7 @@ class CartMessageServiceTest {
         assertThat(service.cartText(twoItems(), SLOT, OrderType.INITIAL))
                 .contains("Доставка:")
                 .contains("18:00 - 20:00");
-        assertThat(service.cartText(twoItems(), null, OrderType.INITIAL)).contains("слот ще не обрано");
+        assertThat(service.cartText(twoItems(), null, OrderType.INITIAL)).contains("час ще не обрано");
     }
 
     @Test

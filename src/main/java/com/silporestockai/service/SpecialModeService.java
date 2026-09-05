@@ -54,7 +54,7 @@ public class SpecialModeService {
         if (isActive(profile)) {
             telegramOutboundService.sendMessage(
                     user.getTelegramChatId(),
-                    "У вас вже активний інший режим харчування. Спершу завершіть його: /normal.");
+                    "У тебе вже активний інший режим харчування. Спершу заверши його — напиши «повертаємось до звичайного раціону».");
             return;
         }
         Instant now = clock.instant();
@@ -80,7 +80,7 @@ public class SpecialModeService {
         if (isActive(profile)) {
             telegramOutboundService.sendMessage(
                     user.getTelegramChatId(),
-                    "У вас вже активний інший режим харчування. Спершу завершіть його: /normal.");
+                    "У тебе вже активний інший режим харчування. Спершу заверши його — напиши «повертаємось до звичайного раціону».");
             return;
         }
         conversationStateService.save(
@@ -119,7 +119,7 @@ public class SpecialModeService {
                 conversationStateService.save(chatId, ConversationFlow.NONE, null, Map.of());
                 finishMassGainSetup(user, context, number.intValue());
             }
-            default -> telegramOutboundService.sendMessage(chatId, "Напиши /masgain, щоб почати заново.");
+            default -> telegramOutboundService.sendMessage(chatId, "Напиши «хочу набрати масу», щоб почати заново.");
         }
     }
 

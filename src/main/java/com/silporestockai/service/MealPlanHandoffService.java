@@ -100,7 +100,7 @@ public class MealPlanHandoffService {
                 && distinctRealProducts(week) < MINIMUM_DISTINCT_READY_MEALS) {
             // Derived from what actually ended up in the plan, not a separate flag from generation — a thin
             // candidate pool and a repetitive week are the same thing in practice.
-            message += "\nЧерез ваші обмеження знайшлось не так багато готових страв, тому деякі повторюються "
+            message += "\nЧерез твої обмеження знайшлось не так багато готових страв, тому деякі повторюються "
                     + "цього тижня.";
         }
         return message;

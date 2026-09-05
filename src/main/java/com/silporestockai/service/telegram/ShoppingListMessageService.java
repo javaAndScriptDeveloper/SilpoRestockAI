@@ -182,7 +182,7 @@ public class ShoppingListMessageService {
     }
 
     public String cancelledText() {
-        return "Скасував. Напиши /list, коли будемо збирати список.";
+        return "Скасував. Натисни «Список», коли будемо збирати новий.";
     }
 
     /** «1 позиція», «3 позиції», «12 позицій» — the wrong one reads like a machine wrote it. */

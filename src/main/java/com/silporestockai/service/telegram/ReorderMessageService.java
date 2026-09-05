@@ -67,7 +67,7 @@ public class ReorderMessageService {
                     .append(money(order.estimatedSavings()))
                     .append(" грн.");
         }
-        text.append("\n\nДоставка: ").append(slot == null ? "слот ще не обрано" : slot.label());
+        text.append("\n\nДоставка: ").append(slot == null ? "час ще не обрано" : slot.label());
         return text.toString();
     }
 
@@ -88,7 +88,7 @@ public class ReorderMessageService {
             buttons.add(TelegramButton.callback("Взяти замість «%s»".formatted(name), CALLBACK_ACCEPT_PREFIX + i));
             buttons.add(TelegramButton.callback("Без «%s»".formatted(name), CALLBACK_REJECT_PREFIX + i));
         }
-        buttons.add(TelegramButton.callback("Інший слот", CALLBACK_SLOT_MENU));
+        buttons.add(TelegramButton.callback("Інший час", CALLBACK_SLOT_MENU));
         buttons.add(TelegramButton.callback("Підтвердити", CALLBACK_CONFIRM));
         buttons.add(TelegramButton.callback("Скасувати", CALLBACK_CANCEL));
         return buttons;
@@ -119,10 +119,10 @@ public class ReorderMessageService {
                     .append(" грн.");
         }
         if (!slotFixed) {
-            text.append("\nСлот доставки зафіксувати не вдалось — оберіть його на сторінці оформлення.");
+            text.append("\nЧас доставки зафіксувати не вдалось — обери його на сторінці оформлення.");
         }
         if (baselineUpdated) {
-            text.append("\nВаші правки врахував — далі орієнтуюсь на цей набір.");
+            text.append("\nТвої правки врахував — далі орієнтуюсь на цей набір.");
         }
         text.append("\n\nОплата — на боці «Сільпо».");
         text.append(cartMessageService.checkoutFallbackLine(cart));

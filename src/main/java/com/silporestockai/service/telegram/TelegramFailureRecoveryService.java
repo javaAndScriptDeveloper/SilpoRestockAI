@@ -31,7 +31,7 @@ public class TelegramFailureRecoveryService {
 
     /**
      * Logs the full exception for debugging, resets the chat's conversation state so the next message is
-     * never a dead end, and tells the user — in friendly Ukrainian, never a stack trace — what happened.
+     * never a dead end, and tells the user — in the same informal «ти» the rest of the bot speaks, never a stack trace — what happened.
      */
     public void recover(long chatId, RuntimeException e) {
         log.error("unhandled failure while processing an update for chat {}", chatId, e);
@@ -44,11 +44,11 @@ public class TelegramFailureRecoveryService {
         // itself — CartBuildingService raises it directly when a Silpo tool answers with its own error payload
         // rather than a transport failure — but it is exactly as much "Сільпо" as a network-level one is.
         if (e instanceof SilpoMcpException || e instanceof CartBuildException) {
-            return "Сільпо тимчасово не відповідає, спробуйте за хвилину.";
+            return "«Сільпо» тимчасово не відповідає — спробуй за хвилину.";
         }
         if (e instanceof ClaudeApiException) {
-            return "Не вдалось згенерувати відповідь, спробуйте ще раз.";
+            return "Не вдалось згенерувати відповідь — спробуй ще раз.";
         }
-        return "Щось пішло не так. Спробуйте ще раз або напишіть /start.";
+        return "Щось пішло не так. Спробуй ще раз або напиши /start.";
     }
 }
