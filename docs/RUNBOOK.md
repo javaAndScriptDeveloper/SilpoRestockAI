@@ -330,6 +330,23 @@ SELECT count(*) FROM baseline_basket;                            -- still 1
 > order](#redo-the-first-order)) and tap «Скасувати». The order goes to `CANCELLED` and no baseline row
 > appears.
 
+### Task 27: verify the Silpo-brand redesign live, and cross-check the color
+
+`--silpo-primary` (`#FF8200`) is verified from the logo SVG only — the live `silpo.ua` site's own computed
+CSS could not be reached this session (Cloudflare bot challenge blocked `curl`; the Chrome browser tool
+was disconnected all night). Before treating this redesign as final:
+
+1. Open `silpo.ua` in a real browser, inspect a primary button/highlight with devtools, and confirm its
+   computed color matches (or note the discrepancy — the task's own instructions say prefer the live shop
+   app's color if the two disagree).
+2. Open the onboarding form (`/webapp/onboarding.html`) in Telegram, at a narrow (~360px) width, in both
+   light and dark Telegram themes — same check as task 23, now with the chips/segmented controls added.
+3. Confirm the chips (restrictions) and segmented diet-type control read clearly against both themes —
+   `--silpo-primary` is a fixed orange regardless of theme, so check it doesn't clash in dark mode.
+4. Run a full onboarding through the form and confirm the submitted profile still gets the same fields as
+   before this redesign (the JSON payload shape is unchanged by inspection, but this is the real proof).
+5. Take before/after screenshots for the PR/demo record.
+
 ### Task 28: verify the checkout link actually completes a real purchase
 
 This is the one step in this runbook that cannot be automated — it needs a real Silpo guest account, a
