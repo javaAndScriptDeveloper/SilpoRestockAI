@@ -424,6 +424,18 @@ onboarding finishes, and:
 `docs/superpowers/plans/2026-09-05-profile-reedit.md`; the prefill's *browser-side* field population has no
 automated test — see that plan's Task 5 — so this table is the only verification of it).
 
+### Task 33: verify the Заплановані view end-to-end
+
+The integration tests cover the dispatch logic against a stubbed Claude edit-slot response. Criterion 6
+of task 33 is explicitly a live-chat check:
+
+| Do this | Expect |
+|---|---|
+| Say «закажи до п'ятниці вино та сир по знижці», then tap «🗓 Заплановані» | The scheduled purchase appears with its theme and formatted trigger time, and Редагувати/Скасувати buttons |
+| Tap «Редагувати», reply with a new time (e.g. «перенеси на суботу ввечері») | "Оновлено: ..." with the new time; tapping «🗓 Заплановані» again shows the updated time, not a second row |
+| Tap «Редагувати» on another task, reply with a new theme | "Оновлено: ..." with the new theme, trigger time unchanged |
+| Tap «Скасувати» on a pending task | "Скасовано: ...", and it never fires (wait past its original trigger time, or shorten the sweep interval per this runbook's demo-prep steps, and confirm no order shows up) |
+
 ---
 
 ## 8. The scheduled check-in
