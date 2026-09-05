@@ -242,10 +242,15 @@ class CartConfirmationIntegrationTest extends AbstractIntegrationTest {
         presentedCart();
 
         assertThat(lastMessageText()).contains("Доставка:");
-        var buttons = TELEGRAM.sentMessages().getLast().path("reply_markup").path("inline_keyboard").get(0);
+        var buttons = TELEGRAM.sentMessages()
+                .getLast()
+                .path("reply_markup")
+                .path("inline_keyboard")
+                .get(0);
         boolean hasSlotMenuButton = false;
         for (JsonNode button : buttons) {
-            if (CartMessageService.CALLBACK_SLOT_MENU.equals(button.path("callback_data").asText())) {
+            if (CartMessageService.CALLBACK_SLOT_MENU.equals(
+                    button.path("callback_data").asText())) {
                 hasSlotMenuButton = true;
             }
         }
@@ -257,8 +262,11 @@ class CartConfirmationIntegrationTest extends AbstractIntegrationTest {
         User user = presentedCart();
 
         tapButton(1, CartMessageService.CALLBACK_SLOT_MENU);
-        var slotMenuButtons =
-                TELEGRAM.sentMessages().getLast().path("reply_markup").path("inline_keyboard").get(0);
+        var slotMenuButtons = TELEGRAM.sentMessages()
+                .getLast()
+                .path("reply_markup")
+                .path("inline_keyboard")
+                .get(0);
         assertThat(slotMenuButtons.size()).isEqualTo(2);
 
         tapButton(2, CartMessageService.CALLBACK_SLOT_PREFIX + "1");
@@ -307,6 +315,44 @@ class CartConfirmationIntegrationTest extends AbstractIntegrationTest {
         assertThat(textOf(confirmation)).contains("еталонний набір");
         assertThat(confirmation.toString()).contains("https://silpo.ua/checkout/cart-1");
         assertThat(conversationStateService.load(CHAT_ID).getCurrentFlow()).isEqualTo(ConversationFlow.NONE);
+    }
+
+    @Test
+    void confirmingAfterPickingADifferentSlotBooksItFirst() throws Exception {
+        User user = presentedCart();
+
+        tapButton(1, CartMessageService.CALLBACK_SLOT_MENU);
+        tapButton(2, CartMessageService.CALLBACK_SLOT_PREFIX + "1");
+        tapButton(3, CartMessageService.CALLBACK_CONFIRM);
+
+        assertThat(MCP.calledTools()).contains("silpo_update_shopping_cart");
+        CustomerOrder order = customerOrderRepository
+                .findByUserIdOrderByCreatedAtDesc(user.getId())
+                .getFirst();
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
+        assertThat(order.getDeliverySlot()).isEqualTo("slot-2");
+    }
+
+    @Test
+    void confirmingWithoutChangingTheSlotNeverCallsUpdateForIt() throws Exception {
+        presentedCart();
+
+        tapButton(1, CartMessageService.CALLBACK_CONFIRM);
+
+        assertThat(MCP.calledTools()).doesNotContain("silpo_update_shopping_cart");
+    }
+
+    @Test
+    void aFailedSlotBookingStillLeavesAConfirmedOrder() throws Exception {
+        User user = presentedCart();
+        MCP.failTool("silpo_update_shopping_cart");
+
+        tapButton(1, CartMessageService.CALLBACK_SLOT_MENU);
+        tapButton(2, CartMessageService.CALLBACK_SLOT_PREFIX + "1");
+        tapButton(3, CartMessageService.CALLBACK_CONFIRM);
+
+        assertThat(customerOrderRepository.findByUserIdAndStatus(user.getId(), OrderStatus.CONFIRMED))
+                .hasSize(1);
     }
 
     @Test

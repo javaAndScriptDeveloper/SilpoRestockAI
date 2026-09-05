@@ -129,7 +129,8 @@ public class CartConfirmationService {
         Map<String, Object> context = new LinkedHashMap<>();
         context.put(KEY_ORDER_ID, order.getId().toString());
         context.put(KEY_SUMMARY, asMap(summary));
-        context.put(KEY_SLOTS, slots.stream().map(CartConfirmationService::asMap).toList());
+        context.put(
+                KEY_SLOTS, slots.stream().map(CartConfirmationService::asMap).toList());
         context.put(KEY_SLOT, summary.deliverySlot());
         conversationStateService.save(chatId, ConversationFlow.CART_CONFIRMATION, STEP_AWAITING_DECISION, context);
 
@@ -212,12 +213,20 @@ public class CartConfirmationService {
         if (!(slots instanceof List<?> raw)) {
             return List.of();
         }
-        return raw.stream().map(node -> MAPPER.convertValue(node, OfferedSlot.class)).toList();
+        return raw.stream()
+                .map(node -> MAPPER.convertValue(node, OfferedSlot.class))
+                .toList();
     }
 
     /** Spends the bonuses if asked, stores the order and the baseline, and hands over the checkout link. */
-    private void confirm(User user, CustomerOrder order, ConversationState state, CartSummary summary, boolean spendBonuses) {
+    private void confirm(
+            User user, CustomerOrder order, ConversationState state, CartSummary summary, boolean spendBonuses) {
         long chatId = user.getTelegramChatId();
+        String selectedSlotId = String.valueOf(state.getContext().get(KEY_SLOT));
+        if (!selectedSlotId.equals(summary.deliverySlot())) {
+            bookSlot(user.getId(), summary.cartId(), selectedSlotId);
+            order.setDeliverySlot(selectedSlotId);
+        }
         boolean bonusesApplied = spendBonuses && applyBonuses(user.getId(), summary);
 
         order.setStatus(OrderStatus.CONFIRMED);
@@ -253,6 +262,19 @@ public class CartConfirmationService {
         telegramOutboundService.sendMessage(
                 user.getTelegramChatId(), "Скасував. Скажи, що змінити, і зберу кошик заново.");
         log.info("order {} cancelled by user {}", order.getId(), user.getId());
+    }
+
+    /** A refusal is reported, not fatal: checkout can still fix the delivery window if this call failed. */
+    private void bookSlot(UUID userId, String cartId, String slotId) {
+        try {
+            McpToolResponse response =
+                    silpoMcpClient.callTool(TOOL_UPDATE_CART, Map.of("cartId", cartId, "timeslot", slotId), userId);
+            if (response.isError()) {
+                log.warn("Silpo declined to rebook cart {} onto slot {}", cartId, slotId);
+            }
+        } catch (RuntimeException e) {
+            log.warn("could not rebook cart {} onto slot {}: {}", cartId, slotId, e.getMessage());
+        }
     }
 
     /**
