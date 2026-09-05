@@ -21,6 +21,7 @@ import com.silporestockai.service.ConversationStateService;
 import com.silporestockai.service.SilpoAuthService;
 import com.silporestockai.service.telegram.TelegramOutboundService;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.LinkedHashMap;
@@ -59,8 +60,16 @@ public class OnboardingFlowService {
     public static final String CALLBACK_SKIP = "onb:skip";
     public static final String CALLBACK_CONFIRM = "onb:confirm";
     public static final String CALLBACK_CORRECT = "onb:correct";
+    public static final String CALLBACK_REEDIT_CONFIRM = "reedit:confirm";
+    public static final String CALLBACK_REEDIT_CANCEL = "reedit:cancel";
+    public static final String CANCEL_LABEL = "Скасувати";
 
     private static final String FALLBACK_LABEL = "Заповнити вручну";
+    private static final String REEDIT_STEP_AWAITING_FORM = "AWAITING_FORM";
+    private static final String REEDIT_STEP_AWAITING_CONFIRM = "AWAITING_CONFIRM";
+
+    /** Known chip codes from the WebApp form — anything else in a profile's restrictions is free text. */
+    private static final List<String> RESTRICTION_CHIP_CODES = List.of("nuts", "lactose", "gluten", "seafood");
 
     private static final String KEY_HOUSEHOLD = "householdSize";
     private static final String KEY_HAS_KIDS = "hasKids";
@@ -145,11 +154,62 @@ public class OnboardingFlowService {
         return userProfileRepository.findByUserId(userId).isPresent();
     }
 
-    /** Placeholder — replaced with the real prefill-and-send logic in a later task. */
+    /**
+     * Reopens the profile form after onboarding, pre-filled with the saved answers — task 31's Анкета button.
+     *
+     * <p>Only reachable once a profile exists (see {@link #isOnboarded}), so {@code findByUserId} not finding one
+     * would be a routing bug, not a real state to handle gracefully.
+     */
     public void reopenForm(User user) {
+        if (!telegramProperties.webAppConfigured()) {
+            telegramOutboundService.sendMessage(user.getTelegramChatId(), "Анкета зараз недоступна.");
+            return;
+        }
+        UserProfile profile = userProfileRepository.findByUserId(user.getId()).orElseThrow();
+        String formUrl =
+                telegramProperties.webAppBaseUrl() + "/webapp/onboarding.html?prefill=" + fullPrefillOf(profile);
+        telegramOutboundService.sendMessageWithWebAppButton(
+                user.getTelegramChatId(),
+                "Онови анкету — поточні відповіді вже підставлені.",
+                "Заповнити анкету",
+                formUrl,
+                CANCEL_LABEL);
         conversationStateService.save(
-                user.getTelegramChatId(), ConversationFlow.PROFILE_REEDIT, "AWAITING_FORM", Map.of());
-        telegramOutboundService.sendMessage(user.getTelegramChatId(), "Відкриваю анкету.");
+                user.getTelegramChatId(), ConversationFlow.PROFILE_REEDIT, REEDIT_STEP_AWAITING_FORM, Map.of());
+    }
+
+    private static String fullPrefillOf(UserProfile profile) {
+        try {
+            Map<String, Object> prefill = new LinkedHashMap<>();
+            putIfPresent(prefill, "adultMale", profile.getAdultMaleCount());
+            putIfPresent(prefill, "adultFemale", profile.getAdultFemaleCount());
+            putIfPresent(prefill, "childrenAgeBrackets", profile.getChildrenAgeBrackets());
+            List<String> restrictions = stringListOf(profile.getDietaryRestrictions());
+            if (restrictions != null) {
+                List<String> known =
+                        restrictions.stream().filter(RESTRICTION_CHIP_CODES::contains).toList();
+                List<String> other = restrictions.stream()
+                        .filter(value -> !RESTRICTION_CHIP_CODES.contains(value))
+                        .toList();
+                putIfPresent(prefill, "restrictions", known);
+                if (!other.isEmpty()) {
+                    prefill.put("restrictionsOther", String.join(", ", other));
+                }
+            }
+            if (profile.getDietType() != null) {
+                prefill.put("dietType", profile.getDietType().name());
+            }
+            if (profile.getCookingTimePreference() != null) {
+                prefill.put("cookingTimePreference", profile.getCookingTimePreference().name());
+            }
+            if (profile.getWeeklyBudget() != null) {
+                prefill.put("weeklyBudget", profile.getWeeklyBudget());
+            }
+            String json = MAPPER.writeValueAsString(prefill);
+            return Base64.getUrlEncoder().withoutPadding().encodeToString(json.getBytes(StandardCharsets.UTF_8));
+        } catch (Exception e) {
+            return "";
+        }
     }
 
     /** Placeholder — replaced with the real form-resubmission/confirm handling in later tasks. */
