@@ -149,8 +149,27 @@ public class SilpoAuthService implements SilpoAccessTokenProvider {
             log.info("refreshed the Silpo token for user {}", userId);
             return true;
         } catch (RuntimeException e) {
-            // Message only: the exception may carry the request body, which contains the refresh token.
-            log.warn("failed to refresh the Silpo token for user {}", userId);
+            // Class name (and cause chain) and, for a Feign failure, the HTTP status only — never
+            // e.getMessage()/toString(), which may carry the request body, and the request body contains the
+            // refresh token. A circuit-breaker wrapper (no fallback configured) hides the real exception one
+            // level down in getCause(), so walk the chain rather than inspecting e alone.
+            StringBuilder chain = new StringBuilder();
+            for (Throwable t = e; t != null; t = t.getCause()) {
+                if (!chain.isEmpty()) {
+                    chain.append(" <- ");
+                }
+                chain.append(t.getClass().getName());
+                if (t instanceof feign.FeignException fe) {
+                    // The response body here is Silpo's own OAuth error description (e.g. {"error":"invalid_grant"})
+                    // — never our request, so it carries no secret. Safe to log in full.
+                    chain.append("(status=")
+                            .append(fe.status())
+                            .append(", body=")
+                            .append(fe.contentUTF8())
+                            .append(')');
+                }
+            }
+            log.warn("failed to refresh the Silpo token for user {}: {}", userId, chain);
             return false;
         }
     }
