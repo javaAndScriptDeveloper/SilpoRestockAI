@@ -76,13 +76,13 @@ class TelegramOutboundServiceIntegrationTest extends AbstractIntegrationTest {
     void sendsThePersistentMainMenuKeyboard() {
         telegramOutboundService.sendMessageWithMainMenu(777L, "Записав. Готую перший план на тиждень.");
 
+        // Task 31: the button-per-feature menu is retired in favour of chat-first free text. Exactly three
+        // buttons remain — see MainMenuKeyboard's own javadoc for why the rest still work if typed.
         var keyboard = STUB.sentMessages().getFirst().path("reply_markup").path("keyboard");
-        assertThat(keyboard).hasSize(3);
+        assertThat(keyboard).hasSize(1);
         assertThat(keyboard.get(0).get(0).path("text").asText()).isEqualTo("📝 Список");
-        assertThat(keyboard.get(0).get(1).path("text").asText()).isEqualTo("🔁 Замовити ще");
-        assertThat(keyboard.get(1).get(0).path("text").asText()).isEqualTo("🎙 Голосові");
-        assertThat(keyboard.get(1).get(1).path("text").asText()).isEqualTo("🌙 Блекаут");
-        assertThat(keyboard.get(2).get(0).path("text").asText()).isEqualTo("📅 Календар");
+        assertThat(keyboard.get(0).get(1).path("text").asText()).isEqualTo("🧾 Анкета");
+        assertThat(keyboard.get(0).get(2).path("text").asText()).isEqualTo("❓ Інструкція");
         assertThat(STUB.sentMessages()
                         .getFirst()
                         .path("reply_markup")

@@ -116,6 +116,10 @@ tasks.withType<Test> {
     systemProperty("junit.jupiter.extensions.autodetection.enabled", true)
     systemProperty("file.encoding", "UTF-8")
     finalizedBy(tasks.jacocoTestReport)
+    // Gradle's default test-executor heap (512m) no longer covers this many Spring Boot / Testcontainers
+    // integration tests in one JVM — the executor itself was dying with "Java heap space", not a real
+    // test failure, on an otherwise-green suite.
+    maxHeapSize = "2g"
 }
 
 // Classes with no meaningful branches to cover — excluded from the coverage report and gate.

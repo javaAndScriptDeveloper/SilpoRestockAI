@@ -13,6 +13,7 @@ import com.tngtech.archunit.lang.ArchRule;
 import com.tngtech.archunit.library.Architectures;
 import com.tngtech.archunit.library.GeneralCodingRules;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Service;
 
 /**
  * Architecture rules enforced as tests.
@@ -65,12 +66,16 @@ class ArchitectureTest {
             .should()
             .haveSimpleNameEndingWith("Controller");
 
+    // Scoped to @Service beans, not every class living in a "..service.." package: a service's own private
+    // nested record/enum (a classified-intent shape, a unit-of-measure pair) is an implementation detail of that
+    // one class, and a plain utility holder like MainMenuKeyboard is neither a bean nor a service — naming
+    // either "...Service" would be dishonest.
     @ArchTest
     static final ArchRule servicesAreNamedProperly = classes()
             .that()
             .resideInAPackage("..service..")
             .and()
-            .doNotHaveModifier(JavaModifier.SYNTHETIC)
+            .areAnnotatedWith(Service.class)
             .should()
             .haveSimpleNameEndingWith("Service");
 
