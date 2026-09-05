@@ -6,13 +6,34 @@
 <title>Анкета Комора</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
+  /*
+   * --silpo-primary is verified straight from the real logo SVG (every <path> fill in
+   * https://static.silpo.ua/content/Logotype.svg is #FF8200) — not a guess. The live silpo.ua site's own
+   * computed CSS could not be cross-checked (Cloudflare bot-challenge blocked automated access, and no
+   * browser tool was available this session) — see docs/OVERNIGHT_QUESTIONS.md "Task 27" before treating
+   * this as the final word; it is one verified source, not the two the task asked for.
+   */
+  :root {
+    --silpo-primary: #FF8200;
+    --silpo-primary-text: #ffffff;
+  }
   * { box-sizing: border-box; }
   body {
     font-family: -apple-system, BlinkMacSystemFont, sans-serif;
     margin: 0;
-    padding: 16px;
+    padding: 20px 16px 16px;
     background: var(--tg-theme-bg-color, #fff);
     color: var(--tg-theme-text-color, #000);
+  }
+  #progress-bar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 3px;
+    width: 0%;
+    background: var(--silpo-primary);
+    transition: width 0.15s ease-out;
+    z-index: 10;
   }
   form { display: flex; flex-direction: column; gap: 16px; max-width: 480px; margin: 0 auto; }
   fieldset {
@@ -21,9 +42,15 @@
     padding: 12px;
     background: var(--tg-theme-secondary-bg-color, transparent);
   }
-  legend { font-weight: 600; padding: 0 4px; }
+  legend {
+    font-weight: 700;
+    font-size: 15px;
+    padding: 0 6px 0 0;
+    border-left: 4px solid var(--silpo-primary);
+    padding-left: 8px;
+  }
   label { display: block; margin: 8px 0 4px; }
-  input[type=number], input[type=text], select {
+  input[type=number], input[type=text] {
     width: 100%;
     padding: 8px;
     border: 1px solid var(--tg-theme-hint-color, #ccc);
@@ -33,7 +60,44 @@
     font-size: 16px;
   }
   .child-row { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
-  .child-row select { flex: 1; }
+  .child-row select {
+    flex: 1;
+    padding: 8px;
+    border: 1px solid var(--tg-theme-hint-color, #ccc);
+    border-radius: 6px;
+    background: var(--tg-theme-bg-color, #fff);
+    color: var(--tg-theme-text-color, #000);
+    font-size: 16px;
+  }
+  /* Chip-style multi-select (restrictions) and segmented-style single-select (diet type, cooking time) —
+     same control shape, the difference is only checkbox vs radio underneath. */
+  .chip-group { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0; }
+  .chip {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    margin: 0;
+    padding: 8px 14px;
+    border-radius: 999px;
+    border: 1px solid var(--tg-theme-hint-color, #ccc);
+    background: var(--tg-theme-bg-color, #fff);
+    color: var(--tg-theme-text-color, #000);
+    font-size: 14px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .chip-input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+  .chip:has(.chip-input:checked) {
+    background: var(--silpo-primary);
+    border-color: var(--silpo-primary);
+    color: var(--silpo-primary-text);
+    font-weight: 600;
+  }
   button {
     padding: 10px 12px;
     border: none;
@@ -45,12 +109,21 @@
   }
   button[type=button] {
     background: transparent;
-    color: var(--tg-theme-link-color, var(--tg-theme-button-color, #2481cc));
+    color: var(--silpo-primary);
     padding: 4px 8px;
+    font-weight: 600;
+  }
+  button[type=submit] {
+    background: var(--silpo-primary);
+    color: var(--silpo-primary-text);
+    font-size: 18px;
+    font-weight: 700;
+    padding: 14px 12px;
   }
 </style>
 </head>
 <body>
+<div id="progress-bar"></div>
 <form id="onboarding-form">
   <fieldset>
     <legend>Дорослі</legend>
@@ -66,30 +139,34 @@
 
   <fieldset>
     <legend>Алергії та обмеження</legend>
-    <label><input type="checkbox" name="restriction" value="nuts"> Горіхи</label>
-    <label><input type="checkbox" name="restriction" value="lactose"> Лактоза</label>
-    <label><input type="checkbox" name="restriction" value="gluten"> Глютен</label>
-    <label><input type="checkbox" name="restriction" value="seafood"> Морепродукти</label>
+    <div class="chip-group">
+      <label class="chip"><input class="chip-input" type="checkbox" name="restriction" value="nuts"> Горіхи</label>
+      <label class="chip"><input class="chip-input" type="checkbox" name="restriction" value="lactose"> Лактоза</label>
+      <label class="chip"><input class="chip-input" type="checkbox" name="restriction" value="gluten"> Глютен</label>
+      <label class="chip"><input class="chip-input" type="checkbox" name="restriction" value="seafood"> Морепродукти</label>
+    </div>
     <label>Інше: <input type="text" id="restrictionsOther"></label>
   </fieldset>
 
   <fieldset>
     <legend>Тип харчування</legend>
-    <select id="dietType">
-      <option value="NONE">Без обмежень</option>
-      <option value="VEGETARIAN">Вегетаріанство</option>
-      <option value="VEGAN">Веганство</option>
-      <option value="GLUTEN_FREE">Без глютену</option>
-      <option value="KETO">Кето</option>
-      <option value="OTHER">Інше</option>
-    </select>
+    <div class="chip-group">
+      <label class="chip"><input class="chip-input" type="radio" name="dietType" value="NONE" checked> Без обмежень</label>
+      <label class="chip"><input class="chip-input" type="radio" name="dietType" value="VEGETARIAN"> Вегетаріанство</label>
+      <label class="chip"><input class="chip-input" type="radio" name="dietType" value="VEGAN"> Веганство</label>
+      <label class="chip"><input class="chip-input" type="radio" name="dietType" value="GLUTEN_FREE"> Без глютену</label>
+      <label class="chip"><input class="chip-input" type="radio" name="dietType" value="KETO"> Кето</label>
+      <label class="chip"><input class="chip-input" type="radio" name="dietType" value="OTHER"> Інше</label>
+    </div>
   </fieldset>
 
   <fieldset>
     <legend>Скільки часу на готування</legend>
-    <label><input type="radio" name="cookingTime" value="COOKS_DAILY" checked> Готую потроху щодня</label>
-    <label><input type="radio" name="cookingTime" value="COOKS_BATCH"> Готую раз на кілька днів, наперед</label>
-    <label><input type="radio" name="cookingTime" value="READY_MEALS_ONLY"> Часу немає, лише готова їжа</label>
+    <div class="chip-group">
+      <label class="chip"><input class="chip-input" type="radio" name="cookingTime" value="COOKS_DAILY" checked> Готую потроху щодня</label>
+      <label class="chip"><input class="chip-input" type="radio" name="cookingTime" value="COOKS_BATCH"> Готую раз на кілька днів, наперед</label>
+      <label class="chip"><input class="chip-input" type="radio" name="cookingTime" value="READY_MEALS_ONLY"> Часу немає, лише готова їжа</label>
+    </div>
   </fieldset>
 
   <fieldset>

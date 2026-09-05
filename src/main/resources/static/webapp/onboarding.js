@@ -1,6 +1,17 @@
 const tg = window.Telegram.WebApp;
 tg.expand();
 
+/** A sense of how much of the form is left — purely visual, no effect on the payload below. */
+function updateProgressBar() {
+  const bar = document.getElementById("progress-bar");
+  const scrollable = document.body.scrollHeight - window.innerHeight;
+  const ratio = scrollable <= 0 ? 1 : window.scrollY / scrollable;
+  bar.style.width = Math.min(100, Math.max(0, ratio * 100)) + "%";
+}
+window.addEventListener("scroll", updateProgressBar);
+window.addEventListener("resize", updateProgressBar);
+updateProgressBar();
+
 const CHILD_BRACKETS = [
   ["AGE_0_3", "0–3"],
   ["AGE_4_7", "4–7"],
@@ -60,7 +71,7 @@ document.getElementById("onboarding-form").addEventListener("submit", (event) =>
     childrenAgeBrackets,
     restrictions,
     restrictionsOther: document.getElementById("restrictionsOther").value.trim(),
-    dietType: document.getElementById("dietType").value,
+    dietType: document.querySelector('input[name="dietType"]:checked').value,
     cookingTimePreference: document.querySelector('input[name="cookingTime"]:checked').value,
     weeklyBudget: document.getElementById("weeklyBudget").value === ""
       ? null

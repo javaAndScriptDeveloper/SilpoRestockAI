@@ -125,3 +125,25 @@ already established for tonight's other new capabilities. `/calendar` keeps mean
 **Why safe to decide alone:** every acceptance criterion is about the *view itself* (day-selectable
 breakdown, no ingredient leakage, READY_MEALS_ONLY/special-mode correctness) — none of them specify the
 exact trigger phrase or button label, so there was no requirement to actually contradict.
+
+## Task 27: live-site color verification blocked (Cloudflare + no browser)
+
+**Observation, real external blocker, not a judgment call:** the task explicitly requires cross-checking
+two sources before picking colors — the logo SVG and `silpo.ua`'s live computed CSS. `curl`ing the logo
+SVG worked and gave a clean, unambiguous answer: all 3 `<path>` fills in
+`https://static.silpo.ua/content/Logotype.svg` are `#FF8200` (orange) — not red, not green, contradicting
+the task's own speculation about which one it might be. `curl`ing `silpo.ua` itself hit a Cloudflare
+bot-challenge page (JS-gated, no real content) — could not extract anything from it. The Chrome browser
+tool has been disconnected all session (same issue noted under task 23) and did not reconnect.
+
+**Decision:** implement the redesign using the one verified color (`#FF8200`, from the logo — the more
+authoritative, unambiguous source of the two anyway) as `--silpo-primary`, exposed as a single CSS custom
+property so correcting it later, if the live site's computed accent differs, is a one-line change exactly
+as the task's own technical-approach section asks for. Documenting this as a **known, explicit gap** rather
+than quietly presenting an unverified color as verified — criterion 1 explicitly forbids guessing, so this
+task cannot honestly be marked Done tonight regardless of how the CSS itself turns out.
+
+**Why safe to decide alone:** proceeding with a genuinely verified color (not a guess) and flagging the
+one source that couldn't be reached is the same honest-partial-progress pattern used for every other task
+tonight blocked on live/human verification (23, 28, 32) — better than leaving a "Should have" task
+completely untouched over one unreachable secondary source.
