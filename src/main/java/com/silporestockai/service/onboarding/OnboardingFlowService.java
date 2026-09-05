@@ -18,6 +18,7 @@ import com.silporestockai.model.TelegramIncomingUpdate;
 import com.silporestockai.repository.UserProfileRepository;
 import com.silporestockai.repository.UserRepository;
 import com.silporestockai.service.ConversationStateService;
+import com.silporestockai.service.MealPlanHandoffService;
 import com.silporestockai.service.SilpoAuthService;
 import com.silporestockai.service.telegram.TelegramOutboundService;
 import java.math.BigDecimal;
@@ -121,6 +122,7 @@ public class OnboardingFlowService {
     private final SilpoAuthService silpoAuthService;
     private final TelegramProperties telegramProperties;
     private final ApplicationEventPublisher events;
+    private final MealPlanHandoffService mealPlanHandoffService;
 
     /**
      * Carries the conversation on after the guest finishes the Silpo login in their browser.
@@ -186,8 +188,9 @@ public class OnboardingFlowService {
             putIfPresent(prefill, "childrenAgeBrackets", profile.getChildrenAgeBrackets());
             List<String> restrictions = stringListOf(profile.getDietaryRestrictions());
             if (restrictions != null) {
-                List<String> known =
-                        restrictions.stream().filter(RESTRICTION_CHIP_CODES::contains).toList();
+                List<String> known = restrictions.stream()
+                        .filter(RESTRICTION_CHIP_CODES::contains)
+                        .toList();
                 List<String> other = restrictions.stream()
                         .filter(value -> !RESTRICTION_CHIP_CODES.contains(value))
                         .toList();
@@ -200,7 +203,9 @@ public class OnboardingFlowService {
                 prefill.put("dietType", profile.getDietType().name());
             }
             if (profile.getCookingTimePreference() != null) {
-                prefill.put("cookingTimePreference", profile.getCookingTimePreference().name());
+                prefill.put(
+                        "cookingTimePreference",
+                        profile.getCookingTimePreference().name());
             }
             if (profile.getWeeklyBudget() != null) {
                 prefill.put("weeklyBudget", profile.getWeeklyBudget());
@@ -229,13 +234,15 @@ public class OnboardingFlowService {
 
     private void handleReeditFormSubmission(User user, TelegramIncomingUpdate incoming) {
         long chatId = user.getTelegramChatId();
-        if (incoming instanceof TelegramIncomingUpdate.Text text && CANCEL_LABEL.equals(text.text().trim())) {
+        if (incoming instanceof TelegramIncomingUpdate.Text text
+                && CANCEL_LABEL.equals(text.text().trim())) {
             conversationStateService.save(chatId, ConversationFlow.NONE, null, Map.of());
             telegramOutboundService.sendMessageWithMainMenu(chatId, "Гаразд, анкету не змінюю.");
             return;
         }
         if (!(incoming instanceof TelegramIncomingUpdate.WebAppData webAppData)) {
-            telegramOutboundService.sendMessage(chatId, "Натисни кнопку «Заповнити анкету» або «" + CANCEL_LABEL + "».");
+            telegramOutboundService.sendMessage(
+                    chatId, "Натисни кнопку «Заповнити анкету» або «" + CANCEL_LABEL + "».");
             return;
         }
         WebAppOnboardingPayload payload;
@@ -262,8 +269,19 @@ public class OnboardingFlowService {
     }
 
     private void handleReeditConfirmation(User user, TelegramIncomingUpdate incoming) {
-        // Implemented in a later task.
-        telegramOutboundService.sendMessage(user.getTelegramChatId(), "TODO");
+        long chatId = user.getTelegramChatId();
+        if (!(incoming instanceof TelegramIncomingUpdate.ButtonTap tap)) {
+            telegramOutboundService.sendMessage(chatId, "Скористайся, будь ласка, кнопками вище.");
+            return;
+        }
+        telegramOutboundService.answerCallback(tap.callbackQueryId());
+        conversationStateService.save(chatId, ConversationFlow.NONE, null, Map.of());
+        if (CALLBACK_REEDIT_CONFIRM.equals(tap.data())) {
+            telegramOutboundService.sendMessage(chatId, "Готую новий список під нові відповіді.");
+            mealPlanHandoffService.generateFirstPlan(user.getId());
+            return;
+        }
+        telegramOutboundService.sendMessage(chatId, "Гаразд, залишаю поточний список.");
     }
 
     /**
@@ -299,7 +317,8 @@ public class OnboardingFlowService {
         profile.setChildrenAgeBrackets(brackets);
         profile.setHouseholdSize(adults + brackets.size());
         profile.setHasKids(!brackets.isEmpty());
-        profile.setKidsAges(brackets.stream().map(OnboardingFlowService::midpointAge).toList());
+        profile.setKidsAges(
+                brackets.stream().map(OnboardingFlowService::midpointAge).toList());
         profile.setDietaryRestrictions(restrictions);
         profile.setDietType(dietType);
         profile.setCookingTimePreference(payload.cookingTimePreference());

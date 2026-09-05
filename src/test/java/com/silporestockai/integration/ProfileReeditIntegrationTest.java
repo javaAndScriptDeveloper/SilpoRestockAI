@@ -132,31 +132,25 @@ class ProfileReeditIntegrationTest extends AbstractIntegrationTest {
     }
 
     private void sendText(int updateId, String text) throws Exception {
-        deliver(
-                """
+        deliver("""
                 {"update_id":%d,"message":{"message_id":%d,"date":1,\
                 "chat":{"id":%d,"type":"private"},"from":{"id":5,"is_bot":false,"first_name":"Тест"},\
-                "text":"%s"}}"""
-                        .formatted(updateId, updateId, CHAT_ID, text));
+                "text":"%s"}}""".formatted(updateId, updateId, CHAT_ID, text));
     }
 
     private void tapButton(int updateId, String data) throws Exception {
-        deliver(
-                """
+        deliver("""
                 {"update_id":%d,"callback_query":{"id":"cb-%d","chat_instance":"ci",\
                 "from":{"id":5,"is_bot":false,"first_name":"Тест"},"data":"%s",\
-                "message":{"message_id":%d,"date":1,"chat":{"id":%d,"type":"private"}}}}"""
-                        .formatted(updateId, updateId, data, updateId, CHAT_ID));
+                "message":{"message_id":%d,"date":1,"chat":{"id":%d,"type":"private"}}}}""".formatted(updateId, updateId, data, updateId, CHAT_ID));
     }
 
     private void sendWebAppData(int updateId, String json) throws Exception {
         String escaped = MAPPER.writeValueAsString(json);
-        deliver(
-                """
+        deliver("""
                 {"update_id":%d,"message":{"message_id":%d,"date":1,\
                 "chat":{"id":%d,"type":"private"},"from":{"id":5,"is_bot":false,"first_name":"Тест"},\
-                "web_app_data":{"data":%s,"button_text":"Заповнити анкету"}}}"""
-                        .formatted(updateId, updateId, CHAT_ID, escaped));
+                "web_app_data":{"data":%s,"button_text":"Заповнити анкету"}}}""".formatted(updateId, updateId, CHAT_ID, escaped));
     }
 
     private UUID onboardedUser() {
@@ -197,8 +191,8 @@ class ProfileReeditIntegrationTest extends AbstractIntegrationTest {
                 .path("url")
                 .asText();
         String encoded = webAppUrl.substring(webAppUrl.indexOf("prefill=") + "prefill=".length());
-        JsonNode prefill =
-                MAPPER.readTree(Base64.getUrlDecoder().decode(encoded.replace('-', '+').replace('_', '/')));
+        JsonNode prefill = MAPPER.readTree(
+                Base64.getUrlDecoder().decode(encoded.replace('-', '+').replace('_', '/')));
         assertThat(prefill.path("adultMale").asInt()).isEqualTo(2);
         assertThat(prefill.path("adultFemale").asInt()).isEqualTo(0);
         assertThat(prefill.path("childrenAgeBrackets").get(0).asText()).isEqualTo("AGE_4_7");
@@ -207,8 +201,7 @@ class ProfileReeditIntegrationTest extends AbstractIntegrationTest {
         assertThat(prefill.path("cookingTimePreference").asText()).isEqualTo("COOKS_DAILY");
         assertThat(prefill.path("weeklyBudget").asDouble()).isEqualTo(2500.0);
 
-        assertThat(conversationStateService.load(CHAT_ID).getCurrentFlow())
-                .isEqualTo(ConversationFlow.PROFILE_REEDIT);
+        assertThat(conversationStateService.load(CHAT_ID).getCurrentFlow()).isEqualTo(ConversationFlow.PROFILE_REEDIT);
     }
 
     @Test
@@ -216,14 +209,75 @@ class ProfileReeditIntegrationTest extends AbstractIntegrationTest {
         onboardedUser();
         sendText(1, "🧾 Анкета");
 
-        sendWebAppData(
-                2,
-                """
+        sendWebAppData(2, """
                 {"adultMale":2,"adultFemale":0,"childrenAgeBrackets":["AGE_4_7"],\
                 "restrictions":["nuts"],"restrictionsOther":"","dietType":"NONE",\
                 "cookingTimePreference":"COOKS_DAILY","weeklyBudget":2500}""");
 
         assertThat(lastMessageText()).contains("Змін немає");
+        assertThat(conversationStateService.load(CHAT_ID).getCurrentFlow()).isEqualTo(ConversationFlow.NONE);
+    }
+
+    private static String fullWeekJson() {
+        StringBuilder days = new StringBuilder();
+        for (java.time.DayOfWeek day : java.time.DayOfWeek.values()) {
+            if (!days.isEmpty()) {
+                days.append(',');
+            }
+            days.append("""
+                    {"day":"%s","meals":[\
+                    {"type":"BREAKFAST","name":"Вівсянка","ingredients":[{"name":"пластівці","quantity":0.3,"unit":"кг"}]},\
+                    {"type":"LUNCH","name":"Борщ","ingredients":[{"name":"буряк","quantity":0.5,"unit":"кг"}]},\
+                    {"type":"DINNER","name":"Рис з овочами","ingredients":[{"name":"рис","quantity":0.4,"unit":"кг"}]}]}""".formatted(day.name()));
+        }
+        return "{\"days\":[" + days + "]}";
+    }
+
+    @Test
+    void changedAnswersAskBeforeRegenerating() throws Exception {
+        onboardedUser();
+        sendText(1, "🧾 Анкета");
+
+        sendWebAppData(2, """
+                {"adultMale":2,"adultFemale":1,"childrenAgeBrackets":["AGE_4_7"],\
+                "restrictions":["nuts"],"restrictionsOther":"","dietType":"NONE",\
+                "cookingTimePreference":"COOKS_DAILY","weeklyBudget":2500}""");
+
+        assertThat(lastMessageText()).contains("Оновити поточний список");
+        var buttons = TELEGRAM.sentMessages()
+                .getLast()
+                .path("reply_markup")
+                .path("inline_keyboard")
+                .get(0);
+        assertThat(buttons.get(0).path("callback_data").asText()).isEqualTo("reedit:confirm");
+        assertThat(buttons.get(1).path("callback_data").asText()).isEqualTo("reedit:cancel");
+
+        UUID userId = userRepository.findByTelegramChatId(CHAT_ID).orElseThrow().getId();
+        assertThat(userProfileRepository.findByUserId(userId).orElseThrow().getAdultFemaleCount())
+                .isEqualTo(1); // saved immediately, before any confirm
+
+        CLAUDE.respondWithText(fullWeekJson());
+        tapButton(3, "reedit:confirm");
+
+        assertThat(mealPlanRepository.count()).isEqualTo(1);
+        // generateFirstPlan hands the new list to shoppingListBuilderService.present, which re-enters
+        // LIST_BUILDING so the household approves it before anything is ordered — same as first-time onboarding.
+        assertThat(conversationStateService.load(CHAT_ID).getCurrentFlow()).isEqualTo(ConversationFlow.LIST_BUILDING);
+    }
+
+    @Test
+    void cancellingLeavesTheCurrentListAlone() throws Exception {
+        onboardedUser();
+        sendText(1, "🧾 Анкета");
+        sendWebAppData(2, """
+                {"adultMale":2,"adultFemale":1,"childrenAgeBrackets":["AGE_4_7"],\
+                "restrictions":["nuts"],"restrictionsOther":"","dietType":"NONE",\
+                "cookingTimePreference":"COOKS_DAILY","weeklyBudget":2500}""");
+
+        tapButton(3, "reedit:cancel");
+
+        assertThat(lastMessageText()).contains("залишаю");
+        assertThat(mealPlanRepository.count()).isZero();
         assertThat(conversationStateService.load(CHAT_ID).getCurrentFlow()).isEqualTo(ConversationFlow.NONE);
     }
 }

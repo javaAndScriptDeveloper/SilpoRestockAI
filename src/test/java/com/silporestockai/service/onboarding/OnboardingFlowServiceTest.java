@@ -1,6 +1,5 @@
 package com.silporestockai.service.onboarding;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
@@ -12,6 +11,7 @@ import com.silporestockai.entity.User;
 import com.silporestockai.repository.UserProfileRepository;
 import com.silporestockai.repository.UserRepository;
 import com.silporestockai.service.ConversationStateService;
+import com.silporestockai.service.MealPlanHandoffService;
 import com.silporestockai.service.SilpoAuthService;
 import com.silporestockai.service.telegram.TelegramOutboundService;
 import java.util.UUID;
@@ -32,7 +32,8 @@ class OnboardingFlowServiceTest {
                 outbound,
                 mock(SilpoAuthService.class),
                 properties,
-                mock(ApplicationEventPublisher.class));
+                mock(ApplicationEventPublisher.class),
+                mock(MealPlanHandoffService.class));
         User user = User.builder().id(UUID.randomUUID()).telegramChatId(42L).build();
 
         service.reopenForm(user);
