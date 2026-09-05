@@ -82,6 +82,11 @@ public class IntentRouterService {
         this.systemPrompt = read(systemPromptResource);
     }
 
+    /** The static "❓ Інструкція" content — a persistent-menu button, so it never needs a classification call. */
+    public void sendHelp(User user) {
+        telegramOutboundService.sendMessage(user.getTelegramChatId(), HELP_TEXT);
+    }
+
     public void route(User user, String text) {
         ClassifiedIntent classified;
         try {
@@ -116,7 +121,7 @@ public class IntentRouterService {
             }
             case LIST_VIEW -> shoppingListBuilderService.askForInput(user);
             case CALENDAR_VIEW -> calendarViewService.showWeek(user);
-            case HELP -> telegramOutboundService.sendMessage(user.getTelegramChatId(), HELP_TEXT);
+            case HELP -> sendHelp(user);
             case UNKNOWN -> askClarifyingQuestion(user);
         }
     }

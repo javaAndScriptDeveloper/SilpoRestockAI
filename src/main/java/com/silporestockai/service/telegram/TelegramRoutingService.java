@@ -167,6 +167,32 @@ public class TelegramRoutingService {
             onboardingFlowService.handle(user, incoming);
             return;
         }
+        // The persistent menu is global navigation — always tappable, even mid-flow. Checked before any
+        // flow-specific dispatch below so a tap can never be swallowed as free text by whichever conversation
+        // happens to be active (a list-edit AI parse, a check-in answer, ...). None of the flow handlers below
+        // reset conversation_state on their own, so interrupting one to navigate away and back leaves it
+        // exactly where the user left it.
+        if (incoming instanceof TelegramIncomingUpdate.Text list
+                && matches(list.text(), "/list", MainMenuKeyboard.LIST)) {
+            shoppingListBuilderService.askForInput(user);
+            return;
+        }
+        if (incoming instanceof TelegramIncomingUpdate.Text form
+                && matches(form.text(), "/anketa", MainMenuKeyboard.FORM)) {
+            onboardingFlowService.reopenForm(user);
+            return;
+        }
+        if (incoming instanceof TelegramIncomingUpdate.Text scheduled
+                && matches(scheduled.text(), "/scheduled", MainMenuKeyboard.SCHEDULED)) {
+            scheduledTaskManagementService.showPending(user);
+            return;
+        }
+        if (incoming instanceof TelegramIncomingUpdate.Text help
+                && matches(help.text(), "/help", MainMenuKeyboard.HELP)) {
+            intentRouterService.sendHelp(user);
+            return;
+        }
+
         ConversationFlow flow = conversationStateService.load(incoming.chatId()).getCurrentFlow();
         if (flow == ConversationFlow.CART_CONFIRMATION) {
             cartConfirmationService.handle(user, incoming);
@@ -194,21 +220,6 @@ public class TelegramRoutingService {
         }
         if (flow == ConversationFlow.SCHEDULED_TASK_EDIT) {
             scheduledTaskManagementService.handleEditReply(user, incoming);
-            return;
-        }
-        if (incoming instanceof TelegramIncomingUpdate.Text list
-                && matches(list.text(), "/list", MainMenuKeyboard.LIST)) {
-            shoppingListBuilderService.askForInput(user);
-            return;
-        }
-        if (incoming instanceof TelegramIncomingUpdate.Text form
-                && matches(form.text(), "/anketa", MainMenuKeyboard.FORM)) {
-            onboardingFlowService.reopenForm(user);
-            return;
-        }
-        if (incoming instanceof TelegramIncomingUpdate.Text scheduled
-                && matches(scheduled.text(), "/scheduled", MainMenuKeyboard.SCHEDULED)) {
-            scheduledTaskManagementService.showPending(user);
             return;
         }
         if (incoming instanceof TelegramIncomingUpdate.Text voice && matches(voice.text(), "/voice", "")) {

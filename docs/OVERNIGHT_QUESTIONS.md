@@ -289,3 +289,25 @@ task 31's own spec is deadline-shaped ("до п'ятниці", "for tonight") �
 genuine future appointment where delaying the purchase is actually desired. Discount/ad-hoc grocery orders
 have no reason to wait once decided; earlier is never worse than later for this category, only the
 inverse.
+
+## Live-test bug: persistent-menu buttons swallowed as free text by an active flow
+
+**Reported live, immediately after the fix above:** tapping «🗓 Заплановані» while `LIST_BUILDING` was
+mid-conversation (the bot had just asked "Якщо все влаштовує — замовляю. Якщо ні — скажи, що змінити")
+fed the button's own label text into `ShoppingListBuilderService`'s AI list-edit parser instead of
+navigating to the scheduled-tasks view — the user got back their shopping list, not their scheduled task.
+
+**Root cause:** `TelegramRoutingService.handle()` checked the active `ConversationFlow` (`CART_CONFIRMATION`,
+`CHECK_IN`, `LIST_BUILDING`, `REORDER_CONFIRMATION`, `SPECIAL_MODE_SETUP`, `PROFILE_REEDIT`,
+`SCHEDULED_TASK_EDIT`) *before* the persistent-menu-button matches (`/list`, `/anketa`, `/scheduled`) —
+any flow that treats arbitrary free text as its own input (list editing, check-in answers) swallowed a
+button tap the moment one was active. Not specific to task 33 — every persistent-menu button had this bug
+whenever any flow was active; `❓ Інструкція` even more so, since it previously had no direct match at all
+and relied entirely on `IntentRouterService`'s free-text classification.
+
+**Fix:** moved the four persistent-menu-button checks (`LIST`, `FORM`, `SCHEDULED`, and a new direct `HELP`
+match reusing `IntentRouterService.sendHelp`) to run immediately after the onboarding gate, before any
+`ConversationFlow` dispatch. None of the flow handlers reset `conversation_state` as a side effect of being
+interrupted, so navigating away mid-flow and coming back leaves it exactly where it was — verified with a
+new regression test (`thePersistentMenuButtonWorksAsGlobalNavigationEvenMidFlow`) that reproduces the exact
+bug report (tap while `LIST_BUILDING` is active) before the fix, and passes after it.

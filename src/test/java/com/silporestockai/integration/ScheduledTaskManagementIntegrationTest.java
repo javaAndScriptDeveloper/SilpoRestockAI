@@ -191,6 +191,23 @@ class ScheduledTaskManagementIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void thePersistentMenuButtonWorksAsGlobalNavigationEvenMidFlow() throws Exception {
+        onboardedUser();
+        // A live bug: tapping 🗓 Заплановані while another flow (list-edit, check-in, ...) is mid-conversation
+        // got swallowed as free text by that flow's own handler instead of navigating away. Reproduced here
+        // with LIST_BUILDING, the flow the bug was actually caught in.
+        conversationStateService.save(
+                CHAT_ID,
+                com.silporestockai.model.ConversationFlow.LIST_BUILDING,
+                "AWAITING_APPROVAL",
+                java.util.Map.of());
+
+        sendText(1, "🗓 Заплановані");
+
+        assertThat(lastMessageText()).contains("Немає запланованих замовлень");
+    }
+
+    @Test
     void pendingTasksRenderWithThemeTimeAndButtons() throws Exception {
         UUID userId = onboardedUser();
         ScheduledAdHocTask task = pendingTask(userId, "вино та сир зі знижкою", Instant.parse("2026-09-11T18:00:00Z"));
