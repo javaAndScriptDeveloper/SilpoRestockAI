@@ -210,4 +210,20 @@ class ProfileReeditIntegrationTest extends AbstractIntegrationTest {
         assertThat(conversationStateService.load(CHAT_ID).getCurrentFlow())
                 .isEqualTo(ConversationFlow.PROFILE_REEDIT);
     }
+
+    @Test
+    void resubmittingIdenticalAnswersSkipsTheConfirmStep() throws Exception {
+        onboardedUser();
+        sendText(1, "🧾 Анкета");
+
+        sendWebAppData(
+                2,
+                """
+                {"adultMale":2,"adultFemale":0,"childrenAgeBrackets":["AGE_4_7"],\
+                "restrictions":["nuts"],"restrictionsOther":"","dietType":"NONE",\
+                "cookingTimePreference":"COOKS_DAILY","weeklyBudget":2500}""");
+
+        assertThat(lastMessageText()).contains("Змін немає");
+        assertThat(conversationStateService.load(CHAT_ID).getCurrentFlow()).isEqualTo(ConversationFlow.NONE);
+    }
 }

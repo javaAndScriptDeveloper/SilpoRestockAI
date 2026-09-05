@@ -212,9 +212,109 @@ public class OnboardingFlowService {
         }
     }
 
-    /** Placeholder — replaced with the real form-resubmission/confirm handling in later tasks. */
+    /** The two steps of the Анкета-reedit side flow: awaiting the resubmitted form, then awaiting a confirm/cancel. */
     public void handleReedit(User user, TelegramIncomingUpdate incoming) {
+        ConversationState state = conversationStateService.load(user.getTelegramChatId());
+        String step = state.getCurrentStep();
+        if (REEDIT_STEP_AWAITING_FORM.equals(step)) {
+            handleReeditFormSubmission(user, incoming);
+            return;
+        }
+        if (REEDIT_STEP_AWAITING_CONFIRM.equals(step)) {
+            handleReeditConfirmation(user, incoming);
+            return;
+        }
+        telegramOutboundService.sendMessage(user.getTelegramChatId(), "Скористайся, будь ласка, кнопками вище.");
+    }
+
+    private void handleReeditFormSubmission(User user, TelegramIncomingUpdate incoming) {
+        long chatId = user.getTelegramChatId();
+        if (incoming instanceof TelegramIncomingUpdate.Text text && CANCEL_LABEL.equals(text.text().trim())) {
+            conversationStateService.save(chatId, ConversationFlow.NONE, null, Map.of());
+            telegramOutboundService.sendMessageWithMainMenu(chatId, "Гаразд, анкету не змінюю.");
+            return;
+        }
+        if (!(incoming instanceof TelegramIncomingUpdate.WebAppData webAppData)) {
+            telegramOutboundService.sendMessage(chatId, "Натисни кнопку «Заповнити анкету» або «" + CANCEL_LABEL + "».");
+            return;
+        }
+        WebAppOnboardingPayload payload;
+        try {
+            payload = MAPPER.readValue(webAppData.data(), WebAppOnboardingPayload.class);
+        } catch (Exception e) {
+            log.warn("could not parse reedit WebApp payload for chat {}: {}", chatId, e.toString());
+            telegramOutboundService.sendMessage(chatId, "Не вдалось прочитати анкету. Спробуй ще раз.");
+            return;
+        }
+        ProfileChange change = applyPayload(user.getId(), payload);
+        if (!change.changed()) {
+            conversationStateService.save(chatId, ConversationFlow.NONE, null, Map.of());
+            telegramOutboundService.sendMessageWithMainMenu(chatId, "Змін немає — залишаю все як є.");
+            return;
+        }
+        telegramOutboundService.sendMessageWithButtons(
+                chatId,
+                "Анкету оновлено. Оновити поточний список під нові відповіді?",
+                List.of(
+                        TelegramButton.callback("Так, оновити", CALLBACK_REEDIT_CONFIRM),
+                        TelegramButton.callback("Ні, залишити", CALLBACK_REEDIT_CANCEL)));
+        conversationStateService.save(chatId, ConversationFlow.PROFILE_REEDIT, REEDIT_STEP_AWAITING_CONFIRM, Map.of());
+    }
+
+    private void handleReeditConfirmation(User user, TelegramIncomingUpdate incoming) {
+        // Implemented in a later task.
         telegramOutboundService.sendMessage(user.getTelegramChatId(), "TODO");
+    }
+
+    /**
+     * Applies a resubmitted WebApp payload directly onto the saved profile.
+     *
+     * <p>Unlike {@link #finish}, this always has every WebApp field in hand — no {@code KEY_*}/context-map
+     * indirection needed. {@code dislikedFoods} is deliberately untouched: the form never collects it.
+     */
+    private ProfileChange applyPayload(UUID userId, WebAppOnboardingPayload payload) {
+        UserProfile profile = userProfileRepository.findByUserId(userId).orElseThrow();
+        List<AgeBracket> brackets = payload.childrenAgeBrackets() == null ? List.of() : payload.childrenAgeBrackets();
+        List<String> restrictions =
+                new ArrayList<>(payload.restrictions() == null ? List.<String>of() : payload.restrictions());
+        if (payload.restrictionsOther() != null && !payload.restrictionsOther().isBlank()) {
+            restrictions.add(payload.restrictionsOther().trim());
+        }
+        DietType dietType = payload.dietType() == null ? DietType.NONE : payload.dietType();
+
+        boolean changed = !Objects.equals(profile.getAdultMaleCount(), payload.adultMale())
+                || !Objects.equals(profile.getAdultFemaleCount(), payload.adultFemale())
+                || !Objects.equals(profile.getChildrenAgeBrackets(), brackets)
+                || !Objects.equals(profile.getDietaryRestrictions(), restrictions)
+                || !Objects.equals(profile.getDietType(), dietType)
+                || !Objects.equals(profile.getCookingTimePreference(), payload.cookingTimePreference())
+                // BigDecimal.equals is scale-sensitive: a value round-tripped through the numeric(10,2) column
+                // comes back "2500.00", which .equals() sees as different from a freshly-parsed JSON "2500".
+                || bigDecimalDiffers(profile.getWeeklyBudget(), payload.weeklyBudget());
+
+        int adults = (payload.adultMale() == null ? 0 : payload.adultMale())
+                + (payload.adultFemale() == null ? 0 : payload.adultFemale());
+        profile.setAdultMaleCount(payload.adultMale());
+        profile.setAdultFemaleCount(payload.adultFemale());
+        profile.setChildrenAgeBrackets(brackets);
+        profile.setHouseholdSize(adults + brackets.size());
+        profile.setHasKids(!brackets.isEmpty());
+        profile.setKidsAges(brackets.stream().map(OnboardingFlowService::midpointAge).toList());
+        profile.setDietaryRestrictions(restrictions);
+        profile.setDietType(dietType);
+        profile.setCookingTimePreference(payload.cookingTimePreference());
+        profile.setWeeklyBudget(payload.weeklyBudget());
+        userProfileRepository.save(profile);
+        return new ProfileChange(profile, changed);
+    }
+
+    private record ProfileChange(UserProfile profile, boolean changed) {}
+
+    private static boolean bigDecimalDiffers(BigDecimal a, BigDecimal b) {
+        if (a == null || b == null) {
+            return a != b;
+        }
+        return a.compareTo(b) != 0;
     }
 
     public void handle(User user, TelegramIncomingUpdate incoming) {
