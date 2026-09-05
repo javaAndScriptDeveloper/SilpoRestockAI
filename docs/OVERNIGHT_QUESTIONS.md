@@ -2,6 +2,60 @@
 
 Session: 2026-09-05, autonomous overnight queue (tasks 23→24→25→28→31→32→30→21→26→27).
 
+## Session 2 (daytime continuation), 2026-09-05: queue 31→29→12→33→34, stretch 17/18/19
+
+### Task 29's spec already assumes task 33 (queue order says otherwise)
+
+**Question:** Task 29's Notion page was edited last night to target *four* buttons (Список / Заплановані
+/ Анкета / Інструкція — "оновлено після #33"), anticipating a "Заплановані" button for task 33's
+scheduled-task view. But today's queue explicitly runs 29 *before* 33, and 33 hadn't been touched yet
+when 29 came up.
+
+**Decision:** Implement 29 against task 31's own, still-current three-button target (Список / Анкета /
+Інструкція — this is already what's live, see `MainMenuKeyboard`) rather than blocking on 33. The fourth
+button gets added *as part of* task 33's own implementation, when the "Заплановані" view it points at
+actually exists — adding a button with nothing behind it first would be the wrong order regardless of
+which Notion page says what.
+
+**Why safe to decide alone:** no acceptance criterion of either task specifies exact sequencing beyond
+"the fourth button is added in #33" (29's own tech-approach section already says this), so implementing in
+requested order and letting 33 add its own button is consistent with both pages, not a contradiction of
+either.
+
+### Task 31, criterion 7 (Анкета reopen) — completed via its own plan
+
+Task 31 arrived already ~90% done from last night, explicitly leaving acceptance criterion 7 (Анкета
+reopen + regenerate confirmation) deferred. Closed it via `docs/superpowers/plans/2026-09-05-profile-reedit.md`
+(brainstormed as a bounded change, planned, executed task-by-task, TDD). Notable implementation decisions
+folded into that plan rather than repeated here: a new `ConversationFlow.PROFILE_REEDIT` was required
+because `TelegramRoutingService` gates `OnboardingFlowService` entirely behind `!isOnboarded`, so reusing
+`ONBOARDING`'s own step machinery would never dispatch back once a profile exists.
+
+### Two pre-existing test breaks found blocking `make test`, unrelated to any queued task
+
+**Observation:** Before starting task 31's remaining work, a full `make test` run (required before every
+task in this queue) failed on two counts that predate today's session:
+1. Gradle's test-executor heap (default 512m) ran out of memory outright — not a real test failure, the
+   executor process itself died. Fixed by setting `maxHeapSize = "2g"` on the `Test` task.
+2. `ArchitectureTest.servicesAreNamedProperly` failed on 7 classes: private nested records/enums that are
+   implementation details of their owning service (`IntentRouterService$ClassifiedIntent`,
+   `SpecialModeService$GastritisIntent`, `OnboardingFlowService$WebAppOnboardingPayload`,
+   `CartBuildingService$UnitAmount`/`$UnitKind` — the latter two pre-date last night entirely) plus
+   `MainMenuKeyboard`, a plain utility holder that has lived in `service.telegram` since task 31's very
+   first commit set. None of the seven are actually services.
+
+**Decision:** Rather than renaming every nested type or moving `MainMenuKeyboard` out of a package it's
+required to stay in (the Telegram-SDK-boundary ArchRule confines it to `controller.telegram`/
+`service.telegram`), scoped `servicesAreNamedProperly` to classes actually annotated `@Service` — every
+real service in the codebase already carries that annotation, confirmed by grep before making the change.
+This is a truer statement of the rule's intent ("a service is named …Service") than "everything living in
+a directory named service is named …Service". Also found and fixed one genuinely stale test
+(`TelegramOutboundServiceIntegrationTest.sendsThePersistentMainMenuKeyboard`) still asserting the old
+six-button keyboard task 31 replaced.
+
+**Why safe to decide alone:** this is a test-suite-correctness fix with no product behavior change, and
+leaving it broken would have blocked every subsequent task's required "full green suite" gate tonight.
+
 ## Queue was stale vs. git reality
 
 **Question:** The queue named tasks 23, 25, 28 as if unstarted. Git history showed 25 and 28 already

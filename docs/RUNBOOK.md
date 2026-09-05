@@ -409,9 +409,19 @@ below, type the phrase into a real chat with an onboarded profile and confirm th
 | «/blackout» (typed, not tapped) | Still works exactly as before — no classification call happens |
 
 Also confirm the persistent keyboard shows exactly three buttons (Список / Анкета / Інструкція) after
-onboarding finishes, and that tapping «🧾 Анкета» does *not* crash — it currently falls through to a
-clarifying question (the Анкета-reopen flow is task 31's deferred scope; see
-`docs/superpowers/specs/2026-09-05-intent-router-design.md`).
+onboarding finishes, and:
+
+| Type this | Expect |
+|---|---|
+| Tap «🧾 Анкета» after onboarding | The WebApp form opens with every field already filled in — adults, kids' age brackets, allergy chips, diet-type and cooking-time selection, and the weekly budget — matching what onboarding originally collected |
+| Submit that form unchanged | "Змін немає — залишаю все як є.", no confirm buttons, list untouched |
+| Submit it with one answer changed | Profile updates immediately, then "Оновити поточний список під нові відповіді?" with Так/Ні buttons |
+| Tap «Так, оновити» | A new plan and list are generated and presented for approval |
+| Tap «Ні, залишити» | "Гаразд, залишаю поточний список.", nothing regenerated |
+
+(the Анкета-reopen flow, criterion 7 of task 31, was implemented per
+`docs/superpowers/plans/2026-09-05-profile-reedit.md`; the prefill's *browser-side* field population has no
+automated test — see that plan's Task 5 — so this table is the only verification of it).
 
 ---
 

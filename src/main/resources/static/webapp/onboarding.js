@@ -48,9 +48,33 @@ function applyPrefill() {
   if (!raw) return;
   try {
     const prefill = JSON.parse(atob(raw.replace(/-/g, "+").replace(/_/g, "/")));
-    if (prefill.householdSize) {
+    if (prefill.adultMale !== undefined || prefill.adultFemale !== undefined) {
+      if (prefill.adultMale !== undefined) document.getElementById("adultMale").value = prefill.adultMale;
+      if (prefill.adultFemale !== undefined) document.getElementById("adultFemale").value = prefill.adultFemale;
+    } else if (prefill.householdSize) {
       document.getElementById("adultMale").value = Math.ceil(prefill.householdSize / 2);
       document.getElementById("adultFemale").value = Math.floor(prefill.householdSize / 2);
+    }
+    for (const bracket of prefill.childrenAgeBrackets || []) {
+      addChildRow(bracket);
+    }
+    for (const value of prefill.restrictions || []) {
+      const input = document.querySelector(`input[name="restriction"][value="${value}"]`);
+      if (input) input.checked = true;
+    }
+    if (prefill.restrictionsOther) {
+      document.getElementById("restrictionsOther").value = prefill.restrictionsOther;
+    }
+    if (prefill.dietType) {
+      const input = document.querySelector(`input[name="dietType"][value="${prefill.dietType}"]`);
+      if (input) input.checked = true;
+    }
+    if (prefill.cookingTimePreference) {
+      const input = document.querySelector(`input[name="cookingTime"][value="${prefill.cookingTimePreference}"]`);
+      if (input) input.checked = true;
+    }
+    if (prefill.weeklyBudget !== undefined && prefill.weeklyBudget !== null) {
+      document.getElementById("weeklyBudget").value = prefill.weeklyBudget;
     }
   } catch (e) {
     // Malformed or absent prefill is not fatal — the form just starts blank.
