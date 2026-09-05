@@ -10,6 +10,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,8 +25,10 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class AdHocScheduleService {
 
-    private static final DateTimeFormatter DISPLAY =
-            DateTimeFormatter.ofPattern("d MMMM, HH:mm").withZone(ZoneId.of("Europe/Kyiv"));
+    // Locale.forLanguageTag("uk") explicitly, not the JVM default — this process runs with
+    // -Duser.language=en, which silently rendered "September" instead of "вересня" in a user-facing message.
+    private static final DateTimeFormatter DISPLAY = DateTimeFormatter.ofPattern("d MMMM, HH:mm", Locale.forLanguageTag("uk"))
+            .withZone(ZoneId.of("Europe/Kyiv"));
 
     private final ScheduledAdHocTaskRepository scheduledAdHocTaskRepository;
     private final UserRepository userRepository;

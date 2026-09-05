@@ -14,6 +14,7 @@ import com.silporestockai.service.GoogleAuthService;
 import com.silporestockai.service.IntentRouterService;
 import com.silporestockai.service.ReorderConfirmationService;
 import com.silporestockai.service.ReorderService;
+import com.silporestockai.service.ScheduledTaskManagementService;
 import com.silporestockai.service.ShoppingListBuilderService;
 import com.silporestockai.service.SpecialModeService;
 import com.silporestockai.service.UserAccountService;
@@ -59,6 +60,7 @@ public class TelegramRoutingService {
     private final IntentRouterService intentRouterService;
     private final CalendarViewService calendarViewService;
     private final TelegramFailureRecoveryService failureRecoveryService;
+    private final ScheduledTaskManagementService scheduledTaskManagementService;
 
     /**
      * Off the webhook thread on purpose. A fridge photo means a vision call — the slowest and most expensive kind
@@ -198,6 +200,11 @@ public class TelegramRoutingService {
         if (incoming instanceof TelegramIncomingUpdate.Text form
                 && matches(form.text(), "/anketa", MainMenuKeyboard.FORM)) {
             onboardingFlowService.reopenForm(user);
+            return;
+        }
+        if (incoming instanceof TelegramIncomingUpdate.Text scheduled
+                && matches(scheduled.text(), "/scheduled", MainMenuKeyboard.SCHEDULED)) {
+            scheduledTaskManagementService.showPending(user);
             return;
         }
         if (incoming instanceof TelegramIncomingUpdate.Text voice && matches(voice.text(), "/voice", "")) {

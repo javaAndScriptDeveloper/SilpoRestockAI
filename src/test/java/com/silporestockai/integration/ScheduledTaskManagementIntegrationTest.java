@@ -5,9 +5,11 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.silporestockai.entity.ScheduledAdHocTask;
+import com.silporestockai.entity.UserProfile;
 import com.silporestockai.model.ScheduledAdHocTaskStatus;
 import com.silporestockai.repository.ConversationStateRepository;
 import com.silporestockai.repository.ScheduledAdHocTaskRepository;
+import com.silporestockai.repository.UserProfileRepository;
 import com.silporestockai.repository.UserRepository;
 import com.silporestockai.service.AdHocScheduleService;
 import com.silporestockai.service.ConversationStateService;
@@ -50,6 +52,9 @@ class ScheduledTaskManagementIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
     private ScheduledAdHocTaskRepository scheduledAdHocTaskRepository;
+
+    @Autowired
+    private UserProfileRepository userProfileRepository;
 
     @Autowired
     private ConversationStateRepository conversationStateRepository;
@@ -107,6 +112,7 @@ class ScheduledTaskManagementIntegrationTest extends AbstractIntegrationTest {
         CLAUDE.reset();
         scheduledAdHocTaskRepository.deleteAll();
         conversationStateRepository.deleteAll();
+        userProfileRepository.deleteAll();
         userRepository.deleteAll();
     }
 
@@ -136,7 +142,14 @@ class ScheduledTaskManagementIntegrationTest extends AbstractIntegrationTest {
     }
 
     private UUID onboardedUser() {
-        return userAccountService.findOrCreate(CHAT_ID).getId();
+        UUID userId = userAccountService.findOrCreate(CHAT_ID).getId();
+        userProfileRepository.save(UserProfile.builder()
+                .id(UUID.randomUUID())
+                .userId(userId)
+                .householdSize(2)
+                .onlyUaProducer(false)
+                .build());
+        return userId;
     }
 
     private ScheduledAdHocTask pendingTask(UUID userId, String theme, Instant triggerAt) {
@@ -170,5 +183,30 @@ class ScheduledTaskManagementIntegrationTest extends AbstractIntegrationTest {
                 userId, ScheduledAdHocTaskStatus.PENDING);
 
         assertThat(pending).extracting(ScheduledAdHocTask::getId).containsExactly(sooner.getId(), later.getId());
+    }
+
+    @Test
+    void emptyStateIsAClearMessageNotAnEmptyList() throws Exception {
+        onboardedUser();
+
+        sendText(1, "🗓 Заплановані");
+
+        assertThat(lastMessageText()).contains("Немає запланованих замовлень");
+    }
+
+    @Test
+    void pendingTasksRenderWithThemeTimeAndButtons() throws Exception {
+        UUID userId = onboardedUser();
+        ScheduledAdHocTask task = pendingTask(userId, "вино та сир зі знижкою", Instant.parse("2026-09-11T18:00:00Z"));
+
+        sendText(1, "🗓 Заплановані");
+
+        var sent = TELEGRAM.sentMessages().getLast();
+        assertThat(sent.path("text").asText()).contains("вино та сир зі знижкою").contains("вересня");
+        var row = sent.path("reply_markup").path("inline_keyboard").get(0);
+        assertThat(row.get(0).path("text").asText()).isEqualTo("Редагувати");
+        assertThat(row.get(0).path("callback_data").asText()).isEqualTo("sched:edit:" + task.getId());
+        assertThat(row.get(1).path("text").asText()).isEqualTo("Скасувати");
+        assertThat(row.get(1).path("callback_data").asText()).isEqualTo("sched:cancel:" + task.getId());
     }
 }
