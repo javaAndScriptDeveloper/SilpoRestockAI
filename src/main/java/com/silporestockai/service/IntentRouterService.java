@@ -9,7 +9,6 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
-import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Locale;
 import lombok.extern.slf4j.Slf4j;
@@ -123,12 +122,16 @@ public class IntentRouterService {
     }
 
     private void scheduleAdHoc(User user, ClassifiedIntent classified) {
-        Instant triggerAt = parseTriggerAt(classified.targetDateTimeIso());
         String theme = classified.themeDescription() == null
                         || classified.themeDescription().isBlank()
                 ? "щось смачне"
                 : classified.themeDescription();
-        adHocScheduleService.schedule(user, theme, triggerAt);
+        // classified.targetDateTimeIso() is a deadline ("до п'ятниці"), not a desired start time — a live
+        // test caught this firing literally on Friday instead of right away. Waiting until near a deadline
+        // only delays a purchase that could just as well happen now, and "as soon as possible" is always at
+        // or before any deadline that matters — see docs/OVERNIGHT_QUESTIONS.md's follow-up entry. Fire on
+        // the very next sweep instead of trusting the extracted date as a trigger time.
+        adHocScheduleService.schedule(user, theme, Instant.now());
     }
 
     private void adjustPlan(User user, String instruction) {
@@ -142,18 +145,6 @@ public class IntentRouterService {
         telegramOutboundService.sendMessage(
                 user.getTelegramChatId(),
                 "Не зовсім зрозумів. Напиши, будь ласка, інакше, або напиши «Інструкція», щоб побачити приклади.");
-    }
-
-    /** No extractable time defaults to "soon" — one hour out, so the sweep picks it up on its next pass. */
-    private static Instant parseTriggerAt(String iso) {
-        if (iso == null || iso.isBlank()) {
-            return Instant.now().plusSeconds(3600);
-        }
-        try {
-            return Instant.parse(iso);
-        } catch (DateTimeParseException e) {
-            return Instant.now().plusSeconds(3600);
-        }
     }
 
     private static IntentType parse(String raw) {

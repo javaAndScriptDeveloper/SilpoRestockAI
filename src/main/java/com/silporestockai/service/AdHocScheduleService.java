@@ -7,28 +7,24 @@ import com.silporestockai.repository.ScheduledAdHocTaskRepository;
 import com.silporestockai.repository.UserRepository;
 import com.silporestockai.service.telegram.TelegramOutboundService;
 import java.time.Instant;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
 import java.util.List;
-import java.util.Locale;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 /**
- * "Закажи до п'ятниці..." is a future promise, not an immediate order — this is where that promise waits.
- * Firing it is {@link AdHocOrderService}'s job (task 24), unchanged; this only decides *when*.
+ * "Закажи до п'ятниці..." names a deadline, not a desired start time — waiting until near it only delays a
+ * purchase that could happen right away. {@link IntentRouterService#route} always passes {@link Instant#now()}
+ * as {@code triggerAt}, so this fires on the very next sweep; the deadline itself is never enforced here
+ * because "as soon as possible" is always at or before it. See docs/OVERNIGHT_QUESTIONS.md for the live-test
+ * report that caught the earlier, literal reading. Firing the order itself is {@link AdHocOrderService}'s job
+ * (task 24), unchanged; this only decides *when*.
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class AdHocScheduleService {
-
-    // Locale.forLanguageTag("uk") explicitly, not the JVM default — this process runs with
-    // -Duser.language=en, which silently rendered "September" instead of "вересня" in a user-facing message.
-    private static final DateTimeFormatter DISPLAY = DateTimeFormatter.ofPattern("d MMMM, HH:mm", Locale.forLanguageTag("uk"))
-            .withZone(ZoneId.of("Europe/Kyiv"));
 
     private final ScheduledAdHocTaskRepository scheduledAdHocTaskRepository;
     private final UserRepository userRepository;
@@ -45,8 +41,7 @@ public class AdHocScheduleService {
                 .createdAt(Instant.now())
                 .build());
         telegramOutboundService.sendMessage(
-                user.getTelegramChatId(),
-                "Заплановано на %s: %s.".formatted(DISPLAY.format(triggerAt), themeDescription));
+                user.getTelegramChatId(), "Зроблю це найближчим часом: %s.".formatted(themeDescription));
         log.info("scheduled an ad-hoc purchase for user {} at {}", user.getId(), triggerAt);
     }
 

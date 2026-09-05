@@ -33,7 +33,8 @@ class CartMessageServiceTest {
                 unresolved);
     }
 
-    private static final OfferedSlot SLOT = new OfferedSlot("slot-1", "18:00 - 20:00", Instant.parse("2026-09-03T15:00:00Z"), null);
+    private static final OfferedSlot SLOT =
+            new OfferedSlot("slot-1", "18:00 - 20:00", Instant.parse("2026-09-03T15:00:00Z"), null);
 
     private static CartSummary twoItems() {
         return summary(

@@ -397,7 +397,7 @@ below, type the phrase into a real chat with an onboarded profile and confirm th
 
 | Type this | Expect |
 |---|---|
-| «закажи до п'ятниці вино та сир по знижці» | "Заплановано на ..." confirmation; no cart yet |
+| «закажи до п'ятниці вино та сир по знижці» | "Зроблю це найближчим часом: ..." confirmation; no cart yet. The mentioned date is a deadline, not a trigger time — this fires on the next sweep, not near Friday (see docs/OVERNIGHT_QUESTIONS.md's follow-up entry, caught in live testing) |
 | «я захворів, гастрит» | "Перемикаю на щадне харчування" + a new plan |
 | «зроби менш калорійним» | A new plan, without switching to a named special mode |
 | «хочу набрати масу» / «більше протеїну» | A cross-sell line about protein/gainer, then "Яка зараз вага?" |

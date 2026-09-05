@@ -56,6 +56,47 @@ six-button keyboard task 31 replaced.
 **Why safe to decide alone:** this is a test-suite-correctness fix with no product behavior change, and
 leaving it broken would have blocked every subsequent task's required "full green suite" gate tonight.
 
+### Task 34: the Notion page is completely empty — no Context, Goal, or acceptance criteria at all
+
+**Question:** Task 34's page (`Actively configure delivery (address/type/slot) before generating checkout
+link`) has only a title and dependencies (02, 09, 28) — `<blank-page>This page is blank and has no
+content.</blank-page>`. Nothing to build against or verify criteria from, unlike every other task tonight.
+
+**Investigation, not guessing:** read `CartBuildingService.createCart`/`getOrCreateCartContext`,
+`CartConfirmationService.present`/`confirm`, and `CartMessageService.cartText` in full. Confirmed a real,
+concrete gap the title describes exactly: `createCart` silently takes the *first* saved address, the
+*first* matching delivery-type option, and the *first* available time slot with no user involvement at
+all, and `cartText()` never mentions delivery address, type, or the chosen time window anywhere in the
+message the household reviews before tapping "Підтвердити." The household currently commits to an order
+without ever seeing, let alone choosing, when or how it arrives — checkout link included.
+
+Also found a **proven, in-repo precedent** for exactly this kind of "let the user pick a different slot"
+interaction: task 15's `ReorderConfirmationService` already has a full slot-menu flow (`CALLBACK_SLOT_MENU`
+→ list of `OfferedSlot` buttons → `CALLBACK_SLOT_PREFIX` tap → `silpo_update_shopping_cart` with
+`{cartId, timeslot}`) that this codebase's own docs (`docs/superpowers/specs/2026-09-01-reorder-confirmation-design.md`)
+confirm is the same tool used there for exactly this purpose. This de-risks building the equivalent for the
+*first*-order confirmation flow considerably — it is not a guess that the MCP server supports changing an
+existing cart's slot after creation, it is already shipped, tested code doing exactly that.
+
+**Decision:** implement the part the evidence unambiguously supports and a proven pattern already exists
+for — surface the resolved delivery type + time window in the cart confirmation message, and add a
+"Інший час" slot-change step to `CartConfirmationService` mirroring `ReorderConfirmationService`'s slot-menu
+exactly (same tool, same callback shape). **Deliberately not building:** a delivery-*type* switch (home
+delivery vs self-pickup) — changing that means re-resolving a different branch entirely via
+`silpo_get_available_delivery_types`, which is the `createCart` code path, not an update to an existing
+cart, and no equivalent "switch an existing cart's delivery type" call exists anywhere in this codebase to
+model it on. Also not surfacing the full street address in the Telegram message — Silpo's own checkout page
+already shows it at the point that actually matters (payment), and the branch/coordinates behind it aren't
+something a slot-menu-style picker could sensibly let someone change without re-running `createCart`
+entirely (a much larger, unproven operation for an empty-spec task).
+
+**Why safe to decide alone:** grounded in code evidence and an already-shipped pattern in this same
+codebase, not invention; scoped down at every point where the safe evidence ran out rather than guessed
+past it. Marked "In review" rather than "Done" for a different reason than every other In-review task
+tonight — not a live-Telegram-only check, but because no acceptance criteria ever existed to verify
+completeness against, so the user should confirm this reading matches what they intended before treating it
+as finished.
+
 **Aside — one observed flake, not chased further:** one full-suite run failed several
 `@SpringBootTest` classes at once with `NoSuchBeanDefinitionException` for a bean (`telegramUpdateDedupCache`)
 that every other run resolves fine, including the exact same test class run standalone immediately after.
@@ -223,3 +264,28 @@ task cannot honestly be marked Done tonight regardless of how the CSS itself tur
 one source that couldn't be reached is the same honest-partial-progress pattern used for every other task
 tonight blocked on live/human verification (23, 28, 32) — better than leaving a "Should have" task
 completely untouched over one unreachable secondary source.
+
+## Live-test bug: AD_HOC_SCHEDULED_PURCHASE fired literally at the mentioned deadline, not before it
+
+**Reported live, not a judgment call:** the user tested «замов сира по знижці з вином до наступної
+п'ятниці» in the real bot and got back "Заплановано на 6 вересня, 01:17" — the classifier's extracted
+`targetDateTimeIso` had been used directly as the scheduled task's `trigger_at`, so the order would only
+have actually been placed next Friday at 01:17, an arbitrary time of night nobody asked for. The user's own
+correction: "до дедлайну" (by the deadline) means the order should happen as soon as possible, with the
+deadline only as an upper bound — not a literal appointment to wait for. "Неважливо коли стартане скедулед
+джоба, важливо зробити це до дедлайну" (doesn't matter when the scheduled job starts, what matters is doing
+it before the deadline).
+
+**Fix:** `IntentRouterService.scheduleAdHoc` no longer passes the classified date to
+`AdHocScheduleService.schedule` as `triggerAt` — it always passes `Instant.now()`, so the very next sweep
+fires it. The extracted date is still asked for in the classification prompt (harmless, unused) but no
+longer drives scheduling. `AdHocScheduleService`'s confirmation message changed from "Заплановано на
+<date>: <theme>." (implied a future appointment) to "Зроблю це найближчим часом: <theme>." (honest about
+firing soon). `AdHocOrderService.buildAdHocOrder`'s third parameter (`targetDateTime`) was already dead —
+never read in its body — so this cost nothing there.
+
+**Why this is the right general fix, not a one-off patch:** every AD_HOC_SCHEDULED_PURCHASE example in
+task 31's own spec is deadline-shaped ("до п'ятниці", "for tonight") — there is no example anywhere of a
+genuine future appointment where delaying the purchase is actually desired. Discount/ad-hoc grocery orders
+have no reason to wait once decided; earlier is never worse than later for this category, only the
+inverse.
