@@ -19,9 +19,15 @@ public final class MainMenuKeyboard {
 
     private MainMenuKeyboard() {}
 
+    /**
+     * Two rows of two. Four labels in one row get squeezed to a third of a phone's width each, and Telegram
+     * truncates the longer ones («Заплановані», «Інструкція») with an ellipsis — the button then reads as
+     * "Заплан…", which is not a name anyone recognises on a demo recording.
+     */
     public static ReplyKeyboardMarkup markup() {
         return ReplyKeyboardMarkup.builder()
-                .keyboardRow(new KeyboardRow(LIST, SCHEDULED, FORM, HELP))
+                .keyboardRow(new KeyboardRow(LIST, SCHEDULED))
+                .keyboardRow(new KeyboardRow(FORM, HELP))
                 .resizeKeyboard(true)
                 .build();
     }
