@@ -299,6 +299,17 @@ class IntentRouterIntegrationTest extends AbstractIntegrationTest {
         assertThat(TELEGRAM.sentMessages().getLast().path("text").asText()).contains("Календар зараз не налаштований");
     }
 
+    /** /start after onboarding is a "where am I" — it brings the keyboard back and never hits the classifier. */
+    @Test
+    void startAfterOnboardingBringsTheMenuBackWithoutAClassificationCall() throws Exception {
+        sendText(1, "/start");
+
+        assertThat(CLAUDE.callCount()).isZero();
+        var sent = TELEGRAM.sentMessages().getLast();
+        assertThat(sent.path("text").asText()).doesNotContain("Не зовсім зрозумів");
+        assertThat(sent.path("reply_markup").path("keyboard").isArray()).isTrue();
+    }
+
     @Test
     void existingSlashCommandsStillWorkUnchangedWithoutAClassificationCall() throws Exception {
         // The additive-rollout guarantee: /uaonly still reaches SpecialModeService directly, no

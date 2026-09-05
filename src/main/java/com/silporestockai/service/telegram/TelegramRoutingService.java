@@ -148,6 +148,14 @@ public class TelegramRoutingService {
             onboardingFlowService.handle(user, incoming);
             return;
         }
+        if (incoming instanceof TelegramIncomingUpdate.Text start && matches(start.text(), "/start", "")) {
+            // A second /start — after a cleared chat, a reinstall, or the failure-recovery message's own advice to
+            // type it — used to fall through to the classifier and get "Не зовсім зрозумів" for the one word
+            // every Telegram user knows. It is also the one message guaranteed to bring the keyboard back.
+            telegramOutboundService.sendMessageWithMainMenu(
+                    incoming.chatId(), "Я тут. Кнопки внизу — або просто напиши, що потрібно.");
+            return;
+        }
         // The persistent menu is global navigation — always tappable, even mid-flow. Checked before any
         // flow-specific dispatch below so a tap can never be swallowed as free text by whichever conversation
         // happens to be active (a list-edit AI parse, a check-in answer, ...). None of the flow handlers below
