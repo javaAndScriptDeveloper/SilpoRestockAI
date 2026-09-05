@@ -97,13 +97,19 @@ public class CheckinPromptService {
     /**
      * True while the user owes the agent an answer to something else.
      *
+     * <p>Any flow at all, not a named few: {@link #prompt} overwrites {@code conversation_state}, and every flow keeps
+     * its working data there — a reorder waiting on its Підтвердити tap, a mass-gain setup half-way through its
+     * questions, an edit of a scheduled purchase. A prompt landing mid-flow used to wipe that state, and the buttons
+     * the person was about to tap silently stopped doing anything. Whatever flow exists, the check-in can wait an
+     * hour for the next sweep.
+     *
      * <p>A chat already in {@link ConversationFlow#CHECK_IN} is deliberately not busy: that is the un-answered prompt,
      * whose cadence the interval already governs.
      */
     private boolean isBusyElsewhere(User user) {
         ConversationFlow flow =
                 conversationStateService.load(user.getTelegramChatId()).getCurrentFlow();
-        return flow == ConversationFlow.ONBOARDING || flow == ConversationFlow.CART_CONFIRMATION;
+        return flow != ConversationFlow.NONE && flow != ConversationFlow.CHECK_IN;
     }
 
     /** Sends the prompt, leaves the flag task 12 reads, and records that the agent spoke. */

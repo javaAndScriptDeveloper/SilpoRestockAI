@@ -258,6 +258,22 @@ class CheckinPromptIntegrationTest extends AbstractIntegrationTest {
         assertThat(TELEGRAM.sentMessages()).isEmpty();
     }
 
+    /**
+     * Every flow, not just the two that existed when this service was written: a prompt overwrites
+     * conversation_state, and a reorder waiting on its confirm tap would otherwise lose the draft it was deciding on.
+     */
+    @Test
+    void doesNotInterruptAReorderThatIsWaitingOnItsConfirmTap() {
+        household(4);
+        conversationStateService.save(
+                CHAT_ID, ConversationFlow.REORDER_CONFIRMATION, "AWAITING_DECISION", Map.of("orderId", "o-1"));
+
+        assertThat(checkinPromptService.sweep()).isZero();
+        assertThat(TELEGRAM.sentMessages()).isEmpty();
+        assertThat(conversationStateService.load(CHAT_ID).getCurrentFlow())
+                .isEqualTo(ConversationFlow.REORDER_CONFIRMATION);
+    }
+
     @Test
     void asksAgainWhenAWholeIntervalPassesWithNoAnswer() {
         User user = household(10);
