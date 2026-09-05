@@ -56,6 +56,28 @@ six-button keyboard task 31 replaced.
 **Why safe to decide alone:** this is a test-suite-correctness fix with no product behavior change, and
 leaving it broken would have blocked every subsequent task's required "full green suite" gate tonight.
 
+**Aside — one observed flake, not chased further:** one full-suite run failed several
+`@SpringBootTest` classes at once with `NoSuchBeanDefinitionException` for a bean (`telegramUpdateDedupCache`)
+that every other run resolves fine, including the exact same test class run standalone immediately after.
+Smells like Spring's test-context cache under memory pressure across many distinct contexts in one Gradle
+test JVM, not a code defect — two consecutive full reruns afterward were both clean. Flagging in case it
+recurs with a pattern worth chasing; not spending more time on a single unreproducible flake tonight.
+
+### Task 29: blackout was missing from the chat-first intent set entirely
+
+**Observation:** Task 29's own acceptance criteria require that "Блекаут" stay reachable after its button
+is removed — "тепер через намір 'світло вимкнули' тощо" per task 30's note in this same log. But
+`IntentRouterService`'s `IntentType` enum, built last night for task 31, never included a blackout intent
+at all — free text like "світло вимкнули" would have hit `UNKNOWN` and gotten a clarifying question
+forever, with `/blackout` as the only working entry point.
+
+**Decision:** Added `BLACKOUT` as a ninth intent (prompt example strings, enum value, dispatch to the
+already-existing `BlackoutModeService.buildBlackoutOrder`) rather than treating this as "already done" by
+`/blackout` continuing to work — the whole chat-first pitch is that *this specific button's* capability
+survives its own removal via ordinary text, not via a command nobody would think to type unprompted.
+Covered by a new `IntentRouterIntegrationTest` case; live classification accuracy for this phrase still
+needs the same human-in-Telegram check as every other intent (see `docs/RUNBOOK.md`).
+
 ## Queue was stale vs. git reality
 
 **Question:** The queue named tasks 23, 25, 28 as if unstarted. Git history showed 25 and 28 already

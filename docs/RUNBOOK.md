@@ -407,6 +407,7 @@ below, type the phrase into a real chat with an onboarded profile and confirm th
 | «що ти вмієш?» | The static Інструкція text |
 | something genuinely ambiguous, e.g. «зроби щось» | A clarifying question, not a guess |
 | «/blackout» (typed, not tapped) | Still works exactly as before — no classification call happens |
+| «світло вимкнули, немає струму» | A small cart, no-cooking-needed items only (task 29's chat-only blackout) |
 
 Also confirm the persistent keyboard shows exactly three buttons (Список / Анкета / Інструкція) after
 onboarding finishes, and:

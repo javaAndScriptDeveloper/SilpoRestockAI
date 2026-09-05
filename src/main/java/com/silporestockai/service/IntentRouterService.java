@@ -43,12 +43,14 @@ public class IntentRouterService {
             — «Хочу набрати масу» / «більше протеїну» — почати набір маси.
             — «Шукай тільки український виробник» — фільтрувати товари за походженням.
             — «Голова після вчорашнього» — швидке замовлення регідратації й сорбентів.
+            — «Світло вимкнули» — замовлення того, що не потребує плити й холодильника.
             — «Покажи календар» — раціон по днях тижня.""";
 
     private final ClaudeApiClient claudeApiClient;
     private final AdHocScheduleService adHocScheduleService;
     private final AdHocOrderService adHocOrderService;
     private final SpecialModeService specialModeService;
+    private final BlackoutModeService blackoutModeService;
     private final MealPlanService mealPlanService;
     private final ShoppingListService shoppingListService;
     private final ShoppingListBuilderService shoppingListBuilderService;
@@ -61,6 +63,7 @@ public class IntentRouterService {
             AdHocScheduleService adHocScheduleService,
             AdHocOrderService adHocOrderService,
             SpecialModeService specialModeService,
+            BlackoutModeService blackoutModeService,
             MealPlanService mealPlanService,
             ShoppingListService shoppingListService,
             ShoppingListBuilderService shoppingListBuilderService,
@@ -71,6 +74,7 @@ public class IntentRouterService {
         this.adHocScheduleService = adHocScheduleService;
         this.adHocOrderService = adHocOrderService;
         this.specialModeService = specialModeService;
+        this.blackoutModeService = blackoutModeService;
         this.mealPlanService = mealPlanService;
         this.shoppingListService = shoppingListService;
         this.shoppingListBuilderService = shoppingListBuilderService;
@@ -106,6 +110,11 @@ public class IntentRouterService {
             }
             case FILTER_UA_PRODUCER_ONLY -> specialModeService.toggleUaOnly(user);
             case HANGOVER_RELIEF -> adHocOrderService.buildHangoverReliefOrder(user);
+            case BLACKOUT -> {
+                telegramOutboundService.sendMessage(
+                        user.getTelegramChatId(), "Збираю щось на поїсти без плити й холодильника.");
+                blackoutModeService.buildBlackoutOrder(user);
+            }
             case LIST_VIEW -> shoppingListBuilderService.askForInput(user);
             case CALENDAR_VIEW -> calendarViewService.showWeek(user);
             case HELP -> telegramOutboundService.sendMessage(user.getTelegramChatId(), HELP_TEXT);
@@ -173,6 +182,7 @@ public class IntentRouterService {
         SPECIAL_MODE_MASS_GAIN,
         FILTER_UA_PRODUCER_ONLY,
         HANGOVER_RELIEF,
+        BLACKOUT,
         LIST_VIEW,
         CALENDAR_VIEW,
         HELP,

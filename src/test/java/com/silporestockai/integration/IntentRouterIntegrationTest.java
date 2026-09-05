@@ -76,7 +76,13 @@ class IntentRouterIntegrationTest extends AbstractIntegrationTest {
 
     private static StubMcpServer startMcp() {
         try {
-            return new StubMcpServer(List.of("silpo_get_my_family"));
+            return new StubMcpServer(List.of(
+                    "silpo_get_my_family",
+                    "silpo_get_my_shopping_cart",
+                    "silpo_get_shopping_cart_by_id",
+                    "silpo_get_time_slots",
+                    "silpo_find_products_batch",
+                    "silpo_add_or_update_cart_products"));
         } catch (IOException e) {
             throw new IllegalStateException("could not start the MCP stub", e);
         }
@@ -198,6 +204,35 @@ class IntentRouterIntegrationTest extends AbstractIntegrationTest {
         // No plan exists yet for this user, so the honest "no plan" message is what proves dispatch reached
         // CalendarViewService rather than some other handler.
         assertThat(TELEGRAM.sentMessages().getLast().path("text").asText()).contains("немає");
+    }
+
+    @Test
+    void blackoutIntentBuildsAnEmergencyCartFromFreeText() throws Exception {
+        CLAUDE.respondWithText(
+                "{\"intent\":\"BLACKOUT\",\"confidence\":0.92,\"themeDescription\":null,\"targetDateTimeIso\":null}");
+        MCP.respondToTool("silpo_get_my_shopping_cart", "{\"cartId\":\"cart-b\"}");
+        MCP.respondToTool("silpo_get_time_slots", "{\"timeSlots\":[{\"id\":\"slot-1\",\"from\":\"18:00\"}]}");
+        MCP.respondToTool("silpo_add_or_update_cart_products", "{\"ok\":true}");
+        MCP.respondToTool(
+                "silpo_find_products_batch",
+                "{\"queries\":[{\"query\":\"консерви рибні\",\"products\":[{\"name\":\"консерви рибні\","
+                        + "\"productId\":\"p-77\",\"branchId\":\"branch-7\"}]}]}");
+        MCP.respondToTool("silpo_get_shopping_cart_by_id", """
+                {"cartId":"cart-b","branchId":"branch-7","companyId":"company-3","deliveryType":"delivery",\
+                "items":[{"productId":"p-77","name":"Шпроти","unit":"шт","quantity":1,"price":72}],\
+                "total":72,"validations":[],\
+                "checkoutWebLink":"https://silpo.ua/checkout/cart-b",\
+                "checkoutMobileLink":"silpo://checkout/cart-b"}""");
+
+        sendText(1, "світло вимкнули, немає струму");
+
+        assertThat(TELEGRAM.sentMessages())
+                .anyMatch(message -> message.path("text").asText().contains("без плити"));
+        assertThat(conversationStateRepository
+                        .findById(user.getTelegramChatId())
+                        .orElseThrow()
+                        .getCurrentFlow())
+                .isEqualTo(com.silporestockai.model.ConversationFlow.CART_CONFIRMATION);
     }
 
     @Test
