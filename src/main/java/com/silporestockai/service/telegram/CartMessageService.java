@@ -2,6 +2,7 @@ package com.silporestockai.service.telegram;
 
 import com.silporestockai.model.BasketItem;
 import com.silporestockai.model.CartSummary;
+import com.silporestockai.model.OfferedSlot;
 import com.silporestockai.model.TelegramButton;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -24,10 +25,12 @@ public class CartMessageService {
 
     public static final String CALLBACK_CONFIRM = "cart:confirm";
     public static final String CALLBACK_CONFIRM_BONUS = "cart:confirm-bonus";
+    public static final String CALLBACK_SLOT_MENU = "cart:slotmenu";
+    public static final String CALLBACK_SLOT_PREFIX = "cart:slot:";
     public static final String CALLBACK_CANCEL = "cart:cancel";
 
     /** The cart itself: what is in it, what could not be found, what Silpo warned about, what it costs. */
-    public String cartText(CartSummary summary) {
+    public String cartText(CartSummary summary, OfferedSlot slot) {
         StringBuilder text = new StringBuilder("Зібрав кошик на тиждень:\n");
         for (BasketItem item : summary.items()) {
             text.append("\n— ").append(item.name());
@@ -50,6 +53,7 @@ public class CartMessageService {
             text.append("\n⚠ ").append(validation);
         }
         text.append("\n\nРазом: ").append(money(summary.total())).append(" грн");
+        text.append("\n\nДоставка: ").append(slot == null ? "слот ще не обрано" : slot.label());
         if (summary.bonusDecisionPending()) {
             text.append("\nНа рахунку ")
                     .append(amount(summary.bonusAvailable()))
@@ -64,14 +68,29 @@ public class CartMessageService {
      * <p>The bonus question is asked by offering a second confirm rather than by sending a separate message: one tap
      * answers both questions, and there is only one state to make idempotent instead of two.
      */
-    public List<TelegramButton> cartButtons(CartSummary summary) {
+    public List<TelegramButton> cartButtons(CartSummary summary, boolean hasAlternativeSlots) {
         List<TelegramButton> buttons = new ArrayList<>();
         buttons.add(TelegramButton.callback("Підтвердити", CALLBACK_CONFIRM));
         if (summary.bonusDecisionPending()) {
             buttons.add(TelegramButton.callback(
                     "Підтвердити + %s бонусів".formatted(amount(summary.bonusAvailable())), CALLBACK_CONFIRM_BONUS));
         }
+        if (hasAlternativeSlots) {
+            buttons.add(TelegramButton.callback("Інший час", CALLBACK_SLOT_MENU));
+        }
         buttons.add(TelegramButton.callback("Скасувати", CALLBACK_CANCEL));
+        return buttons;
+    }
+
+    public String slotMenuText() {
+        return "Коли зручно прийняти доставку?";
+    }
+
+    public List<TelegramButton> slotButtons(List<OfferedSlot> slots) {
+        List<TelegramButton> buttons = new ArrayList<>();
+        for (int i = 0; i < slots.size(); i++) {
+            buttons.add(TelegramButton.callback(slots.get(i).label(), CALLBACK_SLOT_PREFIX + i));
+        }
         return buttons;
     }
 

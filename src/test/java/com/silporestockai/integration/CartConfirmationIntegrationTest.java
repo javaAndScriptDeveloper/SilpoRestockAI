@@ -142,7 +142,9 @@ class CartConfirmationIntegrationTest extends AbstractIntegrationTest {
         // and only then risks the "no JavaTimeModule" serialization crash asMap() once hit — when this actually
         // parses to one.
         MCP.respondToTool(
-                "silpo_get_time_slots", "{\"timeSlots\":[{\"id\":\"slot-1\",\"from\":\"2026-09-03T18:00:00Z\"}]}");
+                "silpo_get_time_slots",
+                "{\"timeSlots\":[{\"id\":\"slot-1\",\"from\":\"2026-09-03T18:00:00Z\"},"
+                        + "{\"id\":\"slot-2\",\"from\":\"2026-09-04T20:00:00Z\"}]}");
         MCP.respondToTool("silpo_find_products_batch", """
                 {"queries":[\
                 {"query":"цибуля","products":[{"name":"цибуля","productId":"p-1","companyId":"company-3","branchId":"branch-7"}]},\
@@ -233,6 +235,39 @@ class CartConfirmationIntegrationTest extends AbstractIntegrationTest {
         assertThat(lastMessageText()).contains("Цибуля").contains("Гречка").contains("73.50");
         assertThat(conversationStateService.load(CHAT_ID).getCurrentFlow())
                 .isEqualTo(ConversationFlow.CART_CONFIRMATION);
+    }
+
+    @Test
+    void theCartMessageShowsTheDeliverySlotAndOffersAnotherOne() {
+        presentedCart();
+
+        assertThat(lastMessageText()).contains("Доставка:");
+        var buttons = TELEGRAM.sentMessages().getLast().path("reply_markup").path("inline_keyboard").get(0);
+        boolean hasSlotMenuButton = false;
+        for (JsonNode button : buttons) {
+            if (CartMessageService.CALLBACK_SLOT_MENU.equals(button.path("callback_data").asText())) {
+                hasSlotMenuButton = true;
+            }
+        }
+        assertThat(hasSlotMenuButton).isTrue();
+    }
+
+    @Test
+    void pickingADifferentSlotUpdatesTheMessageWithoutBookingItYet() throws Exception {
+        User user = presentedCart();
+
+        tapButton(1, CartMessageService.CALLBACK_SLOT_MENU);
+        var slotMenuButtons =
+                TELEGRAM.sentMessages().getLast().path("reply_markup").path("inline_keyboard").get(0);
+        assertThat(slotMenuButtons.size()).isEqualTo(2);
+
+        tapButton(2, CartMessageService.CALLBACK_SLOT_PREFIX + "1");
+
+        assertThat(MCP.calledTools()).doesNotContain("silpo_update_shopping_cart");
+        CustomerOrder order = customerOrderRepository
+                .findByUserIdOrderByCreatedAtDesc(user.getId())
+                .getFirst();
+        assertThat(order.getDeliverySlot()).isEqualTo("slot-1"); // unchanged until confirm — this is the point
     }
 
     @Test

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.silporestockai.model.BasketItem;
 import com.silporestockai.model.CartSummary;
+import com.silporestockai.model.OfferedSlot;
 import com.silporestockai.model.TelegramButton;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -32,6 +33,8 @@ class CartMessageServiceTest {
                 unresolved);
     }
 
+    private static final OfferedSlot SLOT = new OfferedSlot("slot-1", "18:00 - 20:00", Instant.parse("2026-09-03T15:00:00Z"), null);
+
     private static CartSummary twoItems() {
         return summary(
                 List.of(
@@ -45,7 +48,7 @@ class CartMessageServiceTest {
 
     @Test
     void listsEveryItemWithItsQuantityAndTheTotal() {
-        String text = service.cartText(twoItems());
+        String text = service.cartText(twoItems(), SLOT);
 
         assertThat(text)
                 .contains("Цибуля")
@@ -57,19 +60,25 @@ class CartMessageServiceTest {
     }
 
     @Test
+    void mentionsTheDeliverySlotOrSaysNoneIsChosenYet() {
+        assertThat(service.cartText(twoItems(), SLOT)).contains("Доставка:").contains("18:00 - 20:00");
+        assertThat(service.cartText(twoItems(), null)).contains("слот ще не обрано");
+    }
+
+    @Test
     void flagsWhatSilpoCouldNotMatchInsteadOfHidingIt() {
         CartSummary cart = summary(
                 twoItems().items(), new BigDecimal("73.5"), BigDecimal.ZERO, false, List.of("трюфелі", "хамон"));
 
-        assertThat(service.cartText(cart))
+        assertThat(service.cartText(cart, SLOT))
                 .contains("Не знайшов")
                 .contains("трюфелі")
                 .contains("хамон");
     }
 
     @Test
-    void offersConfirmAndCancelAndNothingElseWhenThereAreNoBonuses() {
-        List<TelegramButton> buttons = service.cartButtons(twoItems());
+    void offersConfirmAndCancelAndNothingElseWhenThereAreNoBonusesOrAlternativeSlots() {
+        List<TelegramButton> buttons = service.cartButtons(twoItems(), false);
 
         assertThat(buttons)
                 .extracting(TelegramButton::callbackData)
@@ -77,10 +86,22 @@ class CartMessageServiceTest {
     }
 
     @Test
+    void offersAnotherTimeButtonOnlyWhenThereAreAlternativeSlots() {
+        List<TelegramButton> buttons = service.cartButtons(twoItems(), true);
+
+        assertThat(buttons)
+                .extracting(TelegramButton::callbackData)
+                .containsExactly(
+                        CartMessageService.CALLBACK_CONFIRM,
+                        CartMessageService.CALLBACK_SLOT_MENU,
+                        CartMessageService.CALLBACK_CANCEL);
+    }
+
+    @Test
     void asksTheBonusQuestionAsAThirdButtonThatNamesTheAmount() {
         CartSummary cart = summary(twoItems().items(), new BigDecimal("73.5"), new BigDecimal("120"), true, List.of());
 
-        List<TelegramButton> buttons = service.cartButtons(cart);
+        List<TelegramButton> buttons = service.cartButtons(cart, false);
 
         assertThat(buttons)
                 .extracting(TelegramButton::callbackData)
@@ -127,7 +148,7 @@ class CartMessageServiceTest {
                 false,
                 List.of());
 
-        assertThat(service.cartText(cart)).contains("Молоко");
+        assertThat(service.cartText(cart, SLOT)).contains("Молоко");
         assertThat(service.checkoutButtons(summary(List.of(), BigDecimal.ZERO, BigDecimal.ZERO, false, List.of())))
                 .isNotNull();
     }

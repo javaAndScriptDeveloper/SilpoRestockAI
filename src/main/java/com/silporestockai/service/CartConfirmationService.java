@@ -9,8 +9,10 @@ import com.silporestockai.entity.CustomerOrder;
 import com.silporestockai.entity.ShoppingListItem;
 import com.silporestockai.entity.User;
 import com.silporestockai.exception.NoSilpoDeliveryAddressException;
+import com.silporestockai.model.CartContext;
 import com.silporestockai.model.CartSummary;
 import com.silporestockai.model.ConversationFlow;
+import com.silporestockai.model.OfferedSlot;
 import com.silporestockai.model.OrderConfirmedEvent;
 import com.silporestockai.model.OrderStatus;
 import com.silporestockai.model.OrderType;
@@ -51,6 +53,8 @@ public class CartConfirmationService {
     private static final String STEP_AWAITING_DECISION = "AWAITING_DECISION";
     private static final String KEY_ORDER_ID = "orderId";
     private static final String KEY_SUMMARY = "summary";
+    private static final String KEY_SLOTS = "slots";
+    private static final String KEY_SLOT = "slot";
 
     /** Own mapper, as elsewhere in the app: Boot 4 carries both Jackson 2 and Jackson 3. */
     private static final ObjectMapper MAPPER = new ObjectMapper().findAndRegisterModules();
@@ -105,6 +109,12 @@ public class CartConfirmationService {
             return;
         }
 
+        List<OfferedSlot> slots = slotsFor(user.getId());
+        OfferedSlot selectedSlot = slots.stream()
+                .filter(slot -> slot.id().equals(summary.deliverySlot()))
+                .findFirst()
+                .orElse(null);
+
         CustomerOrder order = customerOrderRepository.save(CustomerOrder.builder()
                 .id(UUID.randomUUID())
                 .userId(user.getId())
@@ -119,11 +129,26 @@ public class CartConfirmationService {
         Map<String, Object> context = new LinkedHashMap<>();
         context.put(KEY_ORDER_ID, order.getId().toString());
         context.put(KEY_SUMMARY, asMap(summary));
+        context.put(KEY_SLOTS, slots.stream().map(CartConfirmationService::asMap).toList());
+        context.put(KEY_SLOT, summary.deliverySlot());
         conversationStateService.save(chatId, ConversationFlow.CART_CONFIRMATION, STEP_AWAITING_DECISION, context);
 
         telegramOutboundService.sendMessageWithButtons(
-                chatId, cartMessageService.cartText(summary), cartMessageService.cartButtons(summary));
+                chatId,
+                cartMessageService.cartText(summary, selectedSlot),
+                cartMessageService.cartButtons(summary, !slots.isEmpty()));
         log.info("presented cart {} as draft order {} to user {}", summary.cartId(), order.getId(), user.getId());
+    }
+
+    /** No slots is not a reason to hide a finished order: checkout can still pick one. */
+    private List<OfferedSlot> slotsFor(UUID userId) {
+        try {
+            CartContext context = cartBuildingService.getOrCreateCartContext(userId);
+            return cartBuildingService.offeredTimeSlots(userId, context);
+        } catch (RuntimeException e) {
+            log.warn("could not read time slots for user {}: {}", userId, e.getMessage());
+            return List.of();
+        }
     }
 
     /** Everything a chat sitting in {@link ConversationFlow#CART_CONFIRMATION} can send. */
@@ -144,16 +169,54 @@ public class CartConfirmationService {
 
         CustomerOrder order = draft.get();
         CartSummary summary = summaryOf(state);
-        switch (tap.data()) {
-            case CartMessageService.CALLBACK_CONFIRM -> confirm(user, order, summary, false);
-            case CartMessageService.CALLBACK_CONFIRM_BONUS -> confirm(user, order, summary, true);
-            case CartMessageService.CALLBACK_CANCEL -> cancel(user, order);
-            default -> log.debug("ignoring unknown callback {} for chat {}", tap.data(), tap.chatId());
+        String data = tap.data();
+        if (CartMessageService.CALLBACK_CONFIRM.equals(data)) {
+            confirm(user, order, state, summary, false);
+        } else if (CartMessageService.CALLBACK_CONFIRM_BONUS.equals(data)) {
+            confirm(user, order, state, summary, true);
+        } else if (CartMessageService.CALLBACK_SLOT_MENU.equals(data)) {
+            telegramOutboundService.sendMessageWithButtons(
+                    tap.chatId(), cartMessageService.slotMenuText(), cartMessageService.slotButtons(slotsOf(state)));
+        } else if (data.startsWith(CartMessageService.CALLBACK_SLOT_PREFIX)) {
+            pickSlot(user, state, summary, data.substring(CartMessageService.CALLBACK_SLOT_PREFIX.length()));
+        } else if (CartMessageService.CALLBACK_CANCEL.equals(data)) {
+            cancel(user, order);
+        } else {
+            log.debug("ignoring unknown callback {} for chat {}", data, tap.chatId());
         }
     }
 
+    private void pickSlot(User user, ConversationState state, CartSummary summary, String indexRaw) {
+        List<OfferedSlot> slots = slotsOf(state);
+        int index;
+        try {
+            index = Integer.parseInt(indexRaw);
+        } catch (NumberFormatException e) {
+            return;
+        }
+        if (index < 0 || index >= slots.size()) {
+            return;
+        }
+        Map<String, Object> context = new LinkedHashMap<>(state.getContext());
+        context.put(KEY_SLOT, slots.get(index).id());
+        conversationStateService.save(
+                user.getTelegramChatId(), ConversationFlow.CART_CONFIRMATION, STEP_AWAITING_DECISION, context);
+        telegramOutboundService.sendMessageWithButtons(
+                user.getTelegramChatId(),
+                cartMessageService.cartText(summary, slots.get(index)),
+                cartMessageService.cartButtons(summary, !slots.isEmpty()));
+    }
+
+    private static List<OfferedSlot> slotsOf(ConversationState state) {
+        Object slots = state.getContext().get(KEY_SLOTS);
+        if (!(slots instanceof List<?> raw)) {
+            return List.of();
+        }
+        return raw.stream().map(node -> MAPPER.convertValue(node, OfferedSlot.class)).toList();
+    }
+
     /** Spends the bonuses if asked, stores the order and the baseline, and hands over the checkout link. */
-    private void confirm(User user, CustomerOrder order, CartSummary summary, boolean spendBonuses) {
+    private void confirm(User user, CustomerOrder order, ConversationState state, CartSummary summary, boolean spendBonuses) {
         long chatId = user.getTelegramChatId();
         boolean bonusesApplied = spendBonuses && applyBonuses(user.getId(), summary);
 
@@ -256,7 +319,7 @@ public class CartConfirmationService {
     // convertValue to a raw Map rather than a TypeReference: an anonymous TypeReference subclass is a class in
     // this package, and ArchUnit requires every one of those to be named ...Service.
     @SuppressWarnings("unchecked")
-    private static Map<String, Object> asMap(CartSummary summary) {
-        return MAPPER.convertValue(summary, Map.class);
+    private static Map<String, Object> asMap(Object value) {
+        return MAPPER.convertValue(value, Map.class);
     }
 }
