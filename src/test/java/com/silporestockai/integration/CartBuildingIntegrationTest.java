@@ -35,7 +35,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
-@DisplayName("the documented six-call cart sequence, against a stub MCP server")
+@DisplayName("the documented seven-call cart sequence, against a stub MCP server")
 class CartBuildingIntegrationTest extends AbstractIntegrationTest {
 
     private static final StubMcpServer MCP = startMcp();
@@ -63,6 +63,7 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
             return new StubMcpServer(List.of(
                     "silpo_get_my_shopping_cart",
                     "silpo_get_shopping_cart_by_id",
+                    "silpo_clear_shopping_cart",
                     "silpo_get_time_slots",
                     "silpo_find_products_batch",
                     "silpo_add_or_update_cart_products",
@@ -123,6 +124,7 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
                 "checkoutWebLink":"https://silpo.ua/checkout/cart-1",\
                 "checkoutMobileLink":"silpo://checkout/cart-1"}""");
         MCP.respondToTool("silpo_get_time_slots", "{\"timeSlots\":[{\"id\":\"slot-1\",\"from\":\"18:00\"}]}");
+        MCP.respondToTool("silpo_clear_shopping_cart", "{\"ok\":true}");
     }
 
     private void scriptProductTools() {
@@ -225,7 +227,7 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void runsAllSixCallsInTheDocumentedOrder() {
+    void runsAllSevenCallsInTheDocumentedOrder() {
         UUID userId = connectedUser(8404L);
         scriptCartTools();
         scriptProductTools();
@@ -236,6 +238,7 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
                 .containsExactly(
                         "silpo_get_my_shopping_cart",
                         "silpo_get_shopping_cart_by_id",
+                        "silpo_clear_shopping_cart",
                         "silpo_get_time_slots",
                         "silpo_find_products_batch",
                         "silpo_add_or_update_cart_products",
@@ -350,6 +353,7 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
         MCP.respondToTool("silpo_find_products_batch", """
                 {"queries":[{"query":"цибуля","products":[]}]}""");
         MCP.respondToTool("silpo_add_or_update_cart_products", "{\"ok\":true}");
+        MCP.respondToTool("silpo_clear_shopping_cart", "{\"ok\":true}");
 
         cartBuildingService.buildCart(userId, List.of(item("цибуля", "0.5", "кг")));
 
@@ -581,7 +585,7 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
     /**
      * {@code silpo_create_shopping_cart}'s own documented workflow: a saved address gives coordinates, coordinates
      * resolve a home-delivery option with its branch already attached, the branch's time slots give a window, and
-     * only then does a cart exist to hand back to the ordinary six-step sequence.
+     * only then does a cart exist to hand back to the ordinary seven-step sequence.
      */
     @Test
     void createsACartFromASavedAddressWhenTheGuestHasNoneYet() {

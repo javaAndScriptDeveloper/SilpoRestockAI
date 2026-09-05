@@ -73,6 +73,7 @@ class ReadyMealsSearchFirstIntegrationTest extends AbstractIntegrationTest {
             return new StubMcpServer(List.of(
                     "silpo_get_my_shopping_cart",
                     "silpo_get_shopping_cart_by_id",
+                    "silpo_clear_shopping_cart",
                     "silpo_get_time_slots",
                     "silpo_find_products_batch",
                     "silpo_add_or_update_cart_products"));
@@ -135,6 +136,7 @@ class ReadyMealsSearchFirstIntegrationTest extends AbstractIntegrationTest {
                 {"cartId":"cart-1","branchId":"branch-7","companyId":"company-3",\
                 "deliveryType":"delivery","items":[]}""");
         MCP.respondToTool("silpo_get_time_slots", "{\"timeSlots\":[{\"id\":\"slot-1\",\"from\":\"18:00\"}]}");
+        MCP.respondToTool("silpo_clear_shopping_cart", "{\"ok\":true}");
         // 16 candidates across a few search terms — the same order of magnitude as the production bug report.
         MCP.respondToTool("silpo_find_products_batch", """
                 {"queries":[{"query":"готові страви","products":[

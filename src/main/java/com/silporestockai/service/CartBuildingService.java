@@ -35,7 +35,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 /**
- * Drives the documented Silpo cart sequence: cart, branch, slots, products, add, verify.
+ * Drives the documented Silpo cart sequence: cart, branch, clear, slots, products, add, verify.
  *
  * <p>Each documented step is its own method. That is what makes the sequence legible in a log — and this log is a
  * deliverable: the hackathon asks for evidence that a real agent made real tool calls, and a console recording of it
@@ -51,6 +51,7 @@ public class CartBuildingService {
     private static final String TOOL_TIME_SLOTS = "silpo_get_time_slots";
     private static final String TOOL_FIND_PRODUCTS = "silpo_find_products_batch";
     private static final String TOOL_ADD_PRODUCTS = "silpo_add_or_update_cart_products";
+    private static final String TOOL_CLEAR_CART = "silpo_clear_shopping_cart";
     private static final String TOOL_MY_ADDRESSES = "silpo_get_my_delivery_addresses";
     private static final String TOOL_DELIVERY_TYPES = "silpo_get_available_delivery_types";
     private static final String TOOL_LIST_BRANCHES = "silpo_list_branches";
@@ -72,6 +73,7 @@ public class CartBuildingService {
     /** Steps 1 to 6, in the documented order. Unresolved items are reported, not fatal. */
     public CartSummary buildCart(UUID userId, List<ShoppingListItem> items) {
         CartContext context = getOrCreateCartContext(userId);
+        clearCart(userId, context);
         OfferedSlot deliverySlot = firstDeliverableSlot(userId, context);
         // The cart's own stored timeslot can be stale (or Silpo-rejected outright — see the cart's own
         // validations) by the time somebody actually confirms it. Searching against that stale window, rather
@@ -537,6 +539,23 @@ public class CartBuildingService {
      * list. Silpo's own API refuses a request that lists one {@code productId} twice, so lines sharing one are merged
      * here, quantities summed, rather than sent as two competing lines for the same product.
      */
+    /**
+     * Empties the cart before {@link #buildCart} re-adds the current shopping list to it.
+     *
+     * <p>{@code silpo_add_or_update_cart_products} only ever adds or updates by {@code productId} — it never
+     * removes a line. A rebuild that re-searches the catalogue can land on a different product for the same
+     * shopping list line than a previous attempt did (fuzzy name search is not guaranteed deterministic run to
+     * run), which adds a second line instead of replacing the first. Across enough retries the cart accumulates
+     * lines that have nothing to do with the current list, inflating its weight and price until Silpo's own
+     * validations (stock, the 40kg order cap) refuse checkout — with no indication in the failure that the cart
+     * itself, not the list, is the problem. Only {@link #buildCart} calls this: {@link ReorderService} and
+     * {@link AdHocOrderService} reuse {@link #getOrCreateCartContext} and {@link #addProductsToCart} to add to
+     * whatever is already in the cart on purpose, and must not have it cleared out from under them.
+     */
+    private void clearCart(UUID userId, CartContext context) {
+        call(userId, TOOL_CLEAR_CART, Map.of("shoppingCartId", context.cartId()));
+    }
+
     public void addProductsToCart(UUID userId, CartContext context, List<ResolvedProduct> products) {
         if (products.isEmpty()) {
             log.info("nothing resolved, so nothing to add to cart {}", context.cartId());
