@@ -53,6 +53,7 @@ public class ShoppingListBuilderService {
     private final CartConfirmationService cartConfirmationService;
     private final ShoppingListMessageService messages;
     private final TelegramOutboundService telegramOutboundService;
+    private final ShoppingListPriceEstimateService priceEstimateService;
     private final String systemPrompt;
 
     public ShoppingListBuilderService(
@@ -65,6 +66,7 @@ public class ShoppingListBuilderService {
             CartConfirmationService cartConfirmationService,
             ShoppingListMessageService messages,
             TelegramOutboundService telegramOutboundService,
+            ShoppingListPriceEstimateService priceEstimateService,
             @Value("classpath:prompts/shopping-list-system.txt") Resource systemPromptResource) {
         this.claudeApiClient = claudeApiClient;
         this.shoppingListService = shoppingListService;
@@ -75,6 +77,7 @@ public class ShoppingListBuilderService {
         this.cartConfirmationService = cartConfirmationService;
         this.messages = messages;
         this.telegramOutboundService = telegramOutboundService;
+        this.priceEstimateService = priceEstimateService;
         this.systemPrompt = read(systemPromptResource);
     }
 
@@ -117,7 +120,10 @@ public class ShoppingListBuilderService {
             return;
         }
         makeActive(user, items);
-        telegramOutboundService.sendMessageWithButtons(chatId, messages.listText(items), messages.listButtons());
+        telegramOutboundService.sendMessageWithButtons(
+                chatId,
+                messages.listText(items, priceEstimateService.estimate(user.getId(), items)),
+                messages.listButtons());
     }
 
     /**

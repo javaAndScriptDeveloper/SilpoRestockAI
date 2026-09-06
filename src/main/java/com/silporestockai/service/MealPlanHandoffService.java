@@ -7,9 +7,11 @@ import com.silporestockai.model.OnboardingCompletedEvent;
 import com.silporestockai.model.PlannedDay;
 import com.silporestockai.model.PlannedIngredient;
 import com.silporestockai.model.PlannedMeal;
+import com.silporestockai.model.PriceEstimate;
 import com.silporestockai.model.ShoppingListSourceType;
 import com.silporestockai.model.WeeklyMealPlan;
 import com.silporestockai.repository.UserRepository;
+import com.silporestockai.service.telegram.ShoppingListMessageService;
 import com.silporestockai.service.telegram.TelegramOutboundService;
 import java.time.DayOfWeek;
 import java.util.List;
@@ -42,6 +44,8 @@ public class MealPlanHandoffService {
     private final ShoppingListBuilderService shoppingListBuilderService;
     private final UserRepository userRepository;
     private final TelegramOutboundService telegramOutboundService;
+    private final ShoppingListPriceEstimateService priceEstimateService;
+    private final ShoppingListMessageService shoppingListMessageService;
 
     /**
      * The listener itself does nothing but leave the publishing thread. Everything it would otherwise do lives in
@@ -67,7 +71,8 @@ public class MealPlanHandoffService {
                                 List<ShoppingListItem> list =
                                         shoppingListService.deriveFromMealPlan(plan.getId(), plan.getSourceType());
                                 telegramOutboundService.sendMessage(
-                                        user.getTelegramChatId(), summarise(plan, list.size()));
+                                        user.getTelegramChatId(),
+                                        summarise(plan, list.size(), priceEstimateService.estimate(userId, list)));
                                 // Never straight to a cart. Eighty-four bananas went through unseen once; the
                                 // list is shown and ordered only after somebody agrees to it.
                                 shoppingListBuilderService.present(user, list);
@@ -83,8 +88,14 @@ public class MealPlanHandoffService {
 
     private static final int MINIMUM_DISTINCT_READY_MEALS = 7;
 
-    /** One line: the week is ready, and here is Monday, which is the only part anyone reads immediately. */
-    private static String summarise(MealPlan plan, int shoppingListSize) {
+    /**
+     * One line: the week is ready, and here is Monday, which is the only part anyone reads immediately.
+     *
+     * <p>The price line (task 39) appears here, at the plan-summary stage, only when something could actually be
+     * priced — for a ready-meals week that is every line, straight from the catalog; for a cooking week it is
+     * whatever the baseline basket remembers, which on a first week is nothing.
+     */
+    private String summarise(MealPlan plan, int shoppingListSize, PriceEstimate estimate) {
         WeeklyMealPlan week = MAPPER.convertValue(plan.getPlan(), WeeklyMealPlan.class);
         String monday = week.days().stream()
                 .filter(day -> day.day() == DayOfWeek.MONDAY)
@@ -96,6 +107,9 @@ public class MealPlanHandoffService {
                 .collect(Collectors.joining(" / "));
         String message = "План на тиждень готовий, %d днів.\nПонеділок: %s\nСписок покупок: %d позицій."
                 .formatted(week.days().size(), monday, shoppingListSize);
+        if (estimate.hasPrices()) {
+            message += "\n" + shoppingListMessageService.estimateLine(estimate);
+        }
         if (plan.getSourceType() == ShoppingListSourceType.READY_MEAL_DIRECT
                 && distinctRealProducts(week) < MINIMUM_DISTINCT_READY_MEALS) {
             // Derived from what actually ended up in the plan, not a separate flag from generation — a thin

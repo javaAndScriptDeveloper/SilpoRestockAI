@@ -1,6 +1,7 @@
 package com.silporestockai.service.telegram;
 
 import com.silporestockai.entity.ShoppingListItem;
+import com.silporestockai.model.PriceEstimate;
 import com.silporestockai.model.ShoppingListDelta;
 import com.silporestockai.model.TelegramButton;
 import java.math.BigDecimal;
@@ -74,15 +75,49 @@ public class ShoppingListMessageService {
     /**
      * The list itself, grouped by category rather than as one flat block — one section per category, in the order
      * each was first seen.
+     *
+     * <p>The price line (task 39) is a rough number from data already in hand, said as such: a person deciding
+     * whether to tap «Замовити» deserves a sense of the bill before a cart exists. When only some lines could be
+     * priced the message says how many, rather than presenting a partial sum as the whole.
      */
-    public String listText(List<ShoppingListItem> items) {
+    public String listText(List<ShoppingListItem> items, PriceEstimate estimate) {
         StringBuilder text = new StringBuilder("Ось що пропоную взяти:\n");
         categorized(items).forEach((category, categoryItems) -> {
             text.append('\n').append(categoryText(category, categoryItems)).append('\n');
         });
-        text.append("\nВсього ").append(items.size()).append(' ').append(positions(items.size()));
-        text.append(".\nЯкщо все влаштовує — замовляю. Якщо ні — скажи, що змінити, або зміни вручну.");
+        text.append("\nВсього ")
+                .append(items.size())
+                .append(' ')
+                .append(positions(items.size()))
+                .append('.');
+        if (estimate != null && estimate.hasPrices()) {
+            text.append('\n').append(estimateLine(estimate));
+        }
+        text.append("\nЯкщо все влаштовує — замовляю. Якщо ні — скажи, що змінити, або зміни вручну.");
         return text.toString();
+    }
+
+    /** «Орієнтовно ~1234.50 грн — точну суму покажу в кошику.», with «за 5 з 12 позицій» when it is partial. */
+    public String estimateLine(PriceEstimate estimate) {
+        StringBuilder line = new StringBuilder("Орієнтовно ~")
+                .append(money(estimate.total()))
+                .append(" грн");
+        if (estimate.isPartial()) {
+            line.append(" за ")
+                    .append(estimate.pricedCount())
+                    .append(" з ")
+                    .append(estimate.lineCount())
+                    .append(' ')
+                    .append(positions(estimate.lineCount()));
+        }
+        return line.append(" — точну суму покажу в кошику.").toString();
+    }
+
+    /** Two decimals, always, as the cart message does — a price with one reads as a typo. */
+    private static String money(BigDecimal value) {
+        return (value == null ? BigDecimal.ZERO : value)
+                .setScale(2, RoundingMode.HALF_UP)
+                .toPlainString();
     }
 
     /**
