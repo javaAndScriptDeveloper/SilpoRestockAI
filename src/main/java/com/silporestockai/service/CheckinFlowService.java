@@ -27,13 +27,19 @@ public class CheckinFlowService {
     private final CheckinMessageService checkinMessageService;
     private final TelegramOutboundService telegramOutboundService;
     private final ConversationStateService conversationStateService;
+    private final IntentRouterService intentRouterService;
 
     /** Everything a chat sitting in {@link ConversationFlow#CHECK_IN} can send. */
     public void handle(User user, TelegramIncomingUpdate incoming) {
         long chatId = incoming.chatId();
         switch (incoming) {
-            case TelegramIncomingUpdate.Text text ->
-                respond(user, chatId, checkinParsingService.parseText(user.getId(), text.text()));
+            case TelegramIncomingUpdate.Text text -> {
+                CheckinResult result = checkinParsingService.parseText(user.getId(), text.text());
+                if (result.needsClarification() && wasARequestInstead(user, chatId, text.text())) {
+                    return;
+                }
+                respond(user, chatId, result);
+            }
             case TelegramIncomingUpdate.Voice voice -> handleVoice(user, chatId, voice);
             case TelegramIncomingUpdate.Photo photo -> handlePhoto(user, chatId, photo);
             case TelegramIncomingUpdate.ButtonTap tap -> {
@@ -46,6 +52,26 @@ public class CheckinFlowService {
                 // reads it.
                 log.debug("ignoring web_app_data during a check-in in chat {}", chatId);
         }
+    }
+
+    /**
+     * A sentence the check-in parser made nothing of may not be an answer at all. On a live account «замов сир з
+     * вином» typed while a prompt was open came back as «Не розібрав. Скажи коротко по цих: Хек Norven…» — the
+     * open question had swallowed a request. So the sentence is offered to the intent router first; if it is a
+     * request, the check-in steps aside (the next sweep asks again) and the request is carried out. Only a
+     * sentence nobody recognises gets the clarification.
+     */
+    private boolean wasARequestInstead(User user, long chatId, String text) {
+        // Step aside first: the dispatched flow may own conversation_state from here on, and a check-in state
+        // written back over it afterwards would leave that flow's buttons dead.
+        conversationStateService.save(chatId, ConversationFlow.NONE, null, Map.of());
+        if (intentRouterService.tryRoute(user, text)) {
+            log.info("check-in for user {} stepped aside for a request typed over it", user.getId());
+            return true;
+        }
+        conversationStateService.save(
+                chatId, ConversationFlow.CHECK_IN, CheckinPromptService.STEP_AWAITING_REPORT, Map.of());
+        return false;
     }
 
     private void handleVoice(User user, long chatId, TelegramIncomingUpdate.Voice voice) {

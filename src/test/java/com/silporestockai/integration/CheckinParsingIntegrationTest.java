@@ -277,7 +277,8 @@ class CheckinParsingIntegrationTest extends AbstractIntegrationTest {
     @Test
     void asksAgainInsteadOfRecordingAnEmptyAnswerAsUnchanged() throws Exception {
         awaitingCheckin();
-        CLAUDE.respondWithText(delta("", "", ""));
+        // An empty parse, then the intent router finding nothing either: only then is it a clarification.
+        CLAUDE.respondWithTexts(delta("", "", ""), UNKNOWN_INTENT);
 
         sendText(1, "ок");
 
@@ -285,6 +286,28 @@ class CheckinParsingIntegrationTest extends AbstractIntegrationTest {
         // Still waiting: the next message is an answer to the same question, not a new request.
         assertThat(conversationStateService.load(CHAT_ID).getCurrentFlow()).isEqualTo(ConversationFlow.CHECK_IN);
     }
+
+    /**
+     * A prompt sits open until it is answered, and on a live account «замов сир з вином» typed while one was open
+     * came back as «Не розібрав. Скажи коротко по цих: Хек Norven…». A sentence the check-in cannot read is
+     * offered to the intent router first; a request is carried out and the fridge question waits for the next
+     * sweep.
+     */
+    @Test
+    void aRequestTypedOverAnOpenCheckinIsCarriedOutInsteadOfBeingSwallowed() throws Exception {
+        awaitingCheckin();
+        CLAUDE.respondWithTexts(
+                delta("", "", ""),
+                "{\"intent\":\"LIST_VIEW\",\"confidence\":0.95,\"themeDescription\":null,\"targetDateTimeIso\":null}");
+
+        sendText(1, "покажи список");
+
+        assertThat(lastMessageText()).contains("Що беремо на цей тиждень").doesNotContain("Не розібрав");
+        assertThat(conversationStateService.load(CHAT_ID).getCurrentFlow()).isEqualTo(ConversationFlow.LIST_BUILDING);
+    }
+
+    private static final String UNKNOWN_INTENT =
+            "{\"intent\":\"UNKNOWN\",\"confidence\":0.2,\"themeDescription\":null,\"targetDateTimeIso\":null}";
 
     @Test
     void acknowledgesWhatItUnderstoodAndClosesTheFlow() throws Exception {

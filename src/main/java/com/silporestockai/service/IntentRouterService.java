@@ -161,19 +161,36 @@ public class IntentRouterService {
     }
 
     public void route(User user, String text) {
+        if (!tryRoute(user, text)) {
+            askClarifyingQuestion(user);
+        }
+    }
+
+    /**
+     * Classifies and dispatches, and says whether it recognised anything — without the clarifying question, so a
+     * flow that owns the chat can decide what to say when the answer was not for it.
+     *
+     * <p>A check-in prompt sits open until it is answered, and on a live account that meant «замов сир з вином»
+     * typed while one was open came back as «Не розібрав. Скажи коротко по цих: Хек Norven…». The check-in now
+     * asks here first; a confident intent wins, and the fridge question waits for the next sweep.
+     */
+    public boolean tryRoute(User user, String text) {
         ClassifiedIntent classified;
         try {
             classified = claudeApiClient.completeStructured(systemPrompt, text, ClassifiedIntent.class);
         } catch (RuntimeException e) {
-            log.warn("could not classify intent for text, asking a clarifying question", e);
-            askClarifyingQuestion(user);
-            return;
+            log.warn("could not classify intent for text", e);
+            return false;
         }
         IntentType intent = parse(classified.intent());
         if (intent == IntentType.UNKNOWN || classified.confidence() < CONFIDENCE_THRESHOLD) {
-            askClarifyingQuestion(user);
-            return;
+            return false;
         }
+        dispatch(user, text, classified, intent);
+        return true;
+    }
+
+    private void dispatch(User user, String text, ClassifiedIntent classified, IntentType intent) {
         log.info("user {} classified as {} (confidence {})", user.getId(), intent, classified.confidence());
         switch (intent) {
             case AD_HOC_SCHEDULED_PURCHASE -> scheduleAdHoc(user, classified);
