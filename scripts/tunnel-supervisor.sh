@@ -23,6 +23,18 @@ update_env_and_restart() {
     local host="$1"
     local url="https://${host}"
 
+    # A reconnect that hands back the same subdomain changes nothing the app cares about: the webhook
+    # Telegram holds still points at it, and the running app still serves it. Restarting anyway used to
+    # kill whatever the app was in the middle of — a live cart build was cut off halfway through its
+    # Silpo calls this way, and the household saw nothing at all. Only a new hostname needs a restart;
+    # an app that is simply not running gets started either way.
+    local current
+    current=$(grep '^TELEGRAM_WEB_APP_BASE_URL=' "$ENV_FILE" 2>/dev/null | cut -d= -f2-)
+    if [[ "$current" == "$url" ]] && curl -sf localhost:8080/actuator/health >/dev/null 2>&1; then
+        echo "$(date -Iseconds) tunnel is ${url} again — app is up, leaving it alone"
+        return
+    fi
+
     if grep -q '^TELEGRAM_WEBHOOK_URL=' "$ENV_FILE"; then
         sed -i "s|^TELEGRAM_WEBHOOK_URL=.*|TELEGRAM_WEBHOOK_URL=${url}/telegram/webhook|" "$ENV_FILE"
     else
