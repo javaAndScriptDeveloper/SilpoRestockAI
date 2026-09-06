@@ -188,8 +188,9 @@ is «Як у тебе з готуванням?», because that answer picks the 
 | «Що вдома точно не їдять?» | `печінка` | or `нема` |
 | «Який бюджет на тиждень, у гривнях?» | `2500` | |
 
-**Expect:** «Записав. Готую перший план на тиждень.» — and, under the text box, the persistent 2×2
-keyboard: 📝 Список / 🗓 Заплановані, 🧾 Анкета / ❓ Інструкція. It stays there for the rest of the chat.
+**Expect:** «Записав. Готую перший план на тиждень.» — and, under the text box, the persistent keyboard:
+📝 Список / 🗓 Заплановані, 🧾 Анкета / ❓ Інструкція, and 💬 Фідбек on its own row (task 47). It stays
+there for the rest of the chat.
 Every `/command` this runbook tells you to **Send** from here on still works if typed; the buttons and
 plain sentences (see Task 31 below) are the intended way in.
 
@@ -443,8 +444,9 @@ below, type the phrase into a real chat with an onboarded profile and confirm th
 | a photo of a fridge or shelf, with no conversation open | "Хвилинку, складаю список." then a list built from the photo, shown for approval (task 43) |
 | «/start» after onboarding | "Я тут…" plus the keyboard; no clarifying question, no model call (task 43) |
 
-Also confirm the persistent keyboard shows exactly four buttons in two rows (Список / Заплановані, then
-Анкета / Інструкція — task 33 added the fourth, task 45 split the rows) after onboarding finishes, that
+Also confirm the persistent keyboard shows exactly five buttons in three rows (Список / Заплановані, then
+Анкета / Інструкція, then Фідбек alone — task 33 added the fourth, task 45 split the rows, task 47 added
+the fifth) after onboarding finishes, that
 tapping «📝 Список» while a list is on screen shows that list again (not the "Що беремо на цей тиждень?"
 question — task 45), and:
 
@@ -459,6 +461,19 @@ question — task 45), and:
 (the Анкета-reopen flow, criterion 7 of task 31, was implemented per
 `docs/superpowers/plans/2026-09-05-profile-reedit.md`; the prefill's *browser-side* field population has no
 automated test — see that plan's Task 5 — so this table is the only verification of it).
+
+### Task 47: verify the Фідбек button
+
+| Do | Expect |
+|---|---|
+| Tap «💬 Фідбек» on an idle chat, type `кнопка Список не там` | «Що не так або що покращити?» with a «Скасувати» button, then «Дякую, врахуємо.» — and nothing else changes |
+| Tap «Замовити» on a list, then «💬 Фідбек» mid-cart, type anything | «Дякую, врахуємо.», and the cart's Підтвердити/Скасувати buttons still work afterwards (state restored) |
+| Tap «💬 Фідбек», then tap «📝 Список» instead of typing | The list shows; no feedback row is stored; the next sentence is a list edit, not feedback |
+| Fresh chat, before connecting Silpo: type `/feedback`, then a sentence | Stored; the onboarding continues where it was («Під'єднати Сільпо» still works) |
+
+```sql
+SELECT telegram_chat_id, raw_text, source, created_at FROM feedback ORDER BY created_at DESC;
+```
 
 ### Task 33: verify the Заплановані view end-to-end
 

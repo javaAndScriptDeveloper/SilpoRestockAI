@@ -373,3 +373,29 @@ maintains). From the first confirmed order on, every list is priced.
 
 **Why safe to decide alone:** the criteria are all met (cart total: already; ready-meals estimate at the
 plan-summary stage: yes; no new MCP calls: yes), and the baseline fallback is strictly additive.
+
+### Task 47: how feedback gets out of the way again
+
+**Question:** the spec wants "conversation state returns to wherever it was before" and "captured even from
+a user mid-flow with an incomplete profile". Both are about *where the prompt sits*, and the routing order
+in `TelegramRoutingService` matters: menu buttons run before flow dispatch, the onboarding gate runs before
+everything.
+
+**Decisions:**
+1. **Snapshot, not a flag.** `ConversationFlow.FEEDBACK`'s own `context_json` holds the interrupted flow,
+   step and context; the reply (or cancel) writes it back verbatim. No second table, nothing in memory.
+2. **Above the onboarding gate.** `/feedback` and the button are checked before `isOnboarded`, so a person
+   stuck on «Під'єднати Сільпо» can complain right there; their `ONBOARDING/AWAITING_CONNECT` state is
+   restored afterwards (tested).
+3. **A persistent-menu tap abandons an open prompt.** Every other flow lets the menu interrupt it and
+   resumes later — right for a cart, wrong here: after «Фідбек» → «Список», the next sentence is a list
+   edit, and filing it as feedback would lose the edit *and* pollute the table. So a menu label while
+   `FEEDBACK` is open restores the previous state and lets the button proceed. Inline «Скасувати» does the
+   same explicitly.
+4. **Text only.** A voice note or photo gets «Напиши, будь ласка, текстом» — raw text is the whole feature;
+   a transcription would be a different, lossier record and would need the STT key to exist.
+5. **Menu layout 2×2 + 1.** Five in two rows truncates labels on a phone (the reason task 45 went 2×2);
+   feedback on its own row also reads as "this one is different", which it is.
+
+`user_id` is nullable in the schema because the spec says so, but every chat has a `users` row from its
+first message, so in practice it is always set.
