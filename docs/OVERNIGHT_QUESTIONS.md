@@ -603,3 +603,17 @@ and a checkout link — did not work end to end on a live account. It worked for
 with carbonara), and it never worked for a full weekly one. That is now visible rather than hidden, and the
 two blocking defects are fixed, but the weekly path still stops at Silpo's own refusal. Statuses updated
 accordingly rather than left at Done.
+
+### The recurring "unexplained flake" has a cause: `make run` and `make test` share `build/classes`
+
+Session 2 logged an unexplained full-suite flake and moved on; it appeared twice more tonight —
+whole test classes failing at *context load* with beans that plainly exist (`SilpoAccessTokenProvider`,
+`telegramUpdateDedupCache` "not available"), while each class passed in isolation.
+
+It is not a flake. `make run` runs `gradlew bootRun`, which compiles into `build/classes/java/main` —
+the exact directory the test JVM loads application classes from, as the stack trace itself quotes. Run
+the suite while the app is up and the component scan reads a directory being rewritten underneath it.
+
+**Rule:** stop the app before `make test` / `make build`. With `bootRun` stopped, `./gradlew clean build`
+is green end to end; with it running, the same tree failed twice with different classes each time.
+Worth a line in the Makefile or a check in CI if this keeps costing time.
