@@ -10,6 +10,7 @@ import com.silporestockai.service.CalendarViewService;
 import com.silporestockai.service.CartConfirmationService;
 import com.silporestockai.service.CheckinFlowService;
 import com.silporestockai.service.ConversationStateService;
+import com.silporestockai.service.FeedbackService;
 import com.silporestockai.service.IntentRouterService;
 import com.silporestockai.service.ReorderConfirmationService;
 import com.silporestockai.service.ScheduledTaskManagementService;
@@ -59,6 +60,7 @@ public class TelegramRoutingService {
     private final CalendarViewService calendarViewService;
     private final TelegramFailureRecoveryService failureRecoveryService;
     private final ScheduledTaskManagementService scheduledTaskManagementService;
+    private final FeedbackService feedbackService;
 
     /**
      * Off the webhook thread on purpose. A fridge photo means a vision call — the slowest and most expensive kind
@@ -144,6 +146,24 @@ public class TelegramRoutingService {
 
     private void handle(TelegramIncomingUpdate incoming) {
         User user = userAccountService.findOrCreate(incoming.chatId());
+        // Feedback (task 47) sits above the onboarding gate on purpose: somebody stuck on the first screen is
+        // exactly who should be able to say so. The prompt snapshots and restores whatever flow it interrupts.
+        if (incoming instanceof TelegramIncomingUpdate.Text feedback
+                && matches(feedback.text(), "/feedback", MainMenuKeyboard.FEEDBACK)) {
+            feedbackService.prompt(user);
+            return;
+        }
+        ConversationFlow flow = conversationStateService.load(incoming.chatId()).getCurrentFlow();
+        if (flow == ConversationFlow.FEEDBACK) {
+            if (incoming instanceof TelegramIncomingUpdate.Text menu && MainMenuKeyboard.isButton(menu.text())) {
+                // "Never mind" — the previous flow comes back and the button below does what it always does.
+                feedbackService.abandonIfPending(incoming.chatId());
+                flow = conversationStateService.load(incoming.chatId()).getCurrentFlow();
+            } else {
+                feedbackService.handle(user, incoming);
+                return;
+            }
+        }
         if (!onboardingFlowService.isOnboarded(user.getId())) {
             onboardingFlowService.handle(user, incoming);
             return;
@@ -197,7 +217,6 @@ public class TelegramRoutingService {
             return;
         }
 
-        ConversationFlow flow = conversationStateService.load(incoming.chatId()).getCurrentFlow();
         if (flow == ConversationFlow.CART_CONFIRMATION) {
             cartConfirmationService.handle(user, incoming);
             return;

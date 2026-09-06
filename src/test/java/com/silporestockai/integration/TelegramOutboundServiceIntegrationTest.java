@@ -80,13 +80,16 @@ class TelegramOutboundServiceIntegrationTest extends AbstractIntegrationTest {
         // management-view button back. Two rows of two, so no label gets truncated on a phone — see
         // MainMenuKeyboard's own javadoc.
         var keyboard = STUB.sentMessages().getFirst().path("reply_markup").path("keyboard");
-        assertThat(keyboard).hasSize(2);
+        assertThat(keyboard).hasSize(3);
         assertThat(keyboard.get(0)).hasSize(2);
         assertThat(keyboard.get(1)).hasSize(2);
+        assertThat(keyboard.get(2)).hasSize(1);
         assertThat(keyboard.get(0).get(0).path("text").asText()).isEqualTo("📝 Список");
         assertThat(keyboard.get(0).get(1).path("text").asText()).isEqualTo("🗓 Заплановані");
         assertThat(keyboard.get(1).get(0).path("text").asText()).isEqualTo("🧾 Анкета");
         assertThat(keyboard.get(1).get(1).path("text").asText()).isEqualTo("❓ Інструкція");
+        // Task 47: feedback on its own row — the one button that is not about groceries.
+        assertThat(keyboard.get(2).get(0).path("text").asText()).isEqualTo("💬 Фідбек");
         assertThat(STUB.sentMessages()
                         .getFirst()
                         .path("reply_markup")
