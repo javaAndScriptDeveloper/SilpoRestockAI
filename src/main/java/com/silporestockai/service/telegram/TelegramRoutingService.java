@@ -13,6 +13,7 @@ import com.silporestockai.service.ConversationStateService;
 import com.silporestockai.service.DishRequestService;
 import com.silporestockai.service.FeedbackService;
 import com.silporestockai.service.IntentRouterService;
+import com.silporestockai.service.MealPlanHandoffService;
 import com.silporestockai.service.PastOrderSeedService;
 import com.silporestockai.service.ReorderConfirmationService;
 import com.silporestockai.service.ScheduledTaskManagementService;
@@ -65,6 +66,7 @@ public class TelegramRoutingService {
     private final FeedbackService feedbackService;
     private final PastOrderSeedService pastOrderSeedService;
     private final DishRequestService dishRequestService;
+    private final MealPlanHandoffService mealPlanHandoffService;
 
     /**
      * Off the webhook thread on purpose. A fridge photo means a vision call — the slowest and most expensive kind
@@ -219,6 +221,12 @@ public class TelegramRoutingService {
                 && tap.data().startsWith(CalendarViewService.CALLBACK_DAY_PREFIX)) {
             telegramOutboundService.answerCallback(tap.callbackQueryId());
             calendarViewService.showDay(user, tap.data().substring(CalendarViewService.CALLBACK_DAY_PREFIX.length()));
+            return;
+        }
+        if (incoming instanceof TelegramIncomingUpdate.ButtonTap tap
+                && MealPlanHandoffService.CALLBACK_RETRY.equals(tap.data())) {
+            telegramOutboundService.answerCallback(tap.callbackQueryId());
+            mealPlanHandoffService.retry(user);
             return;
         }
         if (incoming instanceof TelegramIncomingUpdate.ButtonTap tap

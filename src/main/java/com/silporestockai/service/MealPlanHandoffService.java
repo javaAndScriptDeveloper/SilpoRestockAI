@@ -3,12 +3,14 @@ package com.silporestockai.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.silporestockai.entity.MealPlan;
 import com.silporestockai.entity.ShoppingListItem;
+import com.silporestockai.entity.User;
 import com.silporestockai.model.OnboardingCompletedEvent;
 import com.silporestockai.model.PlannedDay;
 import com.silporestockai.model.PlannedIngredient;
 import com.silporestockai.model.PlannedMeal;
 import com.silporestockai.model.PriceEstimate;
 import com.silporestockai.model.ShoppingListSourceType;
+import com.silporestockai.model.TelegramButton;
 import com.silporestockai.model.WeeklyMealPlan;
 import com.silporestockai.repository.UserRepository;
 import com.silporestockai.service.telegram.ShoppingListMessageService;
@@ -39,6 +41,12 @@ public class MealPlanHandoffService {
 
     private static final ObjectMapper MAPPER = new ObjectMapper().findAndRegisterModules();
 
+    /**
+     * The tap that asks for the plan again after a failure. Self-contained — it names no draft and needs no
+     * {@code conversation_state} — so the routing layer dispatches it globally, like every other such tap.
+     */
+    public static final String CALLBACK_RETRY = "plan:retry";
+
     private final MealPlanService mealPlanService;
     private final ShoppingListService shoppingListService;
     private final ShoppingListBuilderService shoppingListBuilderService;
@@ -60,6 +68,12 @@ public class MealPlanHandoffService {
         generateFirstPlan(event.userId());
     }
 
+    /** The «Спробувати ще раз» tap after a failed plan: say so, then the same generation as the first time. */
+    public void retry(User user) {
+        telegramOutboundService.sendMessage(user.getTelegramChatId(), "Складаю план ще раз — хвилинку.");
+        generateFirstPlan(user.getId());
+    }
+
     /** Generates, stores and announces the first weekly plan. Runs on the caller's thread. */
     public void generateFirstPlan(UUID userId) {
         userRepository
@@ -78,9 +92,13 @@ public class MealPlanHandoffService {
                                 shoppingListBuilderService.present(user, list);
                             } catch (RuntimeException e) {
                                 log.error("could not generate the first plan for user {}", userId, e);
-                                telegramOutboundService.sendMessage(
+                                // A button, not a promise. «Спробую ще раз трохи пізніше» used to be said here,
+                                // and nothing ever did — a household whose first plan failed had no way to ask
+                                // for another one short of re-editing their Анкета.
+                                telegramOutboundService.sendMessageWithButtons(
                                         user.getTelegramChatId(),
-                                        "План скласти не вдалось. Спробую ще раз трохи пізніше.");
+                                        "План скласти не вдалось. Спробуємо ще раз?",
+                                        List.of(TelegramButton.callback("Спробувати ще раз", CALLBACK_RETRY)));
                             }
                         },
                         () -> log.warn("onboarding completed for unknown user {}", userId));

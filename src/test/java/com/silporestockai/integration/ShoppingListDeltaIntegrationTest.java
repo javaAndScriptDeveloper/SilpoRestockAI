@@ -150,11 +150,18 @@ class ShoppingListDeltaIntegrationTest extends AbstractIntegrationTest {
             }
             days.append("""
                     {"day":"%s","meals":[\
-                    {"type":"BREAKFAST","name":"%s","ingredients":[{"name":"%s","quantity":1,"unit":"шт"}]},\
-                    {"type":"LUNCH","name":"Обід","ingredients":[{"name":"%s","quantity":0.5,"unit":"кг"}]},\
-                    {"type":"DINNER","name":"Вечеря","ingredients":[{"name":"%s","quantity":0.4,"unit":"кг"}]}]}""".formatted(day.name(), breakfast, breakfast, lunchIngredient, dinnerIngredient));
+                    {"type":"BREAKFAST","name":"%s"},\
+                    {"type":"LUNCH","name":"Обід"},\
+                    {"type":"DINNER","name":"Вечеря"}]}""".formatted(day.name(), breakfast));
         }
-        return "{\"days\":[" + days + "]}";
+        // Three lines that change between the two answers and two that stay: the diff is bulk, not trivial.
+        return """
+                {"days":[%s],"shoppingList":[\
+                {"name":"%s","quantity":1,"unit":"шт","category":"Інше"},\
+                {"name":"%s","quantity":0.5,"unit":"кг","category":"М'ясо і птиця"},\
+                {"name":"%s","quantity":0.4,"unit":"кг","category":"Крупи і бакалія"},\
+                {"name":"молоко","quantity":1,"unit":"л","category":"Молочні продукти"},\
+                {"name":"хліб","quantity":1,"unit":"шт","category":"Хлібобулочні вироби"}]}""".formatted(days, breakfast, lunchIngredient, dinnerIngredient);
     }
 
     private void tapButton(int updateId, String data) throws Exception {

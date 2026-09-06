@@ -15,6 +15,7 @@ import com.anthropic.models.messages.ImageBlockParam;
 import com.anthropic.models.messages.Message;
 import com.anthropic.models.messages.MessageCreateParams;
 import com.anthropic.models.messages.Model;
+import com.anthropic.models.messages.StopReason;
 import com.anthropic.models.messages.StructuredContentBlock;
 import com.anthropic.models.messages.StructuredMessage;
 import com.anthropic.models.messages.StructuredMessageCreateParams;
@@ -107,6 +108,15 @@ public class ClaudeApiClientImpl implements ClaudeApiClient {
                 .outputConfig(responseType, JsonSchemaLocalValidation.YES)
                 .build();
         StructuredMessage<T> message = call(() -> client().messages().create(params));
+        if (message.stopReason().filter(StopReason.MAX_TOKENS::equals).isPresent()) {
+            // Say what actually happened. A structured answer cut off mid-JSON surfaces from the SDK as a parse
+            // error ("Unexpected end-of-input"), which reads like a model glitch and hides the real fault: the
+            // schema asks for more output than one call allows. A live account lost three two-minute attempts at
+            // a weekly plan to exactly this before the log said why.
+            throw new ClaudeStructuredOutputException(
+                    "Claude's answer for %s was cut off at max_tokens=%d — the requested output is too large for one call"
+                            .formatted(responseType.getSimpleName(), properties.maxTokens()));
+        }
         T value;
         try {
             value = message.content().stream()

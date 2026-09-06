@@ -19,6 +19,7 @@ import java.math.BigDecimal;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -91,7 +92,10 @@ class MealPlanIntegrationTest extends AbstractIntegrationTest {
         return user.getId();
     }
 
-    /** A complete seven-day answer, the shape the service demands before it persists anything. */
+    /**
+     * A complete seven-day answer in the recipe planner's shape — meal names by day plus one purchase list — the
+     * shape the service demands before it persists anything.
+     */
     static String fullWeekJson() {
         StringBuilder days = new StringBuilder();
         for (DayOfWeek day : DayOfWeek.values()) {
@@ -100,15 +104,26 @@ class MealPlanIntegrationTest extends AbstractIntegrationTest {
             }
             days.append(dayJson(day.name()));
         }
-        return "{\"days\":[" + days + "]}";
+        return "{\"days\":[" + days + "]," + shoppingListJson() + "}";
     }
 
     static String dayJson(String day) {
         return """
                 {"day":"%s","meals":[\
-                {"type":"BREAKFAST","name":"Вівсянка","ingredients":[{"name":"вівсяні пластівці","quantity":0.3,"unit":"кг"}]},\
-                {"type":"LUNCH","name":"Курячий суп","ingredients":[{"name":"куряче стегно","quantity":0.5,"unit":"кг"}]},\
-                {"type":"DINNER","name":"Гречка з овочами","ingredients":[{"name":"гречка","quantity":0.4,"unit":"кг"}]}]}""".formatted(day);
+                {"type":"BREAKFAST","name":"Вівсянка"},\
+                {"type":"LUNCH","name":"Курячий суп"},\
+                {"type":"DINNER","name":"Гречка з овочами"}]}""".formatted(day);
+    }
+
+    /** Five shop-sized lines: the fewest the service accepts as a week's shopping. */
+    static String shoppingListJson() {
+        return """
+                "shoppingList":[\
+                {"name":"вівсяні пластівці","quantity":0.5,"unit":"кг","category":"Крупи і бакалія"},\
+                {"name":"куряче стегно","quantity":1,"unit":"кг","category":"М'ясо і птиця"},\
+                {"name":"гречка","quantity":0.8,"unit":"кг","category":"Крупи і бакалія"},\
+                {"name":"цибуля","quantity":0.5,"unit":"кг","category":"Овочі і фрукти"},\
+                {"name":"морква","quantity":0.5,"unit":"кг","category":"Овочі і фрукти"}]""";
     }
 
     @Test
@@ -192,7 +207,45 @@ class MealPlanIntegrationTest extends AbstractIntegrationTest {
             }
             days.append(dayJson(day.name()));
         }
-        return "{\"days\":[" + days + "]}";
+        return "{\"days\":[" + days + "]," + shoppingListJson() + "}";
+    }
+
+    /** Seven good days and no purchase list at all — the shape a truncated or lazy answer takes. */
+    static String weekWithoutAShoppingListJson() {
+        return fullWeekJson().replace("," + shoppingListJson(), "");
+    }
+
+    @Test
+    void storesThePurchaseListAndMealNamesWithoutIngredients() {
+        UUID userId = profiledUser(8110L, List.of(), List.of());
+        CLAUDE.respondWithText(fullWeekJson());
+
+        MealPlan saved = mealPlanService.generateWeeklyPlan(userId);
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> shoppingList = (List<Map<String, Object>>) mealPlanRepository
+                .findById(saved.getId())
+                .orElseThrow()
+                .getPlan()
+                .get("shoppingList");
+        assertThat(shoppingList).hasSize(5);
+        assertThat(shoppingList.getFirst().get("name")).isEqualTo("вівсяні пластівці");
+        assertThat(shoppingList.getFirst().get("productId")).isNull();
+        // The request itself: no ingredient objects asked for, no productId or price for the model to fill in.
+        String schema = CLAUDE.requests().getFirst().toString();
+        assertThat(schema).contains("shoppingList").doesNotContain("productId").doesNotContain("\"price\"");
+    }
+
+    @Test
+    void retriesOnceWhenThePurchaseListIsMissingAndNamesTheDefect() {
+        UUID userId = profiledUser(8111L, List.of(), List.of());
+        CLAUDE.respondWithTexts(weekWithoutAShoppingListJson(), fullWeekJson());
+
+        MealPlan saved = mealPlanService.generateWeeklyPlan(userId);
+
+        assertThat(CLAUDE.callCount()).isEqualTo(2);
+        assertThat(CLAUDE.requests().getLast().toString()).contains("shoppingList порожній");
+        assertThat(mealPlanRepository.findById(saved.getId())).isPresent();
     }
 
     @Test
@@ -224,8 +277,7 @@ class MealPlanIntegrationTest extends AbstractIntegrationTest {
     void rejectsADayThatHasTooFewMeals() {
         UUID userId = profiledUser(8106L, List.of(), List.of());
         String thinMonday = fullWeekJson().replace(dayJson("MONDAY"), """
-                        {"day":"MONDAY","meals":[{"type":"BREAKFAST","name":"Вівсянка",\
-                        "ingredients":[{"name":"вівсяні пластівці","quantity":0.3,"unit":"кг"}]}]}""");
+                        {"day":"MONDAY","meals":[{"type":"BREAKFAST","name":"Вівсянка"}]}""");
         CLAUDE.respondWithTexts(thinMonday, fullWeekJson());
 
         mealPlanService.generateWeeklyPlan(userId);

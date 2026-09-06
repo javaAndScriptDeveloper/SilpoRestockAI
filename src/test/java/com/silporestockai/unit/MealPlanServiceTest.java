@@ -16,6 +16,10 @@ import com.silporestockai.model.MealType;
 import com.silporestockai.model.PlannedDay;
 import com.silporestockai.model.PlannedIngredient;
 import com.silporestockai.model.PlannedMeal;
+import com.silporestockai.model.PurchaseLine;
+import com.silporestockai.model.RecipeDay;
+import com.silporestockai.model.RecipeMeal;
+import com.silporestockai.model.RecipeWeek;
 import com.silporestockai.model.WeeklyMealPlan;
 import com.silporestockai.repository.MealPlanRepository;
 import com.silporestockai.repository.UserProfileRepository;
@@ -39,192 +43,196 @@ import org.springframework.core.io.ByteArrayResource;
 class MealPlanServiceTest {
 
     private static final UUID USER_ID = UUID.randomUUID();
+    private static final String OUTPUT_FORMAT = "\nOUTPUT-FORMAT";
+
+    private final UserProfileRepository userProfileRepository = mock(UserProfileRepository.class);
+    private final MealPlanRepository mealPlanRepository = mock(MealPlanRepository.class);
+    private final InventoryTrendService inventoryTrendService = mock(InventoryTrendService.class);
+    private final ReadyMealCatalogService readyMealCatalogService = mock(ReadyMealCatalogService.class);
+    private final ClaudeApiClient claudeApiClient = mock(ClaudeApiClient.class);
+    private final ArgumentCaptor<com.silporestockai.entity.MealPlan> savedCaptor =
+            ArgumentCaptor.forClass(com.silporestockai.entity.MealPlan.class);
+
+    private MealPlanService service() {
+        when(mealPlanRepository.save(savedCaptor.capture())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(inventoryTrendService.getRemovalCandidates(USER_ID)).thenReturn(List.of());
+        return new MealPlanService(
+                userProfileRepository,
+                mealPlanRepository,
+                claudeApiClient,
+                inventoryTrendService,
+                Clock.fixed(Instant.parse("2026-09-07T00:00:00Z"), ZoneOffset.UTC),
+                new ByteArrayResource("RECIPE-PROMPT".getBytes()),
+                new ByteArrayResource("READY-MEALS-PROMPT".getBytes()),
+                new ByteArrayResource("GASTRITIS-ACUTE-PROMPT".getBytes()),
+                new ByteArrayResource("GASTRITIS-DIET5-PROMPT".getBytes()),
+                new ByteArrayResource("MASS-GAIN-PROMPT".getBytes()),
+                new ByteArrayResource(OUTPUT_FORMAT.getBytes()),
+                readyMealCatalogService);
+    }
+
+    private void profile(CookingTimePreference preference) {
+        when(userProfileRepository.findByUserId(USER_ID))
+                .thenReturn(Optional.of(UserProfile.builder()
+                        .id(UUID.randomUUID())
+                        .userId(USER_ID)
+                        .cookingTimePreference(preference)
+                        .build()));
+    }
 
     @Test
     void picksTheReadyMealsPromptForReadyMealsOnlyHouseholds() {
-        assertGenerationUsesPrompt(CookingTimePreference.READY_MEALS_ONLY, "READY-MEALS-PROMPT");
+        profile(CookingTimePreference.READY_MEALS_ONLY);
+        when(readyMealCatalogService.findCandidates(USER_ID)).thenReturn(oneCandidate());
+        when(claudeApiClient.completeStructured(anyString(), anyString(), eq(WeeklyMealPlan.class)))
+                .thenReturn(readyMealPlan());
+
+        service().generateWeeklyPlan(USER_ID);
+
+        ArgumentCaptor<String> systemPrompt = ArgumentCaptor.forClass(String.class);
+        Mockito.verify(claudeApiClient)
+                .completeStructured(systemPrompt.capture(), anyString(), eq(WeeklyMealPlan.class));
+        assertThat(systemPrompt.getValue()).isEqualTo("READY-MEALS-PROMPT");
     }
 
     @Test
     void picksTheRecipePromptForCooksDailyHouseholds() {
-        assertGenerationUsesPrompt(CookingTimePreference.COOKS_DAILY, "RECIPE-PROMPT");
+        assertRecipeGenerationUsesPrompt(CookingTimePreference.COOKS_DAILY, "RECIPE-PROMPT");
     }
 
     @Test
     void picksTheRecipePromptWhenNoPreferenceIsSet() {
-        assertGenerationUsesPrompt(null, "RECIPE-PROMPT");
+        assertRecipeGenerationUsesPrompt(null, "RECIPE-PROMPT");
     }
 
-    private void assertGenerationUsesPrompt(CookingTimePreference preference, String expectedPromptMarker) {
-        UserProfileRepository userProfileRepository = mock(UserProfileRepository.class);
-        UserProfile profile = UserProfile.builder()
-                .id(UUID.randomUUID())
-                .userId(USER_ID)
-                .cookingTimePreference(preference)
-                .build();
-        when(userProfileRepository.findByUserId(USER_ID)).thenReturn(Optional.of(profile));
+    /** The recipe planner's system prompt is the mode prompt plus the one shared output-format block. */
+    private void assertRecipeGenerationUsesPrompt(CookingTimePreference preference, String expectedPromptMarker) {
+        profile(preference);
+        when(claudeApiClient.completeStructured(anyString(), anyString(), eq(RecipeWeek.class)))
+                .thenReturn(validRecipeWeek());
 
-        MealPlanRepository mealPlanRepository = mock(MealPlanRepository.class);
-        when(mealPlanRepository.save(org.mockito.ArgumentMatchers.any()))
-                .thenAnswer(invocation -> invocation.getArgument(0));
+        service().generateWeeklyPlan(USER_ID);
 
-        InventoryTrendService inventoryTrendService = mock(InventoryTrendService.class);
-        when(inventoryTrendService.getRemovalCandidates(USER_ID)).thenReturn(List.of());
-
-        boolean readyMealsOnly = preference == CookingTimePreference.READY_MEALS_ONLY;
-        ReadyMealCatalogService readyMealCatalogService = mock(ReadyMealCatalogService.class);
-        if (readyMealsOnly) {
-            when(readyMealCatalogService.findCandidates(USER_ID)).thenReturn(oneCandidate());
-        }
-
-        ClaudeApiClient claudeApiClient = mock(ClaudeApiClient.class);
-        when(claudeApiClient.completeStructured(anyString(), anyString(), eq(WeeklyMealPlan.class)))
-                .thenReturn(readyMealsOnly ? readyMealPlan() : validPlan());
-
-        MealPlanService service = new MealPlanService(
-                userProfileRepository,
-                mealPlanRepository,
-                claudeApiClient,
-                inventoryTrendService,
-                Clock.fixed(Instant.parse("2026-09-07T00:00:00Z"), ZoneOffset.UTC),
-                new ByteArrayResource("RECIPE-PROMPT".getBytes()),
-                new ByteArrayResource("READY-MEALS-PROMPT".getBytes()),
-                new ByteArrayResource("GASTRITIS-ACUTE-PROMPT".getBytes()),
-                new ByteArrayResource("GASTRITIS-DIET5-PROMPT".getBytes()),
-                new ByteArrayResource("MASS-GAIN-PROMPT".getBytes()),
-                readyMealCatalogService);
-
-        service.generateWeeklyPlan(USER_ID);
-
-        ArgumentCaptor<String> systemPromptCaptor = ArgumentCaptor.forClass(String.class);
-        Mockito.verify(claudeApiClient)
-                .completeStructured(systemPromptCaptor.capture(), anyString(), eq(WeeklyMealPlan.class));
-        assertThat(systemPromptCaptor.getValue()).isEqualTo(expectedPromptMarker);
+        ArgumentCaptor<String> systemPrompt = ArgumentCaptor.forClass(String.class);
+        Mockito.verify(claudeApiClient).completeStructured(systemPrompt.capture(), anyString(), eq(RecipeWeek.class));
+        assertThat(systemPrompt.getValue()).isEqualTo(expectedPromptMarker + OUTPUT_FORMAT);
     }
 
     @Test
     void householdCompositionChangesTheGeneratedPromptText() {
-        UserProfileRepository userProfileRepository = mock(UserProfileRepository.class);
-        UserProfile withKids = UserProfile.builder()
-                .id(UUID.randomUUID())
-                .userId(USER_ID)
-                .adultMaleCount(1)
-                .adultFemaleCount(1)
-                .childrenAgeBrackets(List.of(AgeBracket.AGE_0_3))
-                .cookingTimePreference(CookingTimePreference.COOKS_DAILY)
-                .build();
-        when(userProfileRepository.findByUserId(USER_ID)).thenReturn(Optional.of(withKids));
+        when(userProfileRepository.findByUserId(USER_ID))
+                .thenReturn(Optional.of(UserProfile.builder()
+                        .id(UUID.randomUUID())
+                        .userId(USER_ID)
+                        .adultMaleCount(1)
+                        .adultFemaleCount(1)
+                        .childrenAgeBrackets(List.of(AgeBracket.AGE_0_3))
+                        .cookingTimePreference(CookingTimePreference.COOKS_DAILY)
+                        .build()));
+        when(claudeApiClient.completeStructured(anyString(), anyString(), eq(RecipeWeek.class)))
+                .thenReturn(validRecipeWeek());
 
-        MealPlanRepository mealPlanRepository = mock(MealPlanRepository.class);
-        when(mealPlanRepository.save(org.mockito.ArgumentMatchers.any()))
-                .thenAnswer(invocation -> invocation.getArgument(0));
-        InventoryTrendService inventoryTrendService = mock(InventoryTrendService.class);
-        when(inventoryTrendService.getRemovalCandidates(USER_ID)).thenReturn(List.of());
-        ClaudeApiClient claudeApiClient = mock(ClaudeApiClient.class);
-        when(claudeApiClient.completeStructured(anyString(), anyString(), eq(WeeklyMealPlan.class)))
-                .thenReturn(validPlan());
+        service().generateWeeklyPlan(USER_ID);
 
-        MealPlanService service = new MealPlanService(
-                userProfileRepository,
-                mealPlanRepository,
-                claudeApiClient,
-                inventoryTrendService,
-                Clock.fixed(Instant.parse("2026-09-07T00:00:00Z"), ZoneOffset.UTC),
-                new ByteArrayResource("RECIPE-PROMPT".getBytes()),
-                new ByteArrayResource("READY-MEALS-PROMPT".getBytes()),
-                new ByteArrayResource("GASTRITIS-ACUTE-PROMPT".getBytes()),
-                new ByteArrayResource("GASTRITIS-DIET5-PROMPT".getBytes()),
-                new ByteArrayResource("MASS-GAIN-PROMPT".getBytes()),
-                mock(ReadyMealCatalogService.class));
+        ArgumentCaptor<String> userPrompt = ArgumentCaptor.forClass(String.class);
+        Mockito.verify(claudeApiClient).completeStructured(anyString(), userPrompt.capture(), eq(RecipeWeek.class));
+        assertThat(userPrompt.getValue()).contains("1 чоловіків, 1 жінок").contains("AGE_0_3");
+    }
 
-        service.generateWeeklyPlan(USER_ID);
+    /**
+     * The recipe planner answers with a purchase list, not per-meal ingredients — that is what is stored, and it
+     * is what the shopping list is derived from. The meals keep names only. Nothing the model said can reach
+     * {@code productId} or {@code price}: the record it answered with has no such fields.
+     */
+    @Test
+    void recipePathStoresThePurchaseListAndMealNamesWithoutIngredientsOrProductIds() {
+        profile(CookingTimePreference.COOKS_BATCH);
+        when(claudeApiClient.completeStructured(anyString(), anyString(), eq(RecipeWeek.class)))
+                .thenReturn(validRecipeWeek());
 
-        ArgumentCaptor<String> userPromptCaptor = ArgumentCaptor.forClass(String.class);
-        Mockito.verify(claudeApiClient)
-                .completeStructured(anyString(), userPromptCaptor.capture(), eq(WeeklyMealPlan.class));
-        assertThat(userPromptCaptor.getValue()).contains("1 чоловіків, 1 жінок").contains("AGE_0_3");
+        service().generateWeeklyPlan(USER_ID);
+
+        WeeklyMealPlan stored = new com.fasterxml.jackson.databind.ObjectMapper()
+                .findAndRegisterModules()
+                .convertValue(savedCaptor.getValue().getPlan(), WeeklyMealPlan.class);
+        assertThat(stored.hasShoppingList()).isTrue();
+        assertThat(stored.shoppingList()).extracting(PlannedIngredient::name).contains("Гречка", "Куряче філе");
+        assertThat(stored.shoppingList()).allSatisfy(line -> {
+            assertThat(line.productId()).isNull();
+            assertThat(line.price()).isNull();
+        });
+        assertThat(stored.days()).hasSize(7);
+        assertThat(stored.days().getFirst().meals())
+                .extracting(PlannedMeal::name)
+                .containsExactly("Вівсянка", "Борщ", "Гречка з куркою");
+        assertThat(stored.days())
+                .allSatisfy(day -> assertThat(day.meals())
+                        .allSatisfy(meal -> assertThat(meal.ingredients()).isEmpty()));
+    }
+
+    @Test
+    void recipePathRetriesOnceNamingAMissingPurchaseListThenStoresTheGoodAnswer() {
+        profile(CookingTimePreference.COOKS_DAILY);
+        RecipeWeek noList = new RecipeWeek(validRecipeWeek().days(), List.of());
+        when(claudeApiClient.completeStructured(anyString(), anyString(), eq(RecipeWeek.class)))
+                .thenReturn(noList)
+                .thenReturn(validRecipeWeek());
+
+        service().generateWeeklyPlan(USER_ID);
+
+        ArgumentCaptor<String> userPrompt = ArgumentCaptor.forClass(String.class);
+        Mockito.verify(claudeApiClient, Mockito.times(2))
+                .completeStructured(anyString(), userPrompt.capture(), eq(RecipeWeek.class));
+        assertThat(userPrompt.getAllValues().getLast()).contains("shoppingList порожній");
+    }
+
+    @Test
+    void recipePathRejectsAPurchaseLineWithoutAQuantity() {
+        profile(CookingTimePreference.COOKS_DAILY);
+        RecipeWeek broken = new RecipeWeek(
+                validRecipeWeek().days(),
+                List.of(
+                        new PurchaseLine("Гречка", null, "кг", "Крупи і бакалія"),
+                        new PurchaseLine("Молоко", BigDecimal.ONE, "л", "Молочні продукти"),
+                        new PurchaseLine("Хліб", BigDecimal.ONE, "шт", "Хлібобулочні вироби"),
+                        new PurchaseLine("Яйця курячі", BigDecimal.TEN, "шт", "Яйця"),
+                        new PurchaseLine("Цибуля", BigDecimal.ONE, "кг", "Овочі і фрукти")));
+        when(claudeApiClient.completeStructured(anyString(), anyString(), eq(RecipeWeek.class)))
+                .thenReturn(broken)
+                .thenReturn(broken);
+
+        assertThatThrownBy(() -> service().generateWeeklyPlan(USER_ID))
+                .isInstanceOf(com.silporestockai.exception.MealPlanGenerationException.class)
+                .hasMessageContaining("«Гречка» у списку покупок без кількості");
     }
 
     @Test
     void readyMealsOnlyCurationPromptListsRealCandidatesWithPrice() {
-        UserProfileRepository userProfileRepository = mock(UserProfileRepository.class);
-        UserProfile profile = UserProfile.builder()
-                .id(UUID.randomUUID())
-                .userId(USER_ID)
-                .cookingTimePreference(CookingTimePreference.READY_MEALS_ONLY)
-                .build();
-        when(userProfileRepository.findByUserId(USER_ID)).thenReturn(Optional.of(profile));
-        MealPlanRepository mealPlanRepository = mock(MealPlanRepository.class);
-        when(mealPlanRepository.save(org.mockito.ArgumentMatchers.any()))
-                .thenAnswer(invocation -> invocation.getArgument(0));
-        InventoryTrendService inventoryTrendService = mock(InventoryTrendService.class);
-        when(inventoryTrendService.getRemovalCandidates(USER_ID)).thenReturn(List.of());
-        ReadyMealCatalogService readyMealCatalogService = mock(ReadyMealCatalogService.class);
+        profile(CookingTimePreference.READY_MEALS_ONLY);
         when(readyMealCatalogService.findCandidates(USER_ID)).thenReturn(oneCandidate());
-        ClaudeApiClient claudeApiClient = mock(ClaudeApiClient.class);
         when(claudeApiClient.completeStructured(anyString(), anyString(), eq(WeeklyMealPlan.class)))
                 .thenReturn(readyMealPlan());
 
-        MealPlanService service = new MealPlanService(
-                userProfileRepository,
-                mealPlanRepository,
-                claudeApiClient,
-                inventoryTrendService,
-                Clock.fixed(Instant.parse("2026-09-07T00:00:00Z"), ZoneOffset.UTC),
-                new ByteArrayResource("RECIPE-PROMPT".getBytes()),
-                new ByteArrayResource("READY-MEALS-PROMPT".getBytes()),
-                new ByteArrayResource("GASTRITIS-ACUTE-PROMPT".getBytes()),
-                new ByteArrayResource("GASTRITIS-DIET5-PROMPT".getBytes()),
-                new ByteArrayResource("MASS-GAIN-PROMPT".getBytes()),
-                readyMealCatalogService);
+        service().generateWeeklyPlan(USER_ID);
 
-        service.generateWeeklyPlan(USER_ID);
-
-        ArgumentCaptor<String> userPromptCaptor = ArgumentCaptor.forClass(String.class);
-        Mockito.verify(claudeApiClient)
-                .completeStructured(anyString(), userPromptCaptor.capture(), eq(WeeklyMealPlan.class));
-        assertThat(userPromptCaptor.getValue()).contains("Салат Цезар готовий").contains("89.9");
+        ArgumentCaptor<String> userPrompt = ArgumentCaptor.forClass(String.class);
+        Mockito.verify(claudeApiClient).completeStructured(anyString(), userPrompt.capture(), eq(WeeklyMealPlan.class));
+        assertThat(userPrompt.getValue()).contains("Салат Цезар готовий").contains("89.9");
     }
 
     @Test
     void readyMealsOnlyResolvesTheRealProductIdOntoTheStoredPlan() {
-        UserProfileRepository userProfileRepository = mock(UserProfileRepository.class);
-        UserProfile profile = UserProfile.builder()
-                .id(UUID.randomUUID())
-                .userId(USER_ID)
-                .cookingTimePreference(CookingTimePreference.READY_MEALS_ONLY)
-                .build();
-        when(userProfileRepository.findByUserId(USER_ID)).thenReturn(Optional.of(profile));
-        MealPlanRepository mealPlanRepository = mock(MealPlanRepository.class);
-        ArgumentCaptor<com.silporestockai.entity.MealPlan> savedCaptor =
-                ArgumentCaptor.forClass(com.silporestockai.entity.MealPlan.class);
-        when(mealPlanRepository.save(savedCaptor.capture())).thenAnswer(invocation -> invocation.getArgument(0));
-        InventoryTrendService inventoryTrendService = mock(InventoryTrendService.class);
-        when(inventoryTrendService.getRemovalCandidates(USER_ID)).thenReturn(List.of());
-        ReadyMealCatalogService readyMealCatalogService = mock(ReadyMealCatalogService.class);
+        profile(CookingTimePreference.READY_MEALS_ONLY);
         when(readyMealCatalogService.findCandidates(USER_ID)).thenReturn(oneCandidate());
-        ClaudeApiClient claudeApiClient = mock(ClaudeApiClient.class);
         when(claudeApiClient.completeStructured(anyString(), anyString(), eq(WeeklyMealPlan.class)))
                 .thenReturn(readyMealPlan());
 
-        MealPlanService service = new MealPlanService(
-                userProfileRepository,
-                mealPlanRepository,
-                claudeApiClient,
-                inventoryTrendService,
-                Clock.fixed(Instant.parse("2026-09-07T00:00:00Z"), ZoneOffset.UTC),
-                new ByteArrayResource("RECIPE-PROMPT".getBytes()),
-                new ByteArrayResource("READY-MEALS-PROMPT".getBytes()),
-                new ByteArrayResource("GASTRITIS-ACUTE-PROMPT".getBytes()),
-                new ByteArrayResource("GASTRITIS-DIET5-PROMPT".getBytes()),
-                new ByteArrayResource("MASS-GAIN-PROMPT".getBytes()),
-                readyMealCatalogService);
+        service().generateWeeklyPlan(USER_ID);
 
-        service.generateWeeklyPlan(USER_ID);
-
-        com.fasterxml.jackson.databind.ObjectMapper mapper =
-                new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules();
-        WeeklyMealPlan stored = mapper.convertValue(savedCaptor.getValue().getPlan(), WeeklyMealPlan.class);
+        WeeklyMealPlan stored = new com.fasterxml.jackson.databind.ObjectMapper()
+                .findAndRegisterModules()
+                .convertValue(savedCaptor.getValue().getPlan(), WeeklyMealPlan.class);
+        assertThat(stored.hasShoppingList()).isFalse();
         assertThat(stored.days().getFirst().meals())
                 .allSatisfy(meal ->
                         assertThat(meal.ingredients().getFirst().productId()).isEqualTo("p-1"));
@@ -234,82 +242,9 @@ class MealPlanServiceTest {
                         .isEqualByComparingTo(oneCandidate().getFirst().price()));
     }
 
-    /**
-     * Production bug (2026-09-04): on the recipe path Claude's structured output filled {@code productId} with
-     * invented, non-UUID strings ("oats001", "banana001"...) even though nothing asked it to — the schema exposes
-     * the field for both generation paths. CartBuildingService.resolveProducts treats any non-blank productId as
-     * already resolved and skips search, so these fabricated ids went straight to Silpo and got rejected as invalid
-     * UUIDs, failing the whole cart. productId must only ever come from the READY_MEALS_ONLY candidate match — never
-     * trusted from Claude on any other path.
-     */
-    @Test
-    void recipePathNeverTrustsAProductIdClaudeInvented() {
-        UserProfileRepository userProfileRepository = mock(UserProfileRepository.class);
-        UserProfile profile = UserProfile.builder()
-                .id(UUID.randomUUID())
-                .userId(USER_ID)
-                .cookingTimePreference(CookingTimePreference.COOKS_BATCH)
-                .build();
-        when(userProfileRepository.findByUserId(USER_ID)).thenReturn(Optional.of(profile));
-        MealPlanRepository mealPlanRepository = mock(MealPlanRepository.class);
-        ArgumentCaptor<com.silporestockai.entity.MealPlan> savedCaptor =
-                ArgumentCaptor.forClass(com.silporestockai.entity.MealPlan.class);
-        when(mealPlanRepository.save(savedCaptor.capture())).thenAnswer(invocation -> invocation.getArgument(0));
-        InventoryTrendService inventoryTrendService = mock(InventoryTrendService.class);
-        when(inventoryTrendService.getRemovalCandidates(USER_ID)).thenReturn(List.of());
-        ClaudeApiClient claudeApiClient = mock(ClaudeApiClient.class);
-        List<PlannedIngredient> ingredientsWithInventedIds =
-                List.of(new PlannedIngredient("Вівсяні пластівці", BigDecimal.TEN, "г", "Крупи і бакалія", "oats001"));
-        List<PlannedMeal> meals = List.of(
-                new PlannedMeal(MealType.BREAKFAST, "Вівсянка", ingredientsWithInventedIds),
-                new PlannedMeal(MealType.LUNCH, "Вівсянка", ingredientsWithInventedIds),
-                new PlannedMeal(MealType.DINNER, "Вівсянка", ingredientsWithInventedIds));
-        WeeklyMealPlan planWithInventedIds = new WeeklyMealPlan(Arrays.stream(DayOfWeek.values())
-                .map(day -> new PlannedDay(day, meals))
-                .toList());
-        when(claudeApiClient.completeStructured(anyString(), anyString(), eq(WeeklyMealPlan.class)))
-                .thenReturn(planWithInventedIds);
-
-        MealPlanService service = new MealPlanService(
-                userProfileRepository,
-                mealPlanRepository,
-                claudeApiClient,
-                inventoryTrendService,
-                Clock.fixed(Instant.parse("2026-09-07T00:00:00Z"), ZoneOffset.UTC),
-                new ByteArrayResource("RECIPE-PROMPT".getBytes()),
-                new ByteArrayResource("READY-MEALS-PROMPT".getBytes()),
-                new ByteArrayResource("GASTRITIS-ACUTE-PROMPT".getBytes()),
-                new ByteArrayResource("GASTRITIS-DIET5-PROMPT".getBytes()),
-                new ByteArrayResource("MASS-GAIN-PROMPT".getBytes()),
-                mock(ReadyMealCatalogService.class));
-
-        service.generateWeeklyPlan(USER_ID);
-
-        com.fasterxml.jackson.databind.ObjectMapper mapper =
-                new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules();
-        WeeklyMealPlan stored = mapper.convertValue(savedCaptor.getValue().getPlan(), WeeklyMealPlan.class);
-        assertThat(stored.days())
-                .allSatisfy(day -> assertThat(day.meals())
-                        .allSatisfy(meal -> assertThat(meal.ingredients())
-                                .allSatisfy(ingredient ->
-                                        assertThat(ingredient.productId()).isNull())));
-    }
-
     @Test
     void readyMealsOnlyRetriesWhenClaudeInventsAProductOutsideTheCandidateList() {
-        UserProfileRepository userProfileRepository = mock(UserProfileRepository.class);
-        UserProfile profile = UserProfile.builder()
-                .id(UUID.randomUUID())
-                .userId(USER_ID)
-                .cookingTimePreference(CookingTimePreference.READY_MEALS_ONLY)
-                .build();
-        when(userProfileRepository.findByUserId(USER_ID)).thenReturn(Optional.of(profile));
-        MealPlanRepository mealPlanRepository = mock(MealPlanRepository.class);
-        when(mealPlanRepository.save(org.mockito.ArgumentMatchers.any()))
-                .thenAnswer(invocation -> invocation.getArgument(0));
-        InventoryTrendService inventoryTrendService = mock(InventoryTrendService.class);
-        when(inventoryTrendService.getRemovalCandidates(USER_ID)).thenReturn(List.of());
-        ReadyMealCatalogService readyMealCatalogService = mock(ReadyMealCatalogService.class);
+        profile(CookingTimePreference.READY_MEALS_ONLY);
         when(readyMealCatalogService.findCandidates(USER_ID)).thenReturn(oneCandidate());
         List<PlannedIngredient> invented = List.of(
                 new PlannedIngredient("Страва, якої нема в каталозі", BigDecimal.ONE, "порція", "Готові страви", null));
@@ -320,25 +255,11 @@ class MealPlanServiceTest {
         WeeklyMealPlan inventedPlan = new WeeklyMealPlan(Arrays.stream(DayOfWeek.values())
                 .map(day -> new PlannedDay(day, inventedMeals))
                 .toList());
-        ClaudeApiClient claudeApiClient = mock(ClaudeApiClient.class);
         when(claudeApiClient.completeStructured(anyString(), anyString(), eq(WeeklyMealPlan.class)))
                 .thenReturn(inventedPlan)
                 .thenReturn(readyMealPlan());
 
-        MealPlanService service = new MealPlanService(
-                userProfileRepository,
-                mealPlanRepository,
-                claudeApiClient,
-                inventoryTrendService,
-                Clock.fixed(Instant.parse("2026-09-07T00:00:00Z"), ZoneOffset.UTC),
-                new ByteArrayResource("RECIPE-PROMPT".getBytes()),
-                new ByteArrayResource("READY-MEALS-PROMPT".getBytes()),
-                new ByteArrayResource("GASTRITIS-ACUTE-PROMPT".getBytes()),
-                new ByteArrayResource("GASTRITIS-DIET5-PROMPT".getBytes()),
-                new ByteArrayResource("MASS-GAIN-PROMPT".getBytes()),
-                readyMealCatalogService);
-
-        service.generateWeeklyPlan(USER_ID);
+        service().generateWeeklyPlan(USER_ID);
 
         Mockito.verify(claudeApiClient, Mockito.times(2))
                 .completeStructured(anyString(), anyString(), eq(WeeklyMealPlan.class));
@@ -346,34 +267,10 @@ class MealPlanServiceTest {
 
     @Test
     void readyMealsOnlyThrowsWithoutCallingClaudeWhenNoCandidatesExist() {
-        UserProfileRepository userProfileRepository = mock(UserProfileRepository.class);
-        UserProfile profile = UserProfile.builder()
-                .id(UUID.randomUUID())
-                .userId(USER_ID)
-                .cookingTimePreference(CookingTimePreference.READY_MEALS_ONLY)
-                .build();
-        when(userProfileRepository.findByUserId(USER_ID)).thenReturn(Optional.of(profile));
-        MealPlanRepository mealPlanRepository = mock(MealPlanRepository.class);
-        InventoryTrendService inventoryTrendService = mock(InventoryTrendService.class);
-        when(inventoryTrendService.getRemovalCandidates(USER_ID)).thenReturn(List.of());
-        ReadyMealCatalogService readyMealCatalogService = mock(ReadyMealCatalogService.class);
+        profile(CookingTimePreference.READY_MEALS_ONLY);
         when(readyMealCatalogService.findCandidates(USER_ID)).thenReturn(List.of());
-        ClaudeApiClient claudeApiClient = mock(ClaudeApiClient.class);
 
-        MealPlanService service = new MealPlanService(
-                userProfileRepository,
-                mealPlanRepository,
-                claudeApiClient,
-                inventoryTrendService,
-                Clock.fixed(Instant.parse("2026-09-07T00:00:00Z"), ZoneOffset.UTC),
-                new ByteArrayResource("RECIPE-PROMPT".getBytes()),
-                new ByteArrayResource("READY-MEALS-PROMPT".getBytes()),
-                new ByteArrayResource("GASTRITIS-ACUTE-PROMPT".getBytes()),
-                new ByteArrayResource("GASTRITIS-DIET5-PROMPT".getBytes()),
-                new ByteArrayResource("MASS-GAIN-PROMPT".getBytes()),
-                readyMealCatalogService);
-
-        assertThatThrownBy(() -> service.generateWeeklyPlan(USER_ID))
+        assertThatThrownBy(() -> service().generateWeeklyPlan(USER_ID))
                 .isInstanceOf(com.silporestockai.exception.MealPlanGenerationException.class);
         Mockito.verifyNoInteractions(claudeApiClient);
     }
@@ -396,16 +293,21 @@ class MealPlanServiceTest {
         return new WeeklyMealPlan(days);
     }
 
-    private static WeeklyMealPlan validPlan() {
-        List<PlannedIngredient> ingredients =
-                List.of(new PlannedIngredient("Щось", BigDecimal.ONE, "шт", "Інше", null));
-        List<PlannedMeal> meals = List.of(
-                new PlannedMeal(MealType.BREAKFAST, "Сніданок", ingredients),
-                new PlannedMeal(MealType.LUNCH, "Обід", ingredients),
-                new PlannedMeal(MealType.DINNER, "Вечеря", ingredients));
-        List<PlannedDay> days = Arrays.stream(DayOfWeek.values())
-                .map(day -> new PlannedDay(day, meals))
+    private static RecipeWeek validRecipeWeek() {
+        List<RecipeMeal> meals = List.of(
+                new RecipeMeal(MealType.BREAKFAST, "Вівсянка"),
+                new RecipeMeal(MealType.LUNCH, "Борщ"),
+                new RecipeMeal(MealType.DINNER, "Гречка з куркою"));
+        List<RecipeDay> days = Arrays.stream(DayOfWeek.values())
+                .map(day -> new RecipeDay(day, meals))
                 .toList();
-        return new WeeklyMealPlan(days);
+        return new RecipeWeek(
+                days,
+                List.of(
+                        new PurchaseLine("Вівсяні пластівці", new BigDecimal("0.5"), "кг", "Крупи і бакалія"),
+                        new PurchaseLine("Гречка", BigDecimal.ONE, "кг", "Крупи і бакалія"),
+                        new PurchaseLine("Куряче філе", new BigDecimal("1.2"), "кг", "М'ясо і птиця"),
+                        new PurchaseLine("Буряк", BigDecimal.ONE, "кг", "Овочі і фрукти"),
+                        new PurchaseLine("Молоко", new BigDecimal("2"), "л", "Молочні продукти")));
     }
 }

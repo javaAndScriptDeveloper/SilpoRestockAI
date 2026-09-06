@@ -226,11 +226,11 @@ class ProfileReeditIntegrationTest extends AbstractIntegrationTest {
             }
             days.append("""
                     {"day":"%s","meals":[\
-                    {"type":"BREAKFAST","name":"Вівсянка","ingredients":[{"name":"пластівці","quantity":0.3,"unit":"кг"}]},\
-                    {"type":"LUNCH","name":"Борщ","ingredients":[{"name":"буряк","quantity":0.5,"unit":"кг"}]},\
-                    {"type":"DINNER","name":"Рис з овочами","ingredients":[{"name":"рис","quantity":0.4,"unit":"кг"}]}]}""".formatted(day.name()));
+                    {"type":"BREAKFAST","name":"Вівсянка"},\
+                    {"type":"LUNCH","name":"Борщ"},\
+                    {"type":"DINNER","name":"Рис з овочами"}]}""".formatted(day.name()));
         }
-        return "{\"days\":[" + days + "]}";
+        return "{\"days\":[" + days + "]," + MealPlanIntegrationTest.shoppingListJson() + "}";
     }
 
     @Test

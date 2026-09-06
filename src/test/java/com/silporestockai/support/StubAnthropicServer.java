@@ -34,6 +34,7 @@ public final class StubAnthropicServer implements AutoCloseable {
 
     private final AtomicInteger callCount = new AtomicInteger();
     private volatile String responseText = "stub completion";
+    private volatile String stopReason = "end_turn";
 
     public StubAnthropicServer() throws IOException {
         this.server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
@@ -56,6 +57,14 @@ public final class StubAnthropicServer implements AutoCloseable {
         scriptedTexts.addAll(List.of(texts));
     }
 
+    /**
+     * Makes every response claim it was cut off by the output token cap, the way the real API does when a
+     * structured answer does not fit — the text itself is whatever was scripted, truncated JSON or not.
+     */
+    public void respondCutOffAtMaxTokens(boolean cutOff) {
+        this.stopReason = cutOff ? "max_tokens" : "end_turn";
+    }
+
     /** Makes the next call answer with {@code status} and an Anthropic-shaped error body. */
     public synchronized void injectStatus(int status) {
         injectedStatuses.add(status);
@@ -75,6 +84,7 @@ public final class StubAnthropicServer implements AutoCloseable {
         scriptedTexts.clear();
         callCount.set(0);
         responseText = "stub completion";
+        stopReason = "end_turn";
     }
 
     @Override
@@ -93,7 +103,7 @@ public final class StubAnthropicServer implements AutoCloseable {
                 respond(exchange, injected, errorBody(injected));
                 return;
             }
-            respond(exchange, 200, successBody(nextText()));
+            respond(exchange, 200, successBody(nextText(), stopReason));
         } finally {
             exchange.close();
         }
@@ -112,11 +122,11 @@ public final class StubAnthropicServer implements AutoCloseable {
         return scripted == null ? responseText : scripted;
     }
 
-    private static String successBody(String text) {
+    private static String successBody(String text, String stopReason) {
         return """
                 {"id":"msg_stub","type":"message","role":"assistant","model":"claude-sonnet-5",\
-                "content":[{"type":"text","text":%s}],"stop_reason":"end_turn","stop_sequence":null,\
-                "usage":{"input_tokens":10,"output_tokens":20}}""".formatted(quote(text));
+                "content":[{"type":"text","text":%s}],"stop_reason":"%s","stop_sequence":null,\
+                "usage":{"input_tokens":10,"output_tokens":20}}""".formatted(quote(text), stopReason);
     }
 
     private static String errorBody(int status) {

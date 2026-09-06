@@ -221,8 +221,16 @@ public class ShoppingListService {
         return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
     }
 
+    /**
+     * The lines a plan says to buy: its own purchase list when the planner wrote one (the recipe path, since the
+     * planner started answering with shop-sized quantities), otherwise every meal's ingredients (ready meals, and
+     * plans stored before the list existed) for {@link #aggregate} to collapse.
+     */
     private static List<PlannedIngredient> ingredientsOf(MealPlan plan) {
         WeeklyMealPlan week = MAPPER.convertValue(plan.getPlan(), WeeklyMealPlan.class);
+        if (week.hasShoppingList()) {
+            return week.shoppingList();
+        }
         List<PlannedIngredient> ingredients = new ArrayList<>();
         for (PlannedDay day : week.days() == null ? List.<PlannedDay>of() : week.days()) {
             for (PlannedMeal meal : day.meals() == null ? List.<PlannedMeal>of() : day.meals()) {

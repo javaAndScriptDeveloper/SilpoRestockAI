@@ -11,6 +11,8 @@ import com.silporestockai.model.CookingTimePreference;
 import com.silporestockai.model.PlannedDay;
 import com.silporestockai.model.PlannedIngredient;
 import com.silporestockai.model.PlannedMeal;
+import com.silporestockai.model.PurchaseLine;
+import com.silporestockai.model.RecipeWeek;
 import com.silporestockai.model.ShoppingListSourceType;
 import com.silporestockai.model.SpecialMode;
 import com.silporestockai.model.WeeklyMealPlan;
@@ -40,10 +42,18 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Turns a household profile into a week of meals.
+ * Turns a household profile into a week of meals and the list to shop for it.
  *
- * <p>The system prompt lives in {@code resources/prompts/meal-plan-system.txt}: wording is the main thing that changes
- * in a feature like this, and a string literal would make every wording change a recompile.
+ * <p>Two planners share this class. The recipe planner — every household that cooks, in any special mode —
+ * answers with a {@link RecipeWeek}: meal names by day plus one shop-sized purchase list for the week. The
+ * ready-meals planner (task 22) curates real catalog products and answers with a {@link WeeklyMealPlan} whose
+ * per-meal ingredients carry product ids. Both are stored as a {@link WeeklyMealPlan}; see that record for how
+ * {@code ShoppingListService} tells them apart.
+ *
+ * <p>The system prompts live in {@code resources/prompts/}: wording is the main thing that changes in a feature
+ * like this, and a string literal would make every wording change a recompile. The recipe planner's output-format
+ * rules are one shared file appended to every recipe prompt, so the four special-mode prompts cannot drift apart
+ * on the shape they ask for.
  *
  * <p>Every generation INSERTs. Nothing is ever updated, because the diff between last week's plan and this one is a
  * product feature.
@@ -57,6 +67,13 @@ public class MealPlanService {
 
     private static final int MINIMUM_MEALS_PER_DAY = 3;
 
+    /**
+     * Fewer lines than this is not a week's shopping. A household that cooks three meals a day for seven days
+     * needs more than a handful of products even under the strictest diet; a shorter answer is a truncated or
+     * lazy one, and the retry names it.
+     */
+    private static final int MINIMUM_PURCHASE_LINES = 5;
+
     private final UserProfileRepository userProfileRepository;
     private final MealPlanRepository mealPlanRepository;
     private final ClaudeApiClient claudeApiClient;
@@ -68,6 +85,7 @@ public class MealPlanService {
     private final String gastritisAcuteSystemPrompt;
     private final String gastritisDiet5SystemPrompt;
     private final String massGainSystemPrompt;
+    private final String recipeOutputFormat;
 
     public MealPlanService(
             UserProfileRepository userProfileRepository,
@@ -82,6 +100,7 @@ public class MealPlanService {
             @Value("classpath:prompts/meal-plan-gastritis-diet5-system.txt")
                     Resource gastritisDiet5SystemPromptResource,
             @Value("classpath:prompts/meal-plan-mass-gain-system.txt") Resource massGainSystemPromptResource,
+            @Value("classpath:prompts/meal-plan-output-format.txt") Resource recipeOutputFormatResource,
             ReadyMealCatalogService readyMealCatalogService) {
         this.userProfileRepository = userProfileRepository;
         this.mealPlanRepository = mealPlanRepository;
@@ -94,6 +113,7 @@ public class MealPlanService {
         this.gastritisAcuteSystemPrompt = read(gastritisAcuteSystemPromptResource);
         this.gastritisDiet5SystemPrompt = read(gastritisDiet5SystemPromptResource);
         this.massGainSystemPrompt = read(massGainSystemPromptResource);
+        this.recipeOutputFormat = read(recipeOutputFormatResource);
     }
 
     @Transactional
@@ -122,52 +142,89 @@ public class MealPlanService {
         String specialPrompt = specialSystemPromptFor(profile.getSpecialMode());
         boolean readyMealsOnly =
                 specialPrompt == null && profile.getCookingTimePreference() == CookingTimePreference.READY_MEALS_ONLY;
-        String systemPrompt =
-                specialPrompt != null ? specialPrompt : (readyMealsOnly ? readyMealsSystemPrompt : recipeSystemPrompt);
         List<String> untouched = inventoryTrendService.getRemovalCandidates(userId);
 
-        List<CatalogCandidate> candidates = List.of();
-        String userPrompt;
         if (readyMealsOnly) {
-            candidates = readyMealCatalogService.findCandidates(userId);
-            if (candidates.isEmpty()) {
-                // Zero real candidates means there is nothing for Claude to curate — asking it anyway would just
-                // reproduce the original bug in a new form (an invented dish with no candidate behind it).
-                throw new MealPlanGenerationException(
-                        userId, List.of("Сільпо не має готових страв, які підходять під твої обмеження цього тижня"));
-            }
-            userPrompt = curationPrompt(profile, adjustment, untouched, candidates);
-        } else {
-            userPrompt = describe(profile, adjustment, untouched);
+            return generateReadyMeals(userId, profile, adjustment, untouched);
         }
+        String systemPrompt = (specialPrompt != null ? specialPrompt : recipeSystemPrompt) + recipeOutputFormat;
+        return generateRecipes(userId, systemPrompt, describe(profile, adjustment, untouched));
+    }
 
-        WeeklyMealPlan plan = claudeApiClient.completeStructured(systemPrompt, userPrompt, WeeklyMealPlan.class);
-        List<String> defects = allDefectsOf(plan, readyMealsOnly, candidates);
+    /**
+     * The recipe planner: names by day and one purchase list, validated and retried once.
+     *
+     * <p>The retry names what was wrong. Re-sending the same prompt would be a coin flip, and the transport
+     * retries in {@code ClaudeApiClientImpl} do not see this class of failure at all — the answer arrived fine, it
+     * is the plan inside it that is unusable.
+     */
+    private MealPlan generateRecipes(UUID userId, String systemPrompt, String userPrompt) {
+        RecipeWeek week = claudeApiClient.completeStructured(systemPrompt, userPrompt, RecipeWeek.class);
+        List<String> defects = defectsOf(week);
         if (!defects.isEmpty()) {
-            // One retry, naming what was wrong. Re-sending the same prompt would be a coin flip, and the transport
-            // retries in ClaudeApiClientImpl do not see this class of failure at all — the answer arrived fine, it is
-            // the plan inside it that is unusable.
             log.warn("Claude returned an unusable plan for user {}: {}", userId, defects);
-            plan = claudeApiClient.completeStructured(
-                    systemPrompt, correctionOf(userPrompt, defects), WeeklyMealPlan.class);
-            defects = allDefectsOf(plan, readyMealsOnly, candidates);
+            week = claudeApiClient.completeStructured(
+                    systemPrompt, correctionOf(userPrompt, defects), RecipeWeek.class);
+            defects = defectsOf(week);
             if (!defects.isEmpty()) {
                 throw new MealPlanGenerationException(userId, defects);
             }
         }
-        plan = readyMealsOnly ? withResolvedProductIds(plan, candidates) : withoutProductIds(plan);
-        return persist(
+        log.info(
+                "recipe plan for user {}: {} days, {} purchase lines",
                 userId,
-                plan,
-                readyMealsOnly ? ShoppingListSourceType.READY_MEAL_DIRECT : ShoppingListSourceType.RECIPE_DERIVED);
+                week.days().size(),
+                week.shoppingList().size());
+        return persist(userId, asStoredPlan(week), ShoppingListSourceType.RECIPE_DERIVED);
     }
 
-    private static List<String> allDefectsOf(
-            WeeklyMealPlan plan, boolean readyMealsOnly, List<CatalogCandidate> candidates) {
-        List<String> defects = new ArrayList<>(defectsOf(plan));
-        if (readyMealsOnly) {
-            defects.addAll(candidateDefects(plan, candidates));
+    /** The ready-meals planner (task 22): curation from real candidates, product ids stamped on afterwards. */
+    private MealPlan generateReadyMeals(UUID userId, UserProfile profile, String adjustment, List<String> untouched) {
+        List<CatalogCandidate> candidates = readyMealCatalogService.findCandidates(userId);
+        if (candidates.isEmpty()) {
+            // Zero real candidates means there is nothing for Claude to curate — asking it anyway would just
+            // reproduce the original bug in a new form (an invented dish with no candidate behind it).
+            throw new MealPlanGenerationException(
+                    userId, List.of("Сільпо не має готових страв, які підходять під твої обмеження цього тижня"));
         }
+        String userPrompt = curationPrompt(profile, adjustment, untouched, candidates);
+        WeeklyMealPlan plan =
+                claudeApiClient.completeStructured(readyMealsSystemPrompt, userPrompt, WeeklyMealPlan.class);
+        List<String> defects = allDefectsOf(plan, candidates);
+        if (!defects.isEmpty()) {
+            log.warn("Claude returned an unusable ready-meals plan for user {}: {}", userId, defects);
+            plan = claudeApiClient.completeStructured(
+                    readyMealsSystemPrompt, correctionOf(userPrompt, defects), WeeklyMealPlan.class);
+            defects = allDefectsOf(plan, candidates);
+            if (!defects.isEmpty()) {
+                throw new MealPlanGenerationException(userId, defects);
+            }
+        }
+        return persist(userId, withResolvedProductIds(plan, candidates), ShoppingListSourceType.READY_MEAL_DIRECT);
+    }
+
+    /**
+     * The stored shape of a recipe week: meals with no ingredients, and the purchase list alongside. Nothing from
+     * the model reaches {@code productId} or {@code price} — the record it answered with has no such fields.
+     */
+    private static WeeklyMealPlan asStoredPlan(RecipeWeek week) {
+        List<PlannedDay> days = week.days().stream()
+                .map(day -> new PlannedDay(
+                        day.day(),
+                        day.meals().stream()
+                                .map(meal -> new PlannedMeal(meal.type(), meal.name(), List.of()))
+                                .toList()))
+                .toList();
+        List<PlannedIngredient> shoppingList = week.shoppingList().stream()
+                .map(line -> new PlannedIngredient(
+                        line.name().trim(), line.quantity(), line.unit(), line.category(), null, null))
+                .toList();
+        return new WeeklyMealPlan(days, shoppingList);
+    }
+
+    private static List<String> allDefectsOf(WeeklyMealPlan plan, List<CatalogCandidate> candidates) {
+        List<String> defects = new ArrayList<>(defectsOf(plan));
+        defects.addAll(candidateDefects(plan, candidates));
         return defects;
     }
 
@@ -233,35 +290,6 @@ public class MealPlanService {
         return new WeeklyMealPlan(days);
     }
 
-    /**
-     * Strips any {@code productId} Claude may have filled in on every path except {@code READY_MEALS_ONLY} —
-     * {@code WeeklyMealPlan}'s schema exposes the field on every generation path, and nothing in the recipe or
-     * special-mode prompts tells the model to leave it blank, so it must never be trusted here. A non-null value
-     * from this path is what let a fabricated non-UUID id reach {@code silpo_add_or_update_cart_products} and get
-     * every line in the cart rejected.
-     */
-    private static WeeklyMealPlan withoutProductIds(WeeklyMealPlan plan) {
-        List<PlannedDay> days = plan.days().stream()
-                .map(day -> new PlannedDay(
-                        day.day(),
-                        day.meals().stream()
-                                .map(meal -> new PlannedMeal(
-                                        meal.type(),
-                                        meal.name(),
-                                        meal.ingredients().stream()
-                                                .map(ingredient -> new PlannedIngredient(
-                                                        ingredient.name(),
-                                                        ingredient.quantity(),
-                                                        ingredient.unit(),
-                                                        ingredient.category(),
-                                                        null,
-                                                        null))
-                                                .toList()))
-                                .toList()))
-                .toList();
-        return new WeeklyMealPlan(days);
-    }
-
     private static String normalise(String value) {
         return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
     }
@@ -271,15 +299,67 @@ public class MealPlanService {
                 + "\nПоверни повний план на всі 7 днів.";
     }
 
-    /** Everything wrong with a plan, in the words the retry prompt uses. Empty means the plan is storable. */
+    /** Everything wrong with a recipe week, in the words the retry prompt uses. Empty means it is storable. */
+    static List<String> defectsOf(RecipeWeek week) {
+        if (week == null) {
+            return List.of("у відповіді немає жодного дня");
+        }
+        List<String> defects = new ArrayList<>(dayDefects(
+                week.days() == null
+                        ? List.of()
+                        : week.days().stream()
+                                .map(day -> day == null
+                                        ? null
+                                        : new PlannedDay(
+                                                day.day(),
+                                                day.meals() == null
+                                                        ? null
+                                                        : day.meals().stream()
+                                                                .map(meal -> meal == null
+                                                                        ? null
+                                                                        : new PlannedMeal(
+                                                                                meal.type(), meal.name(), null))
+                                                                .toList()))
+                                .toList(),
+                false));
+        List<PurchaseLine> lines = week.shoppingList() == null ? List.of() : week.shoppingList();
+        if (lines.isEmpty()) {
+            defects.add("список покупок shoppingList порожній");
+        } else if (lines.size() < MINIMUM_PURCHASE_LINES) {
+            defects.add("у списку покупок лише %d позицій — це не тиждень".formatted(lines.size()));
+        }
+        for (PurchaseLine line : lines) {
+            if (line == null || line.name() == null || line.name().isBlank()) {
+                defects.add("рядок списку покупок без назви");
+            } else if (line.quantity() == null || line.quantity().signum() <= 0) {
+                defects.add("«%s» у списку покупок без кількості".formatted(line.name()));
+            } else if (line.unit() == null || line.unit().isBlank()) {
+                defects.add("«%s» у списку покупок без одиниці".formatted(line.name()));
+            }
+        }
+        return defects;
+    }
+
+    /** Everything wrong with a stored-shape plan (the ready-meals path). Empty means the plan is storable. */
     private static List<String> defectsOf(WeeklyMealPlan plan) {
+        if (plan == null) {
+            return List.of("у відповіді немає жодного дня");
+        }
+        return dayDefects(plan.days(), true);
+    }
+
+    /**
+     * The day-level checks both planners share: seven distinct days, enough meals, every meal named — and, for a
+     * plan whose meals are supposed to carry ingredients, every meal with at least one.
+     */
+    private static List<String> dayDefects(List<PlannedDay> days, boolean ingredientsRequired) {
         List<String> defects = new ArrayList<>();
-        if (plan == null || plan.days() == null || plan.days().isEmpty()) {
+        if (days == null || days.isEmpty()) {
             defects.add("у відповіді немає жодного дня");
             return defects;
         }
         Set<DayOfWeek> seen = EnumSet.noneOf(DayOfWeek.class);
-        for (PlannedDay day : plan.days()) {
+        for (PlannedDay day : days) {
             if (day == null || day.day() == null) {
                 defects.add("день без назви дня тижня");
                 continue;
@@ -294,7 +374,8 @@ public class MealPlanService {
             for (PlannedMeal meal : meals) {
                 if (meal == null || meal.name() == null || meal.name().isBlank()) {
                     defects.add("страва без назви у дні %s".formatted(day.day()));
-                } else if (meal.ingredients() == null || meal.ingredients().isEmpty()) {
+                } else if (ingredientsRequired
+                        && (meal.ingredients() == null || meal.ingredients().isEmpty())) {
                     defects.add("страва «%s» без інгредієнтів".formatted(meal.name()));
                 }
             }

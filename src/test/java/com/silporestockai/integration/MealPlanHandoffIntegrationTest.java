@@ -145,11 +145,11 @@ class MealPlanHandoffIntegrationTest extends AbstractIntegrationTest {
             }
             days.append("""
                     {"day":"%s","meals":[\
-                    {"type":"BREAKFAST","name":"Вівсянка","ingredients":[{"name":"пластівці","quantity":0.3,"unit":"кг"}]},\
-                    {"type":"LUNCH","name":"Борщ","ingredients":[{"name":"буряк","quantity":0.5,"unit":"кг"}]},\
-                    {"type":"DINNER","name":"Рис з овочами","ingredients":[{"name":"рис","quantity":0.4,"unit":"кг"}]}]}""".formatted(day.name()));
+                    {"type":"BREAKFAST","name":"Вівсянка"},\
+                    {"type":"LUNCH","name":"Борщ"},\
+                    {"type":"DINNER","name":"Рис з овочами"}]}""".formatted(day.name()));
         }
-        return "{\"days\":[" + days + "]}";
+        return "{\"days\":[" + days + "]," + MealPlanIntegrationTest.shoppingListJson() + "}";
     }
 
     private UUID readyMealsProfiledUser() {
@@ -221,26 +221,38 @@ class MealPlanHandoffIntegrationTest extends AbstractIntegrationTest {
         mealPlanHandoffService.generateFirstPlan(userId);
 
         assertThat(mealPlanRepository.count()).isEqualTo(1);
-        // Three distinct ingredients across the week, each repeated every day: the list is the collapsed form.
-        assertThat(shoppingListItemRepository.count()).isEqualTo(3);
+        // The planner's own purchase list, line for line — not ingredients summed across the week.
+        assertThat(shoppingListItemRepository.count()).isEqualTo(5);
         // The plan announcement is the first message, not the last: the hand-off goes straight on to show the
         // list for approval rather than building a cart on its own — nothing reaches Silpo until a person agrees.
         String message = TELEGRAM.sentMessages().getFirst().path("text").asText();
-        assertThat(message).contains("Вівсянка").contains("Борщ").contains("3 позицій");
+        assertThat(message).contains("Вівсянка").contains("Борщ").contains("5 позицій");
         assertThat(TELEGRAM.sentMessages().getLast().path("text").asText())
                 .contains("Ось що пропоную взяти")
-                .contains("Всього 3 позиції");
+                .contains("Всього 5 позицій");
     }
 
+    /**
+     * The failure message used to promise «Спробую ще раз трохи пізніше», and nothing ever did. Now it offers a
+     * button, and the button asks for the plan again.
+     */
     @Test
-    void saysSoRatherThanFailingSilentlyWhenGenerationBreaks() {
+    void saysSoRatherThanFailingSilentlyWhenGenerationBreaksAndOffersARetry() {
         UUID userId = profiledUser();
         CLAUDE.respondWithText("{\"days\":[]}");
 
         mealPlanHandoffService.generateFirstPlan(userId);
 
         assertThat(mealPlanRepository.count()).isZero();
-        assertThat(TELEGRAM.sentMessages().getLast().path("text").asText()).contains("не вдалось");
+        var failure = TELEGRAM.sentMessages().getLast();
+        assertThat(failure.path("text").asText()).contains("не вдалось").doesNotContain("Спробую ще раз");
+        assertThat(failure.toString()).contains(MealPlanHandoffService.CALLBACK_RETRY);
+
+        CLAUDE.respondWithText(fullWeekJson());
+        mealPlanHandoffService.retry(userRepository.findById(userId).orElseThrow());
+
+        assertThat(mealPlanRepository.count()).isEqualTo(1);
+        assertThat(TELEGRAM.sentMessages().getLast().path("text").asText()).contains("Ось що пропоную взяти");
     }
 
     @Test

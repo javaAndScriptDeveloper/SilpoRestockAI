@@ -141,6 +141,24 @@ class ClaudeApiClientIntegrationTest extends AbstractIntegrationTest {
         assertThat(STUB.requests().getFirst().toString()).contains("runningOut");
     }
 
+    /**
+     * A structured answer that ran into the output cap arrives as valid-looking JSON with the end missing. The SDK
+     * reports that as a parse error, which hides the real fault — the schema asked for more than one call can
+     * carry. The exception has to say so, because that is the thing to fix.
+     */
+    @Test
+    void namesTheOutputCapWhenAStructuredAnswerWasCutOff() {
+        STUB.respondCutOffAtMaxTokens(true);
+        STUB.respondWithText("{\"item\":\"молоко\",\"quantity\":2,\"runni");
+
+        assertThatThrownBy(() -> claudeApiClient.completeStructured("system", "user", InventoryDelta.class))
+                .isInstanceOf(ClaudeStructuredOutputException.class)
+                .hasMessageContaining("max_tokens=8192")
+                .hasMessageContaining("InventoryDelta");
+
+        assertThat(STUB.callCount()).isEqualTo(1);
+    }
+
     @Test
     void surfacesProseInsteadOfStructuredOutputAsATypedException() {
         STUB.respondWithText("Вибач, я не зрозумів запит.");

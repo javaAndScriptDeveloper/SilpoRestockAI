@@ -130,6 +130,45 @@ class ShoppingListIntegrationTest extends AbstractIntegrationTest {
         assertThat(items.getFirst().getSilpoProductId()).isEqualTo("p-42");
     }
 
+    /**
+     * A plan the recipe planner wrote carries its own shop-sized purchase list; that list is the shopping list,
+     * line for line, and the meals' (empty) ingredients are not consulted. Older plans and ready-meal plans have no
+     * such list and still go through the aggregation below.
+     */
+    @Test
+    void aPlanWithItsOwnPurchaseListIsDerivedFromThatListNotFromMealIngredients() {
+        User user = userAccountService.findOrCreate(8305L);
+        Map<String, Object> plan = Map.of(
+                "days",
+                List.of(Map.of(
+                        "day",
+                        "MONDAY",
+                        "meals",
+                        List.of(meal("Борщ", ingredient("буряк", "0.2", "кг")), meal("Омлет"), meal("Гречка")))),
+                "shoppingList",
+                List.of(
+                        Map.of("name", "Буряк", "quantity", BigDecimal.ONE, "unit", "кг", "category", "Овочі і фрукти"),
+                        Map.of("name", "Яйця курячі", "quantity", BigDecimal.TEN, "unit", "шт", "category", "Яйця"),
+                        Map.of("name", "Гречка", "quantity", BigDecimal.ONE, "unit", "кг")));
+        MealPlan saved = mealPlanRepository.save(MealPlan.builder()
+                .id(UUID.randomUUID())
+                .userId(user.getId())
+                .weekStartDate(LocalDate.of(2026, 8, 31))
+                .plan(plan)
+                .createdAt(Instant.now())
+                .build());
+
+        List<ShoppingListItem> items = shoppingListService.deriveFromMealPlan(
+                saved.getId(), com.silporestockai.model.ShoppingListSourceType.RECIPE_DERIVED);
+
+        assertThat(items).extracting(ShoppingListItem::getName).containsExactly("Буряк", "Яйця курячі", "Гречка");
+        assertThat(lineFor(items, "Буряк", "кг").getQuantity()).isEqualByComparingTo("1");
+        // A line the planner left uncategorised still gets one, from the keyword fallback.
+        assertThat(lineFor(items, "Гречка", "кг").getCategory()).isNotBlank();
+        assertThat(items)
+                .allSatisfy(item -> assertThat(item.getSilpoProductId()).isNull());
+    }
+
     @Test
     void sumsAnIngredientThatAppearsInSeveralMealsAndKeepsMismatchedUnitsApart() {
         MealPlan plan = persistedPlan(8301L);

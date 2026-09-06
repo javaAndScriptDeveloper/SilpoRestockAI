@@ -112,11 +112,11 @@ class CalendarViewIntegrationTest extends AbstractIntegrationTest {
             }
             days.append("""
                     {"day":"%s","meals":[\
-                    {"type":"BREAKFAST","name":"Вівсянка","ingredients":[{"name":"вівсяні пластівці","quantity":0.3,"unit":"кг"}]},\
-                    {"type":"LUNCH","name":"Курячий суп","ingredients":[{"name":"куряче стегно","quantity":0.5,"unit":"кг"}]},\
-                    {"type":"DINNER","name":"Гречка з овочами","ingredients":[{"name":"гречка","quantity":0.4,"unit":"кг"}]}]}""".formatted(day.name()));
+                    {"type":"BREAKFAST","name":"Вівсянка"},\
+                    {"type":"LUNCH","name":"Курячий суп"},\
+                    {"type":"DINNER","name":"Гречка з овочами"}]}""".formatted(day.name()));
         }
-        return "{\"days\":[" + days + "]}";
+        return "{\"days\":[" + days + "]," + MealPlanIntegrationTest.shoppingListJson() + "}";
     }
 
     private void tapButton(int updateId, String data) throws Exception {
