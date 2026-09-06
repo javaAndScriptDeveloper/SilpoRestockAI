@@ -1052,3 +1052,32 @@ products are wrong — task 09's fuzzy name search.
 The manual runbook exists for what stubs cannot answer: whether Silpo's real catalogue matches the
 words we search for, whether a real transcription is accurate, and whether a real fridge photo produces
 a sensible reading.
+
+### Session 6: what a cart says now, and what to check with your own eyes
+
+Everything below was driven live on 2026-09-06 through synthetic webhooks; the parts that need a phone are
+marked.
+
+| Do this | Expect |
+|---|---|
+| Finish the form for a two-adult household | «План на тиждень готовий…» within about 30 s, then a list of 15–25 lines in **shop units** («Яйця курячі — 20 шт», «Борошно 1 кг»), never «Мед — 20 г». If it fails, a «Спробувати ще раз» button under the message |
+| Tap «Замовити» | «Збираю кошик…» at once; the cart within about a minute. Every line reads `назва — кількість одиниця — вартість рядка` («Сир — 0.3 кг — 47.97 грн»), the delivery line reads «пн, 7 вер · 09:00–10:30», «Не знайшов: …» names lines the catalog lacks, «Не поклав, бо виглядає неправильно: …» names any line held back (over ₴1500, 20 units or 6 kg) |
+| Tap «Замовити» twice quickly | «Ще збираю попередній кошик — зачекай хвилинку» on the second tap; one cart, not two |
+| Restart the app mid-build, then tap «Замовити» again after 3 minutes | The build runs (the guard expired); before session 6 the button was dead for good |
+| «замов усе для карбонари» | Spaghetti, pancetta, a hard Italian cheese (~100 г), eggs if the branch has them. If the goods total is under ₴799: «Замовлення було менше за мінімум доставки «Сільпо», тож додав із твого звичайного набору: …» with each added line and its price; «Не треба — скажи, що прибрати». With no baseline yet: the amount, the minimum, and that the cart is waiting in the Silpo app |
+| «замов сир з вином по знижці до п'ятниці» | «Зроблю це найближчим часом: …», then on the sweep «На «…» беру: сир твердий 250 г, … (де є акція — беру акційне)», a cart whose lines are on promotion where the catalog has any, and «Економія за акціями: N грн» — Silpo's own figure |
+| «голова після вчорашнього…» | Water ×2, an isotonic drink ×2, one sorbent — three lines, not seven; earliest slot |
+| «світло вимкнули» | A no-cook stock-up (water, juice, bread, tinned fish, pâté, sliced cheese/ham, nuts, biscuits, fruit) that clears the minimum without any top-up |
+| Wait for a check-in prompt, then type «замов усе для карбонари» instead of answering | The dish order runs; «Не розібрав…» only for a sentence that is neither an answer nor a request |
+| «що треба докупити?» after a check-in | Only the lines the check-in named, each with quantity and cost, a total, and — if under the minimum — the same top-up block. The Silpo cart is emptied first: nothing from an earlier cancelled cart appears |
+| «що їмо в середу?» | Wednesday's meals directly, not the day picker |
+| Cancel a cart, then build another | The cancelled cart's lines are gone (every build clears the cart first) |
+
+**Needs a phone / your account:** photo paths (a plated dish with «замов все для цього»; a fridge photo);
+the WebApp form; a real tap on «Перейти до оплати». **Needs your account specifically:** «зроби список як
+минулого разу» — the test account has no online or in-store orders, so it can only say so honestly.
+
+**What to read in the log for any cart:** one `ProductMatchingService` line per decision with its reason; a
+`will also search […]` line per second-pass term; `topping cart … up from X to about Y with N baseline lines`
+when the minimum bit; `holding back «…»` for a sanity-guard line; and every `Telegram -> chat …` line is the
+message the person read.

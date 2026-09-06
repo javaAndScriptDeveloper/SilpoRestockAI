@@ -383,3 +383,91 @@ ranking, and fixing it needs a second query pass. This change makes those lines 
 
 One commit, unpushed: `Stop a finished list from swallowing every message a household types`.
 RUNBOOK gained three session-5 checklists.
+
+---
+
+# Session 6 — full stabilisation walk-through on the live account, 2026-09-06 (evening)
+
+**Mode:** autonomous, auto-approve. Full Notion read first (product page, all 47 tasks, demo script, Selling
+Points), then the whole product driven as a household would use it — synthetic Telegram webhooks against the
+**real** Silpo MCP and the real Claude API, every message the bot sent read back from the log (outbound
+logging was the first thing added, because there was none). Every problem found was fixed the moment it was
+found, one commit each, with tests for the class of bug rather than the instance. **14 code commits**, all on
+`main`, unpushed (standing pattern). Final gate: full `./gradlew test` — see the bottom.
+
+The three bugs in the brief were reproduced, and none of them was one bug:
+
+| Reported | What it actually was | Status |
+|---|---|---|
+| «Замов усе для карбонари» → 2 kg DOP cheese at ₴2798, Shirataki, ₴3174 for one dish | Two layers that had already been fixed in session 5 (×10 weighted quantities; Silpo's top hit as the product), **plus** three that had not: a matcher whose failure silently fell back to that top hit, cart lines that showed the price per kilogram next to a fraction of one («0.1 — 1399.00 грн»), and Silpo's ₴799 minimum order refusing every small cart | Fixed. Live now: La Pasta spaghetti ₴43, pancetta, Grana Padano 100 g ₴140, eggs honestly unfound, cart presented in 16 s |
+| «Замов сир з вином по знижці до п'ятниці» → weekly list | Session 5's state bug was real and fixed; what was left underneath was worse: the scheduled purchase **ignored its theme entirely** and searched Silpo's promotions for snack keywords — and the promotions tool answers with campaign codes, not products, and had been refusing our arguments on every run. Live result was «немає активних знижок на снеки — спробую пізніше», a promise nothing kept | Fixed. Live now: hard cheese, camembert, cabernet — all three on promotion, «Економія за акціями: 316.02 грн» |
+| «Замов усе для карбонари» → weekly list | Same state bug (session 5), confirmed gone; but a **new** way to get the same symptom was found and fixed: an open check-in prompt swallowed any request typed over it («Не розібрав. Скажи коротко по цих: Хек Norven…») | Fixed |
+
+## Found and fixed, in the order a household hits them
+
+| # | What a person saw | Cause | Fix (commit) |
+|---|---|---|---|
+| 1 | **First plan never generated** for a two-adult household: «План скласти не вдалось» after six minutes, three times in a row | The recipe planner was asked for ~100 per-meal ingredient objects incl. invented `productId`/`price`; the answer ran past the 8192-token cap (JSON cut mid-string) and the 120 s timeout, and the transport retried the same oversized call twice | Planner answers with meal *names* by day plus **one shop-sized purchase list** (`RecipeWeek`); no id/price fields exist to fabricate; a cut-off answer now says `max_tokens`; the failure message has a «Спробувати ще раз» button instead of a promise. Plan in 31 s, 25 sane lines (`202b24d`) |
+| 2 | List quantities were recipe-gram sums: «Мед 20 г», «Борошно 100 г», «Гранола 80 г» | Same cause — aggregation of per-meal grams | Same fix; the planner rounds to what the shop sells («Борошно 1 кг», «Яйця 20 шт», «Молоко 2 л») |
+| 3 | «Замовити» dead forever after a restart | The double-tap guard is cleared in a `finally` a killed JVM never reaches | Guard expires after 3 min; an ignored tap gets a one-line reply; a failed build ends with «Спробувати ще раз / Змінити список» buttons (`fef91cb`) |
+| 4 | The app restarted underneath live cart builds | Tunnel supervisor restarted the app on every reconnect, hostname changed or not | Restart only on a new hostname (`a481a70`) |
+| 5 | Product choice took **88 s** (Sonnet), then the add-to-cart call timed out at 30 s and the whole cart died | Flagship model for a rules-driven choice; MCP timeout too short for a 25-line add | Matcher on the fast model (24 s); MCP timeout 60 s; add-to-cart retried once (idempotent by product id) (`7318e65`) |
+| 6 | Matcher failure → ₴7549 cart of konjac, 17 jerky packets, ₴1399 cheese, with «Підтвердити» under it (seen for real during the credit outage) | Silent fallback to Silpo's own ranking | A failed match fails the cart with a retry offer, never a wrong cart (`7318e65`) |
+| 7 | «Молоко 2.5%», «Яйця курячі», «Вівсянка», «Капуста білокачанна» unresolved | Silpo's search is plain text: the term was wrong, not the ranking | **Second search pass**: the fast model suggests other shelf names («Вівсяні пластівці», «Яйця», «Капуста»), one more Silpo call, matcher again. Recovered milk, cabbage, oats live; eggs are genuinely absent from this branch (`7318e65`) |
+| 8 | «800 г» against a «1кг» pack, «2 шт» of a 600 г loaf, «4 шт» cucumbers — all silently the minimum step (one pack, one loaf, 100 g) | `кг` not parsed; count vs weight-labelled pack refused; count vs loose produce refused | `кг` parses; a count against a weight/volume-labelled pack is that many packs; a count against loose produce is ~150 g a piece, said in the log; litres relate to gram-labelled packs 1:1 (`7318e65`, `a074719`) |
+| 9 | Gerber infant porridge (₴388) chosen for «Вівсянка» by the fast model | No floor under the model's judgement | Pet food, baby food, toys, kitchenware dropped before any model sees them; prompt says a «no raw meat here» reason must come with -1 (`a074719`) |
+| 10 | No sanity check on price or amount | — | A line over ₴1500, 20 units or 6 kg is held back and named: «Не поклав, бо виглядає неправильно: …» (`7318e65`) |
+| 11 | Carbonara / hangover / blackout / Friday-snack carts **cannot check out**: Silpo's ₴799 minimum delivery order (`order.cost.min`), shown to the household as a raw `order.payment_types.disabled` | Every small cart in the product | Shortfall filled from the household's own confirmed baseline, cheapest lines first, each named with the right to take it out; measured against `productsTotal` (goods, not goods+delivery — the first attempt was ₴95 short); no baseline → honest message naming the amount and the minimum; info-level notes from Silpo no longer shown (`7f35101`, `1530ed8`) |
+| 12 | «Грана Падано — 0.1 — 1399.00 грн»; «Доставка: 2026-09-07T06:00:00+00:00» | Cart lines carry no unit; slot label is raw ISO | «0.1 кг — 139.90 грн»; «пн, 7 вер · 09:00–10:30» in Kyiv time, also on every «Інший час» button (`cd7283c`) |
+| 13 | Hangover kit: ₴1514 — the same ₴329 electrolyte drink twice, two Atoxil gels, a ₴464 charcoal | Seven overlapping search terms merged into duplicate lines | Water ×2, isotonic ×2, one sorbent (`97bcfdb`) |
+| 14 | Blackout kit at ₴742 got topped up with flour and raw carrots | One of everything sat under the minimum; the top-up drew from a cooking baseline | A no-cook stock-up that clears the minimum by itself; «готова страва» dropped (it is a soup in a pouch) (`97bcfdb`) |
+| 15 | «Сир з вином по знижці» → «немає знижок на снеки — спробую пізніше» | Theme ignored; promotions tool misunderstood and mis-called since day one | Theme → 1–6 shop lines (fast model) → ordinary pipeline; «по знижці» tells the matcher to prefer candidates marked АКЦІЯ (from `oldPrice`); saving = Silpo's own `subDiscount` (`a2a6642`) |
+| 16 | A request typed while a check-in was open was answered «Не розібрав…» | The open question owned the chat | Empty check-in parse → intent router first; a request wins, the check-in waits for the next sweep (`7b9ecc5`) |
+| 17 | Delta reorder: 3 lines drafted with the **11 lines of a cancelled cart underneath**; no quantities, prices or total; could never clear the minimum | Reorder composed the cart steps by hand and never cleared the cart | Reorder goes through `buildCart` like every order; lines with cost, total, Silpo's saving (`0ac9d57`) |
+| 18 | «Що їмо в середу?» opened the day picker; «додай яйця» added **30 eggs**; in-store order history refused every call | Classifier had no notion of today or a named day; list-edit prompt had no shop-size rule; `silpo_get_my_offline_orders` wants cart-context args | «Сьогодні: …» in every classification and a named day opens that day; shop-size rules in the list-edit prompt; offline tool called with the cart context (`07b6abd`) |
+
+Plus the one that made the rest possible: **every outbound Telegram message is now in the log** next to the
+MCP and Claude lines that produced it (`e9fbf6d`).
+
+## Verified live, end to end, on the real account
+
+Onboarding (Silpo enrichment → form) → weekly plan (31 s, 25 lines) → «Замовити» (36 s, 23/25 resolved,
+₴2595 for two adults against a ₴2500 budget) → «Підтвердити» → baseline + checkout link → «замов усе для
+карбонари» (16 s, dish lines right, topped up to the minimum, confirmed) → hangover kit → blackout kit →
+scheduled «сир з вином по знижці» (fires on the sweep, all three lines on promotion) → check-in answer
+(counters moved against the baseline's own spellings) → «що треба докупити?» (3-line delta, cart cleared
+first) → gastritis → calendar (named day) → back to normal → mass-gain dialogue → UA-only toggle → list edit
+→ past-order seed (honest: the account has no orders) → Анкета re-edit with a changed answer → Фідбек →
+/start → Інструкція. Not driven: photo paths (no image on this box) and the WebApp form's own UI.
+
+## Product decisions taken without asking (all reversible, all in `OVERNIGHT_QUESTIONS.md` → Session 6)
+
+1. **A too-small cart is topped up from the household's own baseline**, cheapest lines first, every line
+   named. The alternative — «менше 799 грн, докинь щось сам» — is a dead end on a demo and in life.
+2. **A failed product match fails the cart.** A wrong cart with a confirm button is worse than no cart.
+3. **The matcher runs on the fast model.** 24 s instead of 88; quality held on the live weekly list once pet/baby
+   food was filtered out deterministically.
+4. **Hangover and blackout kits are fixed short lists**, sized to stand on their own.
+5. **The promotions tool is not used.** It returns campaign codes for `silpo_get_products`, never products;
+   Silpo prices promotions into the cart itself, so «знижка» is a matcher preference plus Silpo's own saving.
+6. **Reorders clear the cart first.** A household's Silpo cart holds whatever the last cancelled attempt left.
+
+## Requires your decision
+
+- **How much top-up is too much?** A ₴172 delta reorder became a ₴840 cart with 14 baseline staples; a
+  carbonara became 15 lines. The mechanism is honest and each line is removable, but a cap («доповнюю не
+  більше ніж на N грн, інакше питаю») or an ask-first variant is a product call.
+- **Eggs are not in this branch's delivery catalog** (the search for «Яйця» returns chocolate eggs, then
+  dairy). Every list will report them unfound. Worth checking on your own account/branch.
+- **Task 32's kit** is now water/isotonic/sorbent. Atoxil is in the catalog at ₴114; whether a grocery bot
+  should carry a sorbent at all is your call — the order is honest either way.
+
+## Left standing
+
+- Photo paths (dish photo, fridge photo) and the WebApp form UI — unchanged, still In review, need a phone.
+- Task 46 partner placement — untouched, still In review.
+- `ReorderService` no longer offers promoted variants (it never worked live); replacements via
+  `silpo_get_replacements` stay.
+- `.env` carries three session-only knobs (`AD_HOC_SCHEDULE_SWEEP_CRON`, `CHECKIN_INTERVAL`,
+  `CHECKIN_SWEEP_CRON`) — **reverted at the end of this session**; the tunnel supervisor was stopped for the
+  live run and restarted afterwards.

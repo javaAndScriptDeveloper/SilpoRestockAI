@@ -774,3 +774,87 @@ call to make, but only for plain `complete`, not `completeStructured`. Whether "
 not the jerky" is a judgement call Haiku can make is an empirical question I could not answer without
 credit. If cost matters, that is the first thing to try — a structured fast-model variant is a small change
 and would cut this call several-fold.
+
+## Session 6 (2026-09-06, evening): the full live walk-through
+
+### Planner output shape: names plus one purchase list, not ingredient objects
+
+**Observation:** the very first thing a new two-adult household did — finish the form — ended in «План
+скласти не вдалось», three times, six minutes. The structured output for a 21-meal week with ~5 ingredient
+objects each (five fields, two of them — `productId`, `price` — invented every time) does not fit 8192 output
+tokens, and generating it takes longer than the 120 s timeout. The suite never saw it because the canned
+answers are three lines a day.
+
+**Decision:** the recipe planner answers with `RecipeWeek`: meal names by day and *one* purchase list in shop
+units. It is faster (31 s), cheaper, cannot fabricate ids, and the list is what a person buys («Яйця 20 шт»,
+«Борошно 1 кг») rather than recipe grams summed («Борошно 100 г», «Мед 20 г»). Per-meal ingredients are
+kept in the stored shape for ready meals and old plans; `ShoppingListService` reads whichever is present.
+
+**Why safe:** task 07's own criteria (7 days, 3 meals, restrictions in the prompt, retry once, prompt in a
+file) all still hold; the calendar view needs only names; the list is strictly better.
+
+### A failed product match fails the cart
+
+The session-5 design degraded a failed matcher call to Silpo's own ranking, on the argument that no cart
+is worse than a badly matched one. It was exercised for real during the credit outage and produced ₴7549 of
+konjac noodles, seventeen jerky packets and a ₴1399 cheese with «Підтвердити» under it — the exact cart the
+bug report describes. **Reversed:** a wrong cart with a confirm button is worse than no cart. The household
+gets «не вдалось» and a «Спробувати ще раз» button. The no-API-key configuration keeps Silpo ranking.
+
+### Silpo's ₴799 minimum delivery order
+
+Every small cart in the product (dish, hangover, blackout, Friday snacks, a delta reorder) is under it, and
+none could ever produce a checkout link. Options: (a) explain and stop; (b) top up from the household's own
+baseline; (c) switch to self-pickup; (d) ask which staples to add. Went with (b): cheapest baseline lines
+first, every added line named, measured against `productsTotal` (Silpo checks goods, not goods plus
+delivery), aiming 5 % past the line since baseline prices are last week's. A household with no baseline yet
+gets (a) with the amount and the minimum named. **Open for you:** a cap on the top-up (a ₴172 delta reorder
+became ₴840), or (d) for large gaps.
+
+### The fast model for product matching, with a deterministic floor
+
+Sonnet took 88 s per cart; Haiku 24 s. Haiku's one bad live pick (Gerber infant porridge for «Вівсянка»)
+was a class no model needs judgement for, so pet food, baby food, toys and kitchenware are dropped before
+any model sees them, and the prompt says a «no raw meat here» reason must come with -1 (the second search
+pass makes -1 cheap). The sanity guard (₴1500 / 20 units / 6 kg per line) is the floor under both.
+
+### The promotions tool
+
+`silpo_get_promotions` returns campaign codes for `silpo_get_products`, not products, and requires the cart's
+branch/delivery/slot — it has refused every call this codebase ever made (wrong arguments), in both
+`AdHocOrderService` and `ReorderService`. Neither the snack-keyword filter nor the reorder's «promoted
+variant» ever ran live. Removed both. «По знижці» is now a matcher preference over candidates marked from
+`oldPrice`, and the saving shown is Silpo's own `subDiscount` for the cart. Browsing a campaign via
+`silpo_get_products(promotionCode)` would be a real feature — noted as a follow-up, not built.
+
+### Hangover and blackout kits
+
+Fixed lists, resized: seven overlapping hangover terms merged into duplicate lines (₴1514); one-of-everything
+blackout sat under the minimum and got topped up with flour. Water ×2 / isotonic ×2 / sorbent; and a no-cook
+stock-up (water, juice, bread, tinned fish ×2 each, pâté, sliced cheese and ham, nuts, biscuits, apples,
+bananas) that clears the minimum by itself.
+
+### An open check-in must not own the chat
+
+A check-in prompt parks `conversation_state` in `CHECK_IN` until answered — up to three days — and any
+request typed over it was parsed as a fridge report. Now an empty parse is offered to the intent router
+first; a confident intent is carried out and the check-in waits for the next sweep. Only a sentence nobody
+recognises gets the clarification. Same principle as session 5's list fix: a pending question may own its
+answer, not every message.
+
+### Reorders clear the cart
+
+`ReorderService` composed the cart steps itself "to add to whatever is already in the cart on purpose". On the
+live account the cart held a cancelled cheese-and-wine cart, and the three-line reorder was drafted with all
+eleven lines underneath. There is no legitimate leftover: the app's own attempts are the only thing that
+puts lines there. Reorders now go through `buildCart` like every order.
+
+### Operational
+
+- `scripts/tunnel-supervisor.sh` restarts the app only when the tunnel hostname changes; a same-host
+  reconnect leaves it alone. localhost.run still changes hosts every ~20 minutes, so a long live session
+  should run with the supervisor stopped.
+- Cron knobs in `.env` must be quoted (`CHECKIN_SWEEP_CRON="0 * * * * *"`): `make run` sources the file as
+  shell, and an unquoted `*` runs a command instead of setting the variable.
+- The Anthropic prompt log now keeps 12 000 characters of the user message, so the candidate lists a wrong
+  match was made from are readable.
