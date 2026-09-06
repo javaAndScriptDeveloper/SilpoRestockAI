@@ -462,6 +462,36 @@ question — task 45), and:
 `docs/superpowers/plans/2026-09-05-profile-reedit.md`; the prefill's *browser-side* field population has no
 automated test — see that plan's Task 5 — so this table is the only verification of it).
 
+### Task 35: seed the list from a real past order
+
+Needs a connected Silpo account with at least one past order.
+
+| Say / do | Expect |
+|---|---|
+| «зроби список як минулого разу» | «Ось твої останні замовлення в «Сільпо». Яке взяти за основу?» with up to five buttons — «1 вер · 12 позицій · 1234.50 грн», in-store ones marked «магазин» — plus «Скасувати» |
+| Tap one | «Взяв за основу замовлення … — N позицій, ті самі товари, що й тоді.» then the list, with «Орієнтовно ~X грн» (prices come from the order) |
+| Compare the list with the order in the Silpo app | Item for item, same quantities. Anything missing → note the real JSON: `SELECT ... FROM mcp_tool_call` won't have it, so grep `logs/app.log` for `silpo_get_my_online_orders answered:` |
+| Tap «Замовити» | The cart builds **without** a `silpo_find_products_batch` call (check the log: only cart/slot/add calls) |
+| If the buttons show «Замовлення» with no date/count, or a tap says «без переліку позицій» | Silpo's listing tool returned a shape the key guesses in `McpResponses` (`ORDERS`, `ORDER_ID`, `ORDER_DATE`, `ITEMS`) do not cover, or summaries without lines — paste the logged JSON into `docs/OVERNIGHT_QUESTIONS.md` and the fix is one key array |
+
+### Task 37: pull the pitch numbers after a rehearsal
+
+Set `METRICS_TOKEN` in `.env` (`openssl rand -hex 16`), restart, walk the demo once (onboarding → first
+confirmed order → a check-in answer → a reorder), then:
+
+```bash
+make metrics
+```
+
+You get a markdown table: onboarding→first order (median, fastest), check-in response rate, reorders
+confirmed unedited, catalog resolve rate per cart, distinct MCP tools of 39 — each with its sample size.
+Paste it into the Notion «Selling Points» table. Rows are only as real as the run: a fresh DB prints
+dashes, not zeros dressed up as results.
+
+```sql
+SELECT tool_name, count(*) FROM mcp_tool_call GROUP BY tool_name ORDER BY 2 DESC;
+```
+
 ### Task 47: verify the Фідбек button
 
 | Do | Expect |

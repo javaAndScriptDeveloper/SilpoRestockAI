@@ -399,3 +399,46 @@ everything.
 
 `user_id` is nullable in the schema because the spec says so, but every chat has a `users` row from its
 first message, so in practice it is always set.
+
+### Task 37: real numbers need a real run; the tooling is there, the numbers are not yet
+
+**Observation:** criterion 4 asks for at least one real number on the Notion pitch page. The local compose
+Postgres holds one user, one profile and zero orders — every live test so far ran against a DB that has
+since been reset, or never confirmed an order. Inventing a number would defeat the task's own point
+("small real numbers are more credible than large invented ones").
+
+**Decisions:**
+1. Instrument what was missing (`users.checkin_prompts_sent`, `customer_order.unresolved_count` /
+   `edited_before_confirm`, an `mcp_tool_call` log) and ship the report as `GET /internal/metrics/pitch`
+   + `make metrics`. The report prints every ratio with its numerator and denominator.
+2. The MCP log is written from an application event, not from the client — `client` may not reach
+   `repository` under the ArchUnit layer rule. The listener swallows its own failures: evidence for a
+   pitch must never break a cart build.
+3. «Reorder confirmed unedited» is keyed on the flag's presence, not on `OrderType.REORDER` — that value
+   does not exist; reorders are `SCHEDULED_REORDER` or an early-trigger `AD_HOC`, and only
+   `ReorderConfirmationService` sets the flag.
+4. The endpoint is gated by a shared token because the demo box sits behind a public tunnel. Blank token
+   → 404, so nothing changes for anyone who never sets it.
+5. Notion: the pitch page and «Selling Points» now carry the exact command and a table to fill after the
+   rehearsal, marked as such. Task 37 stays **In review** until that run happens — the first live run
+   after this commit is the one that produces the quotable numbers.
+
+### Task 35: chat-first entry, not an onboarding fork; Case B was already built
+
+**Decisions:**
+1. **Entry point.** The task offers two: an onboarding step («хочете почати зі свого останнього
+   замовлення?») or the intent router. Built only the router intent (`PAST_ORDER_SEED`). An extra
+   question in onboarding costs every new household a tap for a path most will not take on day one, and
+   the product's own pitch is "say what you want" — «зроби список як минулого разу» is exactly that. The
+   help text and the «Список» opening message both name the phrase, so it is discoverable.
+2. **Response shape is unknown.** No order-history JSON has ever been observed in this repo (the
+   enrichment path hands the raw text to Claude). Parsed with the same breadth-first `McpResponses` key
+   arrays everything else uses (`ORDERS`, `ORDER_ID`, `ORDER_DATE`, `ITEMS`, `PRODUCT_ID`, …); an order the
+   tool returns without line items gets «без переліку позицій», never a name search that would turn a
+   known order into a guessed one. The live check (RUNBOOK Task 35) is what confirms the shape.
+3. **Case B already exists.** «Надішли фото чека — зберу схожий набір» has been the list builder's path
+   since task 20; it goes through Claude vision → `silpo_find_products_batch` → unresolved items surfaced
+   honestly. The only change is copy: it now says the match is approximate and that a foreign receipt's
+   exact products do not transfer.
+4. **Prices ride along.** An order line's price ÷ quantity becomes the list line's unit price, so task
+   39's «Орієнтовно» line is right from the first screen on this path.
