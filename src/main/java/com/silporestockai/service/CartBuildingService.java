@@ -358,6 +358,34 @@ public class CartBuildingService {
     }
 
     /**
+     * Whether a stored id is one Silpo will actually accept as a {@code productId}.
+     *
+     * <p>Silpo's product ids are UUIDs, and {@code silpo_add_or_update_cart_products} rejects the *whole* call —
+     * every line, not just the offending one — with {@code Invalid UUID} when any entry is not one. A model that
+     * helpfully fills the field in with "1", "2", "3" therefore does not cost one wrong product, it costs the entire
+     * order; and because the value is persisted on the list, every retry fails the same way until somebody edits the
+     * database. That is what a live account hit: 32 of 32 lines "pre-resolved" to 1..32, no search performed, cart
+     * refused, «Кошик зібрати не вдалось» forever.
+     *
+     * <p>Generation strips these where it knows to ({@code MealPlanService.withoutProductIds}), but every producer of
+     * a {@code PlannedIngredient} can set the field and this is the one place that talks to Silpo. Anything that is
+     * not a UUID is treated as "not resolved yet" and goes through the name search like any other line, so a
+     * fabricated id costs one search instead of the order.
+     */
+    private static boolean carriesASilpoProductId(ShoppingListItem item) {
+        String id = item.getSilpoProductId();
+        if (id == null || id.isBlank()) {
+            return false;
+        }
+        try {
+            UUID.fromString(id.trim());
+            return true;
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
+    }
+
+    /**
      * Step 4. Chunked at the documented batch limit; an unmatched item is normal, not an error.
      *
      * <p>One search term per requested item, not a name-plus-quantity object: {@code silpo_find_products_batch}'s
@@ -368,8 +396,7 @@ public class CartBuildingService {
     public List<ResolvedProduct> resolveProducts(UUID userId, CartContext context, List<ShoppingListItem> items) {
         List<ResolvedProduct> resolved = new ArrayList<>();
         List<ShoppingListItem> preResolved = items.stream()
-                .filter(item -> item.getSilpoProductId() != null
-                        && !item.getSilpoProductId().isBlank())
+                .filter(CartBuildingService::carriesASilpoProductId)
                 .toList();
         // READY_MEALS_ONLY lines already carry a real productId, resolved during generation (task 22) — adding
         // them straight to the cart, not searching for them again, is the whole point of that fix.
@@ -383,10 +410,20 @@ public class CartBuildingService {
                     item.getUnit()));
         }
 
-        List<ShoppingListItem> needsSearch = items.stream()
-                .filter(item -> item.getSilpoProductId() == null
-                        || item.getSilpoProductId().isBlank())
+        List<ShoppingListItem> needsSearch =
+                items.stream().filter(item -> !carriesASilpoProductId(item)).toList();
+        List<String> fabricated = needsSearch.stream()
+                .filter(item -> item.getSilpoProductId() != null
+                        && !item.getSilpoProductId().isBlank())
+                .map(item -> item.getName() + "=" + item.getSilpoProductId())
                 .toList();
+        if (!fabricated.isEmpty()) {
+            log.warn(
+                    "{} shopping list lines carry a stored id that is not a Silpo product id; searching by name "
+                            + "instead: {}",
+                    fabricated.size(),
+                    fabricated);
+        }
         UserProfile profile = userProfileRepository.findByUserId(userId).orElse(null);
         boolean onlyUaProducer = profile != null && Boolean.TRUE.equals(profile.getOnlyUaProducer());
 
@@ -785,6 +822,21 @@ public class CartBuildingService {
                         : McpResponses.findString(context, "stock").orElse("");
                 yield (name == null ? "товар" : name) + ": на складі лишилось " + stock
                         + ", а в кошику замовлено більше";
+            }
+            // Both seen on a live weekly cart, and both left the household reading a machine code with no idea
+            // what to do next. Neither is fixable from here: age confirmation happens on Silpo's own checkout page,
+            // and the weight cap is a hard limit a full week's groceries for a family genuinely exceeds — so the
+            // sentence has to say which line to drop, not just that something is wrong.
+            case "order.adult.is_not_confirmed" ->
+                "у кошику є алкоголь — «Сільпо» просить підтвердити вік на своїй сторінці оплати, "
+                        + "або прибери цю позицію зі списку";
+            case "order.weight.max" -> "замовлення важче, ніж «Сільпо» приймає за раз — прибери частину зі списку";
+            case "order.cost.min" -> {
+                String minimum = context == null
+                        ? ""
+                        : McpResponses.findString(context, "orderCostMin").orElse("");
+                yield "замовлення менше мінімальної суми доставки"
+                        + (minimum.isBlank() ? "" : " (" + minimum + " грн)");
             }
             case "" -> "невідома причина";
             default -> message;

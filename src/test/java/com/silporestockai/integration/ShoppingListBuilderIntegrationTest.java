@@ -202,6 +202,56 @@ class ShoppingListBuilderIntegrationTest extends AbstractIntegrationTest {
         assertThat(conversationStateService.load(CHAT_ID).getCurrentFlow()).isEqualTo(ConversationFlow.LIST_BUILDING);
     }
 
+    /**
+     * The list keyboard carries everything it needs — {@code list:*} acts on whatever list is live for this user,
+     * {@code sli:*} names its own item — so it is dispatched globally rather than only while LIST_BUILDING happens
+     * to hold {@code conversation_state}. That is what lets the list stop owning free text at all: a check-in
+     * prompt (or any other flow) can take the state without the buttons under the list going dead.
+     */
+    @Test
+    void theListKeyboardStillWorksWhenAnotherFlowHasTakenTheConversationState() throws Exception {
+        shoppingListItemRepository.save(ShoppingListItem.builder()
+                .id(UUID.randomUUID())
+                .userId(user.getId())
+                .name("Гречка")
+                .quantity(BigDecimal.ONE)
+                .unit("кг")
+                .status(com.silporestockai.model.ShoppingListStatus.ACTIVE)
+                .build());
+        conversationStateService.save(CHAT_ID, ConversationFlow.CHECK_IN, "AWAITING_REPORT", java.util.Map.of());
+
+        tapButton(1, ShoppingListMessageService.CALLBACK_MANUAL_EDIT);
+
+        assertThat(TELEGRAM.sentMessages())
+                .anyMatch(message -> message.path("text").asText().contains("Гречка"));
+    }
+
+    /**
+     * Found on a live account, tapping «Замовити» on a real list: Telegram answered the acknowledgment with
+     * {@code [400] query is too old and response timeout expired}, that threw, and the handler died before it
+     * built anything — the household got «Щось пішло не так» for a button that had worked. A callback query
+     * expires in about a minute, so every tap redelivered across a restart or a slow reply arrives that way.
+     * The spinner is cosmetic; the order is not.
+     */
+    @Test
+    void aTapStillDoesItsWorkWhenTelegramWillNoLongerAcknowledgeIt() throws Exception {
+        shoppingListItemRepository.save(ShoppingListItem.builder()
+                .id(UUID.randomUUID())
+                .userId(user.getId())
+                .name("Гречка")
+                .quantity(BigDecimal.ONE)
+                .unit("кг")
+                .status(com.silporestockai.model.ShoppingListStatus.ACTIVE)
+                .build());
+        TELEGRAM.rejectCallbackAnswers();
+
+        tapButton(1, ShoppingListMessageService.CALLBACK_MANUAL_EDIT);
+
+        assertThat(TELEGRAM.sentMessages())
+                .anyMatch(message -> message.path("text").asText().contains("Гречка"));
+        assertThat(lastMessageText()).doesNotContain("Щось пішло не так");
+    }
+
     @Test
     void aDescriptionBecomesAListShownForApproval() throws Exception {
         sendText(1, "/list");
@@ -252,13 +302,21 @@ class ShoppingListBuilderIntegrationTest extends AbstractIntegrationTest {
         assertThat(items).extracting(ShoppingListItem::getName).containsExactlyInAnyOrder("Гречка", "Яйця С1");
     }
 
+    /**
+     * Typing instead of tapping used to be assumed to be an edit whatever it said — the assumption that made every
+     * sentence a household typed after their first list come back as another list. It goes to the classifier now,
+     * which has a LIST_MODIFY intent for the sentences that really are edits and hands those straight back here.
+     */
     @Test
-    void typingInsteadOfTappingIsTreatedAsAnEdit() throws Exception {
+    void typingInsteadOfTappingIsClassifiedAndAGenuineEditStillEdits() throws Exception {
         sendText(1, "/list");
         CLAUDE.respondWithText(list("{\"name\":\"Банани\",\"quantity\":84,\"unit\":\"шт\"}"));
         sendText(2, "щось на тиждень");
 
-        CLAUDE.respondWithText(list("{\"name\":\"Гречка\",\"quantity\":1,\"unit\":\"кг\"}"));
+        CLAUDE.respondWithTexts(
+                "{\"intent\":\"LIST_MODIFY\",\"confidence\":0.9,\"themeDescription\":null,"
+                        + "\"targetDateTimeIso\":null}",
+                list("{\"name\":\"Гречка\",\"quantity\":1,\"unit\":\"кг\"}"));
         sendText(3, "без бананів, будь ласка");
 
         assertThat(CLAUDE.requests().getLast().toString()).contains("змінити");
@@ -332,8 +390,13 @@ class ShoppingListBuilderIntegrationTest extends AbstractIntegrationTest {
                 .unit("кг")
                 .build());
 
+        // «Список» finds the plan's line and shows it, so the sentence after it is a change to a list already on
+        // screen — it goes through the classifier, which sends a LIST_MODIFY straight back to the builder.
         sendText(1, "/list");
-        CLAUDE.respondWithText(list("{\"name\":\"Молоко\",\"quantity\":1,\"unit\":\"л\"}"));
+        CLAUDE.respondWithTexts(
+                "{\"intent\":\"LIST_MODIFY\",\"confidence\":0.9,\"themeDescription\":null,"
+                        + "\"targetDateTimeIso\":null}",
+                list("{\"name\":\"Молоко\",\"quantity\":1,\"unit\":\"л\"}"));
         sendText(2, "молоко на тиждень");
 
         assertThat(shoppingListItemRepository.findByUserIdAndStatus(

@@ -487,3 +487,119 @@ The test's cart deliberately resolves one of three lines so the honest «Не з
    a demo) and stores what the catalog answered, never the request text. Behind the task-37 token.
 5. **Category matching is a whole-word contains** («молоко» ⊂ «молоко 2.5%», not ⊂ «молочний коктейль»);
    highest `priority_weight` wins if two overlap. No auction — out of scope per the spec.
+
+## Session 5 (2026-09-06, evening): the «all my messages come back as the same weekly list» report
+
+The report was: neither «замов сир з вином на п'ятницю» nor «замов усе для карбонари» produced a narrow
+result — both came back looking like a regenerated default weekly list — *and* an ordinary weekly list
+could not be pushed through to a real cart reliably either. The suspicion was a silent catch-all fallback
+somewhere returning a cached list instead of an honest error.
+
+**There is no such fallback.** Every error path in this codebase reports honestly
+(`TelegramFailureRecoveryService`, `CartConfirmationService.present`, `ShoppingListBuilderService.buildAndShow`,
+`MealPlanHandoffService.generateFirstPlan`). The symptom was real, the diagnosis was not: it was four
+separate defects, and the first one is the one that produced both screenshots.
+
+### 1. `LIST_BUILDING/AWAITING_APPROVAL` swallowed every free-text message, forever — root cause
+
+`ShoppingListBuilderService.present()` → `makeActive()` parks `conversation_state` in
+`LIST_BUILDING/AWAITING_APPROVAL` and **nothing ever clears it**. `TelegramRoutingService` gated the whole
+flow on `flow == LIST_BUILDING`, and that flow's text branch rewrote any sentence as
+«Поточний список треба змінити так: …» and rebuilt the list. So from the *first weekly plan onwards*, every
+message a household typed was answered with a regenerated weekly list and `IntentRouterService` was never
+called at all. Not a misclassification — the message was never classified.
+
+Confirmed against the live database before touching anything: chat `218196255` was sitting in
+`LIST_BUILDING/AWAITING_APPROVAL`, and its active list contained «Вино» and «Сир твердий» — the swallowed
+«сир з вином» message folded into a regenerated weekly list, exactly as reported.
+
+**Why the green suite never caught it:** `IntentRouterIntegrationTest.clean()` does
+`conversationStateRepository.deleteAll()`, so every intent test ran from `flow = NONE` — a state a real
+household is only ever in *before* they have seen their first list. The full suite was green while the
+product was broken. A previous session had already met the symptom and patched it per-button (hoisting
+`sched:*` above the flow gate, `ScheduledTaskManagementIntegrationTest:346` — "a stuck flow (e.g.
+LIST_BUILDING, never resolved) swallowed them too") rather than at the cause.
+
+**Fix, at the cause:** `AWAITING_APPROVAL` is a *state*, not a question. The flow now claims an update only
+at the two steps that actually asked something (`awaitsAnAnswer` → `AWAITING_INPUT`, `AWAITING_EDIT`);
+everything else goes to the classifier, which has a `LIST_MODIFY` intent that hands genuine edits straight
+back. The list keyboard is dispatched globally (`list:*`, `sli:*` are self-contained, like `sched:*`), so
+the list stops owning `conversation_state` without its buttons going dead. Consequence, also fixed: a list
+awaiting approval no longer counts as "busy" in `CheckinPromptService`, which had silently ended check-ins
+for good for any household shown a list they did not order.
+
+### 2. A failed callback acknowledgment destroyed the work the tap asked for
+
+Found on the live account, tapping «Замовити» on a real list: Telegram answered `answerCallbackQuery` with
+`[400] query is too old and response timeout expired`, `TelegramOutboundService.answerCallback` threw, and
+because every flow acknowledges the tap as its *first* act, the handler died before building anything. The
+household gets «Щось пішло не так» for a button that worked. Callback queries expire in about a minute, so
+any tap redelivered across a restart (this app restarts on every tunnel reconnect) or after a slow reply
+arrives already too old. Now logged and swallowed — the spinner is cosmetic, the order is not.
+
+### 3. Fabricated `productId`s made a household's list permanently unorderable — the cart's root cause
+
+The live list carried `silpo_product_id` = `1`, `2`, `3` … `32`: sequential integers a model had filled the
+field in with, persisted on `shopping_list_item`. `CartBuildingService.resolveProducts` trusted any non-blank
+id as "pre-resolved", so **all 32 lines skipped the product search entirely** and Silpo rejected the whole
+`silpo_add_or_update_cart_products` call with `Invalid UUID`. Not one wrong product — no order at all, on
+every retry, until the rows were edited by hand. That is the "I can't get even a normal weekly list into a
+cart" half of the report.
+
+`MealPlanService.withoutProductIds` already strips these on the recipe path (an earlier session fixed it
+there), but the stored rows predate that fix, and `ShoppingListBuilderService`'s ad-hoc path — whose
+`ShoppingListDraft` is also a list of `PlannedIngredient`, so the field is in the schema — was never
+guarded. Fixed in both places: stripped at the ad-hoc source, and validated at the boundary that actually
+talks to Silpo (`carriesASilpoProductId` — Silpo product ids are UUIDs; anything else is treated as "not
+resolved yet" and costs one name search instead of the whole order). Two test fixtures used `"p-1"`-style
+ids that no live Silpo response has ever contained; they now use UUIDs.
+
+### 4. Two Silpo refusal codes reached the household as raw machine text
+
+`order.adult.is_not_confirmed` and `order.weight.max` were rendered verbatim. Both now say what to do
+(`order.cost.min` too, seen in the same run).
+
+## Verified on the live account, not just in tests
+
+Driven through the real webhook against the real Silpo MCP with the account's own OAuth token:
+
+- **«замов сир з вином на п'ятницю»** from the exact parked state → `classified as
+  AD_HOC_SCHEDULED_PURCHASE (confidence 0.9)` → scheduled «сир з вином». Correct, narrow, not a list.
+- **«замов усе для карбонари»** from the same state → `classified as DISH_INGREDIENTS_ORDER (0.97)` →
+  dish-ingredients order → **4 of 4 lines resolved on live Silpo** → cart presented → «Підтвердити» →
+  `order … confirmed`, checkout link handed over. The full chain, end to end, on a real cart.
+- The **32-line weekly list** now also builds a real cart — 31 of 32 lines resolved live, 30 products
+  added, real names and prices — see the caveat below.
+
+## What I could not fix, and needs your product decision
+
+**A full weekly list for a household may be un-orderable at Silpo, and no code change can fix it.** With the
+product-id bug gone, the 32-line weekly cart builds correctly and then Silpo refuses to issue a checkout
+link, with these validations:
+
+- `order.weight.max` — the order is heavier than Silpo accepts in one delivery (the 40 kg cap).
+- `order.adult.is_not_confirmed` — «Вино» is in the list; age confirmation happens on Silpo's own checkout
+  page and there is no MCP tool for it.
+- three `product.offer.stock.max` lines — «Картопля рожева мита» (7 left), «Pasta Zara Канелоні» (1 left),
+  «Бекон «Укрпромпостач»» (0.8 left) — the branch does not have as much as a week's plan asks for.
+
+The household is now told all of this in plain Ukrainian, which is the honest outcome, but it is still a
+dead end: the agent has no policy for *what to do next*. The options are all product decisions I did not
+want to invent unsupervised — split a week into two orders, cap the plan's total weight at generation time,
+trim to the branch's actual stock before presenting, or ask the household which lines to drop. **Please
+say which of these you want**; it is the last thing standing between «Список» and a completed weekly order.
+
+**Also worth knowing:** two quantity conversions in that live cart look wrong — «Куряче філе 850 г» became
+`quantity=15.4` of a 100 г-ratio product (1.54 kg, at ₴324.45/unit → ₴4996 for one line) and another line
+came out at `quantity=34`. That is very likely a large part of why `order.weight.max` fired at all. I did
+not chase it: it is a distinct bug in the `displayRatio`/`step` conversion (task 09), it needs its own
+reproduction against live catalog data, and fixing it blind on top of four other fixes would have been
+guessing. **Recommend it as the next task.**
+
+## Honest status correction
+
+Tasks 09 and 28 have been "Done" while the thing they promise — a weekly list reaching a real Silpo cart
+and a checkout link — did not work end to end on a live account. It worked for a *small* list (proved above
+with carbonara), and it never worked for a full weekly one. That is now visible rather than hidden, and the
+two blocking defects are fixed, but the weekly path still stops at Silpo's own refusal. Statuses updated
+accordingly rather than left at Done.

@@ -2,6 +2,7 @@ package com.silporestockai.service;
 
 import com.silporestockai.config.CheckinProperties;
 import com.silporestockai.entity.Checkin;
+import com.silporestockai.entity.ConversationState;
 import com.silporestockai.entity.CustomerOrder;
 import com.silporestockai.entity.User;
 import com.silporestockai.model.ConversationFlow;
@@ -107,9 +108,17 @@ public class CheckinPromptService {
      * whose cadence the interval already governs.
      */
     private boolean isBusyElsewhere(User user) {
-        ConversationFlow flow =
-                conversationStateService.load(user.getTelegramChatId()).getCurrentFlow();
-        return flow != ConversationFlow.NONE && flow != ConversationFlow.CHECK_IN;
+        ConversationState state = conversationStateService.load(user.getTelegramChatId());
+        ConversationFlow flow = state.getCurrentFlow();
+        if (flow == ConversationFlow.NONE || flow == ConversationFlow.CHECK_IN) {
+            return false;
+        }
+        // The one exception to "any flow at all": a list awaiting approval is not a pending question (see
+        // ShoppingListBuilderService.awaitsAnAnswer) and nothing ever clears it, so counting it as busy ended
+        // check-ins permanently for any household shown a list they did not go on to order. Its keyboard is
+        // dispatched globally by the routing layer, so overwriting conversation_state here costs it nothing.
+        return !(flow == ConversationFlow.LIST_BUILDING
+                && ShoppingListBuilderService.STEP_AWAITING_APPROVAL.equals(state.getCurrentStep()));
     }
 
     /** Sends the prompt, leaves the flag task 12 reads, and records that the agent spoke. */

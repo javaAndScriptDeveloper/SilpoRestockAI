@@ -221,6 +221,14 @@ public class TelegramRoutingService {
             calendarViewService.showDay(user, tap.data().substring(CalendarViewService.CALLBACK_DAY_PREFIX.length()));
             return;
         }
+        if (incoming instanceof TelegramIncomingUpdate.ButtonTap tap
+                && ShoppingListMessageService.isListCallback(tap.data())) {
+            // The list keyboard is the one every household ends every flow looking at, and its taps carry
+            // everything they need. Dispatching them here rather than from the LIST_BUILDING branch below is what
+            // lets the list stop owning conversation_state at all while its buttons keep working.
+            shoppingListBuilderService.handleButtonTap(user, tap);
+            return;
+        }
 
         if (flow == ConversationFlow.CART_CONFIRMATION) {
             cartConfirmationService.handle(user, incoming);
@@ -230,7 +238,11 @@ public class TelegramRoutingService {
             checkinFlowService.handle(user, incoming);
             return;
         }
-        if (flow == ConversationFlow.LIST_BUILDING) {
+        // Narrower than every other flow gate here on purpose: LIST_BUILDING is the one flow that stays set after
+        // its conversation is over — a list on screen with a keyboard under it is not a question, and nothing
+        // clears the state. Claiming every update in it meant the classifier was unreachable from the moment a
+        // household saw their first weekly plan. Only the two steps that actually asked something claim input.
+        if (flow == ConversationFlow.LIST_BUILDING && shoppingListBuilderService.awaitsAnAnswer(incoming.chatId())) {
             shoppingListBuilderService.handle(user, incoming);
             return;
         }

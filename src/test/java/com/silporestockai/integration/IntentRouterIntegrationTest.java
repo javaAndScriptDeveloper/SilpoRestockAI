@@ -7,11 +7,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.silporestockai.entity.SilpoOAuthToken;
 import com.silporestockai.entity.User;
 import com.silporestockai.entity.UserProfile;
+import com.silporestockai.model.ConversationFlow;
 import com.silporestockai.repository.ConversationStateRepository;
 import com.silporestockai.repository.ScheduledAdHocTaskRepository;
 import com.silporestockai.repository.SilpoOAuthTokenRepository;
 import com.silporestockai.repository.UserProfileRepository;
 import com.silporestockai.repository.UserRepository;
+import com.silporestockai.service.ConversationStateService;
 import com.silporestockai.service.UserAccountService;
 import com.silporestockai.support.StubAnthropicServer;
 import com.silporestockai.support.StubMcpServer;
@@ -21,11 +23,14 @@ import com.silporestockai.utils.TokenCipher;
 import java.io.IOException;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -65,6 +70,9 @@ class IntentRouterIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
     private TokenCipher tokenCipher;
+
+    @Autowired
+    private ConversationStateService conversationStateService;
 
     private User user;
 
@@ -369,6 +377,122 @@ class IntentRouterIntegrationTest extends AbstractIntegrationTest {
         var sent = TELEGRAM.sentMessages().getLast();
         assertThat(sent.path("text").asText()).doesNotContain("Не зовсім зрозумів");
         assertThat(sent.path("reply_markup").path("keyboard").isArray()).isTrue();
+    }
+
+    /**
+     * The state every household is actually in when they type something: a list is on screen with its
+     * «Замовити / Змінити» keyboard under it, which parks {@code conversation_state} in
+     * {@code LIST_BUILDING/AWAITING_APPROVAL} and never clears it. Nothing ever resolves that state on its own, so
+     * from the first weekly plan onwards every free-text message was swallowed as "an edit to the list" and answered
+     * with a regenerated list — the classifier was never reached at all. That is why «замов до п'ятниці вино та сир»
+     * and «замов усе для карбонари» both came back looking like the same default weekly list: not a misclassification,
+     * a message that never got classified.
+     */
+    @Test
+    void aScheduledPurchaseStillReachesTheClassifierWithAListAlreadyOnScreen() throws Exception {
+        conversationStateService.save(CHAT_ID, ConversationFlow.LIST_BUILDING, "AWAITING_APPROVAL", Map.of());
+        CLAUDE.respondWithText("""
+                {"intent":"AD_HOC_SCHEDULED_PURCHASE","confidence":0.9,\
+                "themeDescription":"вино та сир","targetDateTimeIso":"2026-09-11T18:00:00Z"}""");
+
+        sendText(1, "замов сир з вином на п'ятницю");
+
+        assertThat(CLAUDE.requests().getFirst().toString()).doesNotContain("Поточний список треба змінити так");
+        assertThat(scheduledAdHocTaskRepository.findAll()).hasSize(1);
+        assertThat(scheduledAdHocTaskRepository.findAll().getFirst().getThemeDescription())
+                .isEqualTo("вино та сир");
+    }
+
+    /** The second phrase from the same report, from the same parked state: a dish order, not a weekly list. */
+    @Test
+    void aDishOrderStillReachesTheClassifierWithAListAlreadyOnScreen() throws Exception {
+        conversationStateService.save(CHAT_ID, ConversationFlow.LIST_BUILDING, "AWAITING_APPROVAL", Map.of());
+        CLAUDE.respondWithText("""
+                {"intent":"DISH_INGREDIENTS_ORDER","confidence":0.95,\
+                "themeDescription":"карбонара","targetDateTimeIso":null}""");
+
+        sendText(1, "замов усе для карбонари");
+
+        assertThat(CLAUDE.requests().getFirst().toString()).doesNotContain("Поточний список треба змінити так");
+        assertThat(TELEGRAM.sentMessages())
+                .anyMatch(message -> message.path("text").asText().contains("Зберу все для «карбонара»"));
+    }
+
+    /**
+     * The behaviour the swallowing was standing in for still has to work — it just goes through the classifier
+     * now, which has a LIST_MODIFY intent for exactly this and hands the sentence to the same list builder.
+     */
+    @Test
+    void aListEditFromTheApprovalScreenStillEditsTheList() throws Exception {
+        conversationStateService.save(CHAT_ID, ConversationFlow.LIST_BUILDING, "AWAITING_APPROVAL", Map.of());
+        CLAUDE.respondWithTexts(
+                classified("LIST_MODIFY"), "{\"items\":[{\"name\":\"Яйця С1\",\"quantity\":10,\"unit\":\"шт\"}]}");
+
+        sendText(1, "прибери молоко зі списку, додай яйця");
+
+        assertThat(TELEGRAM.sentMessages().getLast().path("text").asText()).contains("Яйця С1");
+    }
+
+    /**
+     * The other half of the rule: a step that really did ask a question keeps owning the answer to it. «Що беремо
+     * на цей тиждень?» is a question, so the sentence after it is a list input and must never be classified —
+     * routing it would answer a question the household was in the middle of answering.
+     */
+    @Test
+    void theListBuilderStillOwnsTheAnswerToItsOwnOpeningQuestion() throws Exception {
+        conversationStateService.save(CHAT_ID, ConversationFlow.LIST_BUILDING, "AWAITING_INPUT", Map.of());
+        CLAUDE.respondWithText("{\"items\":[{\"name\":\"Молоко 2.5%\",\"quantity\":2,\"unit\":\"л\"}]}");
+
+        sendText(1, "щось просте на тиждень для двох");
+
+        assertThat(CLAUDE.callCount()).isEqualTo(1);
+        assertThat(TELEGRAM.sentMessages().getLast().path("text").asText()).contains("Молоко 2.5%");
+    }
+
+    /**
+     * The whole taxonomy, from the state a household is actually in: a list on screen. One case per intent, each
+     * with the kind of sentence somebody would really type, asserting only the thing that was broken — that the
+     * message reached the classifier at all. It fails loudly if any intent is ever silently swallowed by a flow
+     * again, which is what made this bug look like sixteen separate misclassifications instead of one dispatch bug.
+     *
+     * <p>The two system prompts are the evidence: the classifier's opens «Ти класифікуєш повідомлення», the list
+     * builder's «Ти складаєш список покупок». Which one Claude was asked first says which service got the message.
+     */
+    @ParameterizedTest(name = "{0}")
+    @CsvSource(
+            delimiter = '|',
+            value = {
+                "AD_HOC_SCHEDULED_PURCHASE|замов сир з вином на п'ятницю",
+                "REORDER|що треба докупити?",
+                "SPECIAL_MODE_MEDICAL_GASTRITIS|я захворів, гастрит",
+                "SPECIAL_MODE_LEANER|зроби раціон менш калорійним",
+                "SPECIAL_MODE_MASS_GAIN|хочу набрати масу",
+                "SPECIAL_MODE_END|повертаємось до звичайного раціону",
+                "FILTER_UA_PRODUCER_ONLY|шукай тільки українського виробника",
+                "HANGOVER_RELIEF|голова після вчорашнього",
+                "BLACKOUT|світло вимкнули",
+                "LIST_VIEW|покажи, що там у списку",
+                "LIST_MODIFY|прибери молоко зі списку, додай яйця",
+                "CALENDAR_VIEW|що їмо в середу?",
+                "CALENDAR_CONNECT|підключи гугл календар",
+                "PAST_ORDER_SEED|зроби список як минулого разу",
+                "DISH_INGREDIENTS_ORDER|замов усе для карбонари",
+                "HELP|що ти вмієш?",
+                "UNKNOWN|кхм ну тобто це саме"
+            })
+    void everyIntentInTheTaxonomyStillReachesTheClassifierWithAListOnScreen(String intent, String phrase)
+            throws Exception {
+        conversationStateService.save(CHAT_ID, ConversationFlow.LIST_BUILDING, "AWAITING_APPROVAL", Map.of());
+        CLAUDE.respondWithTexts(
+                classified(intent), "{\"items\":[{\"name\":\"Яйця С1\",\"quantity\":10,\"unit\":\"шт\"}]}");
+
+        sendText(1, phrase);
+
+        assertThat(CLAUDE.requests()).isNotEmpty();
+        assertThat(CLAUDE.requests().getFirst().toString())
+                .as("%s must reach the intent classifier, not be swallowed as a list edit", intent)
+                .contains("Ти класифікуєш повідомлення")
+                .doesNotContain("Ти складаєш список покупок");
     }
 
     @Test

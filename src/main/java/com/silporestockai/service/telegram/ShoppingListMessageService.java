@@ -24,7 +24,22 @@ public class ShoppingListMessageService {
     public static final String CALLBACK_ITEM_INC_PREFIX = "sli:inc:";
     public static final String CALLBACK_SHOW_FULL = "list:full";
 
+    private static final String LIST_CALLBACK_PREFIX = "list:";
+    private static final String ITEM_CALLBACK_PREFIX = "sli:";
+
     private static final String UNCATEGORIZED = "Інше";
+
+    /**
+     * Whether a tap belongs to a shopping list keyboard.
+     *
+     * <p>Every one of these is self-contained: {@code list:*} acts on whichever list is live for that user right
+     * now, and {@code sli:*} carries its own item id. None of them needs {@code conversation_state} to be
+     * interpreted, which is what lets the routing layer dispatch them globally rather than only while the list
+     * flow happens to be the active one.
+     */
+    public static boolean isListCallback(String data) {
+        return data != null && (data.startsWith(LIST_CALLBACK_PREFIX) || data.startsWith(ITEM_CALLBACK_PREFIX));
+    }
 
     /** The opening ask. Three ways in, because people have different things to hand. */
     public String askForInputText() {

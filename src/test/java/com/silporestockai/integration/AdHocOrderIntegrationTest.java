@@ -151,7 +151,12 @@ class AdHocOrderIntegrationTest extends AbstractIntegrationTest {
         baselineBasketRepository.save(BaselineBasket.builder()
                 .id(UUID.randomUUID())
                 .userId(user.getId())
-                .items(List.of(new BasketItem("p-1", "Молоко", "л", new BigDecimal("2"), new BigDecimal("38"))))
+                .items(List.of(new BasketItem(
+                        "00000000-0000-4000-8000-000000000001",
+                        "Молоко",
+                        "л",
+                        new BigDecimal("2"),
+                        new BigDecimal("38"))))
                 .confirmedAt(Instant.now())
                 .isCurrent(true)
                 .build());
@@ -164,7 +169,7 @@ class AdHocOrderIntegrationTest extends AbstractIntegrationTest {
         MCP.respondToTool("silpo_add_or_update_cart_products", "{\"ok\":true}");
         MCP.respondToTool("silpo_get_shopping_cart_by_id", """
                 {"cartId":"cart-a","branchId":"branch-7","companyId":"company-3","deliveryType":"delivery",\
-                "items":[{"productId":"p-90","name":"Чіпси Lays","unit":"шт","quantity":1,"price":45}],\
+                "items":[{"productId":"00000000-0000-4000-8000-00000000005a","name":"Чіпси Lays","unit":"шт","quantity":1,"price":45}],\
                 "total":45,"validations":[],\
                 "checkoutWebLink":"https://silpo.ua/checkout/cart-a",\
                 "checkoutMobileLink":"silpo://checkout/cart-a"}""");
@@ -172,15 +177,15 @@ class AdHocOrderIntegrationTest extends AbstractIntegrationTest {
         // no old price (not actually a discount, should be ignored).
         MCP.respondToTool("silpo_get_promotions", """
                 {"promotions":[\
-                {"name":"Чіпси Lays соло","productId":"p-90","price":45,"oldPrice":65},\
-                {"name":"Шоколад Milka","productId":"p-91","price":30,"oldPrice":50},\
-                {"name":"Пральний порошок Persil","productId":"p-92","price":100,"oldPrice":140},\
-                {"name":"Печиво Oreo","productId":"p-93","price":25}]}""");
+                {"name":"Чіпси Lays соло","productId":"00000000-0000-4000-8000-00000000005a","price":45,"oldPrice":65},\
+                {"name":"Шоколад Milka","productId":"00000000-0000-4000-8000-00000000005b","price":30,"oldPrice":50},\
+                {"name":"Пральний порошок Persil","productId":"00000000-0000-4000-8000-00000000005c","price":100,"oldPrice":140},\
+                {"name":"Печиво Oreo","productId":"00000000-0000-4000-8000-00000000005d","price":25}]}""");
         // Only some hangover-relief search terms find anything — the rest stays honestly unresolved.
         MCP.respondToTool("silpo_find_products_batch", """
                 {"queries":[\
-                {"query":"вода мінеральна","products":[{"name":"Моршинська","productId":"p-70"}]},\
-                {"query":"електроліти","products":[{"name":"Regidron Bio","productId":"p-71"}]},\
+                {"query":"вода мінеральна","products":[{"name":"Моршинська","productId":"00000000-0000-4000-8000-000000000046"}]},\
+                {"query":"електроліти","products":[{"name":"Regidron Bio","productId":"00000000-0000-4000-8000-000000000047"}]},\
                 {"query":"регідрон","products":[]},\
                 {"query":"ізотонік","products":[]},\
                 {"query":"сорбент","products":[]},\
@@ -212,9 +217,12 @@ class AdHocOrderIntegrationTest extends AbstractIntegrationTest {
                 .getFirst()
                 .path("products")
                 .forEach(p -> addedProductIds.add(p.path("productId").asText()));
-        assertThat(addedProductIds).containsExactlyInAnyOrder("p-90", "p-91");
+        assertThat(addedProductIds)
+                .containsExactlyInAnyOrder(
+                        "00000000-0000-4000-8000-00000000005a", "00000000-0000-4000-8000-00000000005b");
         // p-92 (Persil) is not a snack; p-93 (Oreo) has no oldPrice, so it is not actually discounted.
-        assertThat(addedProductIds).doesNotContain("p-92", "p-93");
+        assertThat(addedProductIds)
+                .doesNotContain("00000000-0000-4000-8000-00000000005c", "00000000-0000-4000-8000-00000000005d");
     }
 
     @Test

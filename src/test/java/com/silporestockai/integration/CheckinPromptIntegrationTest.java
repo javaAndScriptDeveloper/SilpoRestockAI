@@ -22,6 +22,7 @@ import com.silporestockai.repository.UserProfileRepository;
 import com.silporestockai.repository.UserRepository;
 import com.silporestockai.service.CheckinPromptService;
 import com.silporestockai.service.ConversationStateService;
+import com.silporestockai.service.ShoppingListBuilderService;
 import com.silporestockai.service.UserAccountService;
 import com.silporestockai.support.StubTelegramServer;
 import java.io.IOException;
@@ -272,6 +273,31 @@ class CheckinPromptIntegrationTest extends AbstractIntegrationTest {
         assertThat(TELEGRAM.sentMessages()).isEmpty();
         assertThat(conversationStateService.load(CHAT_ID).getCurrentFlow())
                 .isEqualTo(ConversationFlow.REORDER_CONFIRMATION);
+    }
+
+    /**
+     * The exception to "every flow": a list on screen awaiting approval is not a pending question, and — unlike
+     * every other flow here — nothing ever clears it. A household shown a list they did not go on to order was
+     * therefore counted as busy for good, and never asked what was left in their fridge again.
+     */
+    @Test
+    void stillAsksAHouseholdWhoseOnlyOpenFlowIsAListTheyNeverOrdered() {
+        household(4);
+        conversationStateService.save(
+                CHAT_ID, ConversationFlow.LIST_BUILDING, ShoppingListBuilderService.STEP_AWAITING_APPROVAL, Map.of());
+
+        assertThat(checkinPromptService.sweep()).isEqualTo(1);
+        assertThat(promptsSent()).hasSize(1);
+    }
+
+    /** The list builder's own question is still a question, and still not interrupted. */
+    @Test
+    void doesNotInterruptAListBuilderThatIsWaitingOnAnAnswer() {
+        household(4);
+        conversationStateService.save(CHAT_ID, ConversationFlow.LIST_BUILDING, "AWAITING_INPUT", Map.of());
+
+        assertThat(checkinPromptService.sweep()).isZero();
+        assertThat(TELEGRAM.sentMessages()).isEmpty();
     }
 
     @Test

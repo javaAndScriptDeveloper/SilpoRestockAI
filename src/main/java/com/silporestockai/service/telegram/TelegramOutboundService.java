@@ -186,14 +186,24 @@ public class TelegramOutboundService {
         }
     }
 
-    /** Stops the spinner Telegram shows on an inline button until the bot acknowledges the tap. */
+    /**
+     * Stops the spinner Telegram shows on an inline button until the bot acknowledges the tap.
+     *
+     * <p>Reported and swallowed, never thrown — this is the one outbound call whose only effect is cosmetic. Every
+     * flow acknowledges the tap as its first act, so a throw here aborted the whole handler before it did any of the
+     * work the person actually asked for: a live «Замовити» tap died on {@code [400] query is too old and response
+     * timeout expired}, no cart was ever built, and the household got «Щось пішло не так» for a button that worked.
+     * A callback query expires in about a minute, so any tap Telegram redelivers — across a restart, after a slow
+     * reply, over a dropped tunnel — arrives with an id that is already too old to answer. Losing the spinner is the
+     * correct price for that; losing the order is not.
+     */
     public void answerCallback(String callbackQueryId) {
         AnswerCallbackQuery answer =
                 AnswerCallbackQuery.builder().callbackQueryId(callbackQueryId).build();
         try {
             client.execute(answer);
         } catch (TelegramApiException e) {
-            throw failure("answerCallbackQuery", e);
+            log.warn("could not acknowledge callback query {}: {}", callbackQueryId, e.getMessage());
         }
     }
 

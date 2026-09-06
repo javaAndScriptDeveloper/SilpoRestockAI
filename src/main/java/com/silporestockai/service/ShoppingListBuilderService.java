@@ -6,6 +6,7 @@ import com.silporestockai.entity.ShoppingListItem;
 import com.silporestockai.entity.User;
 import com.silporestockai.model.ConversationFlow;
 import com.silporestockai.model.OrderType;
+import com.silporestockai.model.PlannedIngredient;
 import com.silporestockai.model.ShoppingListDelta;
 import com.silporestockai.model.ShoppingListDraft;
 import com.silporestockai.model.TelegramIncomingUpdate;
@@ -38,7 +39,13 @@ import org.springframework.stereotype.Service;
 public class ShoppingListBuilderService {
 
     private static final String STEP_AWAITING_INPUT = "AWAITING_INPUT";
-    private static final String STEP_AWAITING_APPROVAL = "AWAITING_APPROVAL";
+
+    /**
+     * A list on screen with its keyboard under it. Public because it is the one step in this application that is a
+     * state rather than a question, and other services have to be able to say so — see {@link #awaitsAnAnswer}.
+     */
+    public static final String STEP_AWAITING_APPROVAL = "AWAITING_APPROVAL";
+
     private static final String STEP_AWAITING_EDIT = "AWAITING_EDIT";
 
     /** Own mapper, as elsewhere in the app: Boot 4 carries both Jackson 2 and Jackson 3. */
@@ -168,24 +175,45 @@ public class ShoppingListBuilderService {
                 user.getTelegramChatId(), ConversationFlow.LIST_BUILDING, STEP_AWAITING_APPROVAL, Map.of());
     }
 
+    /**
+     * Whether this flow is genuinely waiting on this update — as opposed to merely having a list on screen.
+     *
+     * <p>{@link #STEP_AWAITING_APPROVAL} is not a question. It is a keyboard sitting under a finished list, and
+     * nothing ever clears it: from a household's very first weekly plan onwards, {@code conversation_state} stays
+     * parked there forever. While this class claimed every update in that state, each sentence a household typed was
+     * silently rewritten as «Поточний список треба змінити так: …» and answered with a regenerated weekly list —
+     * «замов усе для карбонари» and «замов сир з вином на п'ятницю» included. That looked like the intent
+     * classifier guessing wrong; the classifier was never reached. Free text at this step belongs to it, and it has
+     * a LIST_MODIFY intent that hands genuine edits straight back here.
+     *
+     * <p>The two steps that really did ask something — the opening «Що беремо на цей тиждень?» and the «Змінити»
+     * prompt — still own the answer to their own question. Button taps are dispatched globally by the routing
+     * layer and never reach this check.
+     */
+    public boolean awaitsAnAnswer(long chatId) {
+        String step = stepOf(chatId);
+        return STEP_AWAITING_INPUT.equals(step) || STEP_AWAITING_EDIT.equals(step);
+    }
+
+    /**
+     * A tap on a list keyboard, from wherever the chat currently is.
+     *
+     * <p>Separate from {@link #handle} because these taps carry everything they need (see
+     * {@link ShoppingListMessageService#isListCallback}) and must keep working when some other flow — a check-in
+     * prompt that landed a second earlier, most often — happens to hold {@code conversation_state}.
+     */
+    public void handleButtonTap(User user, TelegramIncomingUpdate.ButtonTap tap) {
+        telegramOutboundService.answerCallback(tap.callbackQueryId());
+        handleTap(user, tap.data());
+    }
+
     /** Everything a chat sitting in {@link ConversationFlow#LIST_BUILDING} can send. */
     public void handle(User user, TelegramIncomingUpdate incoming) {
         long chatId = incoming.chatId();
-        String step = stepOf(chatId);
 
         switch (incoming) {
-            case TelegramIncomingUpdate.ButtonTap tap -> {
-                telegramOutboundService.answerCallback(tap.callbackQueryId());
-                handleTap(user, tap.data());
-            }
-            case TelegramIncomingUpdate.Text text -> {
-                if (STEP_AWAITING_APPROVAL.equals(step)) {
-                    // They typed instead of tapping. Treat it as the edit they meant.
-                    buildAndShow(user, "Поточний список треба змінити так: " + text.text(), null);
-                    return;
-                }
-                buildAndShow(user, text.text(), null);
-            }
+            case TelegramIncomingUpdate.ButtonTap tap -> handleButtonTap(user, tap);
+            case TelegramIncomingUpdate.Text text -> buildAndShow(user, text.text(), null);
             case TelegramIncomingUpdate.Photo photo -> {
                 telegramOutboundService.sendMessage(chatId, messages.buildingText());
                 byte[] image = telegramOutboundService.downloadFile(photo.fileId());
@@ -292,8 +320,22 @@ public class ShoppingListBuilderService {
         }
 
         shoppingListService.keepOnly(user.getId(), List.of());
-        List<ShoppingListItem> stored = shoppingListService.createAdHocList(user.getId(), draft.items());
+        List<ShoppingListItem> stored = shoppingListService.createAdHocList(user.getId(), withoutProductIds(draft));
         present(user, stored);
+    }
+
+    /**
+     * Drops any {@code productId} the model filled in, exactly as {@code MealPlanService.withoutProductIds} does for
+     * the weekly plan and for the same reason: {@link ShoppingListDraft} is a list of {@link PlannedIngredient}, so
+     * the field is in the schema on this path too, and nothing in the shopping-list prompt tells the model to leave
+     * it blank. A fabricated non-UUID id persisted here is what {@code silpo_add_or_update_cart_products} rejects the
+     * whole cart over. Only the catalog may set this field, never the model.
+     */
+    private static List<PlannedIngredient> withoutProductIds(ShoppingListDraft draft) {
+        return draft.items().stream()
+                .map(ingredient -> new PlannedIngredient(
+                        ingredient.name(), ingredient.quantity(), ingredient.unit(), ingredient.category(), null, null))
+                .toList();
     }
 
     /** Approval. From here on it is task 10's confirmation, unchanged. */

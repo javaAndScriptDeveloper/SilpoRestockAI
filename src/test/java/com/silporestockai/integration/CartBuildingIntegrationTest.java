@@ -374,14 +374,39 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
         MCP.respondToTool("silpo_add_or_update_cart_products", "{\"ok\":true}");
         scriptVerifiedCart();
 
-        List<ShoppingListItem> items =
-                List.of(readyMealItem("Салат Цезар готовий", "p-1"), readyMealItem("Борщ готовий, порція", "p-2"));
+        List<ShoppingListItem> items = List.of(
+                readyMealItem("Салат Цезар готовий", UUID.randomUUID().toString()),
+                readyMealItem("Борщ готовий, порція", UUID.randomUUID().toString()));
 
         cartBuildingService.buildCart(userId, items);
 
         assertThat(MCP.calledTools()).doesNotContain("silpo_find_products_batch");
         JsonNode added = MCP.callArguments("silpo_add_or_update_cart_products").getFirst();
         assertThat(added.path("products")).hasSize(2);
+    }
+
+    /**
+     * The live failure that made a household's list permanently unorderable: 32 of 32 lines carried a "productId"
+     * of 1..32 — sequential integers a model had filled the field in with, persisted on the list — so every line
+     * counted as pre-resolved, nothing was ever searched for, and Silpo refused the whole
+     * {@code silpo_add_or_update_cart_products} call with «Invalid UUID». Not one wrong product: no order at all,
+     * on every retry, until the rows were edited by hand. A stored id that is not a Silpo product id is worth
+     * exactly one name search, which is what every other line costs anyway.
+     */
+    @Test
+    void searchesByNameForALineWhoseStoredProductIdIsNotARealSilpoId() {
+        UUID userId = connectedUser(8423L);
+        scriptCartTools();
+        scriptProductTools();
+        scriptVerifiedCart();
+
+        cartBuildingService.buildCart(userId, List.of(readyMealItem("цибуля", "1")));
+
+        JsonNode search = MCP.callArguments("silpo_find_products_batch").getFirst();
+        assertThat(search.path("products").get(0).asText()).isEqualTo("цибуля");
+        JsonNode added = MCP.callArguments("silpo_add_or_update_cart_products").getFirst();
+        // The id that reaches Silpo is the catalog's own, never the fabricated one that was stored.
+        assertThat(added.path("products").get(0).path("productId").asText()).isNotEqualTo("1");
     }
 
     @Test
@@ -391,8 +416,8 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
         scriptProductTools();
         scriptVerifiedCart();
 
-        List<ShoppingListItem> items =
-                List.of(readyMealItem("Салат Цезар готовий", "p-9"), item("цибуля", "0.5", "кг"));
+        List<ShoppingListItem> items = List.of(
+                readyMealItem("Салат Цезар готовий", UUID.randomUUID().toString()), item("цибуля", "0.5", "кг"));
 
         cartBuildingService.buildCart(userId, items);
 

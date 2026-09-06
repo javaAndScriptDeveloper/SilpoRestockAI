@@ -42,6 +42,8 @@ public final class StubTelegramServer implements AutoCloseable {
     /** Bodies of {@code sendAudio} and {@code sendDocument} calls — how a spoken reply leaves the application. */
     private final List<String> sentAudio = new ArrayList<>();
 
+    private boolean rejectCallbackAnswers;
+
     public StubTelegramServer(String botToken) throws IOException {
         this.botToken = botToken;
         this.server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
@@ -71,11 +73,21 @@ public final class StubTelegramServer implements AutoCloseable {
         return List.copyOf(sentAudio);
     }
 
+    /**
+     * Makes {@code answerCallbackQuery} answer the way Telegram really does for a tap it has stopped waiting on:
+     * {@code [400] query is too old and response timeout expired or query ID is invalid}. Callback queries expire
+     * in about a minute, so this is the normal fate of any tap redelivered across a restart or a slow reply.
+     */
+    public synchronized void rejectCallbackAnswers() {
+        this.rejectCallbackAnswers = true;
+    }
+
     public synchronized void reset() {
         sentMessages.clear();
         callbackAnswers.clear();
         setWebhookCalls.clear();
         sentAudio.clear();
+        rejectCallbackAnswers = false;
     }
 
     @Override
@@ -107,6 +119,11 @@ public final class StubTelegramServer implements AutoCloseable {
                 }
             }
             record(method, body);
+            if (method.equals("answercallbackquery") && rejectsCallbackAnswers()) {
+                respondWithError(
+                        exchange, "Bad Request: query is too old and response timeout expired or query ID is invalid");
+                return;
+            }
             respond(exchange, resultFor(method, body));
         } finally {
             exchange.close();
@@ -159,6 +176,19 @@ public final class StubTelegramServer implements AutoCloseable {
             case "getfile" -> Map.of("file_id", body.path("file_id").asText(), "file_path", "voice/stub.ogg");
             default -> Boolean.TRUE;
         };
+    }
+
+    private synchronized boolean rejectsCallbackAnswers() {
+        return rejectCallbackAnswers;
+    }
+
+    private void respondWithError(HttpExchange exchange, String description) throws IOException {
+        byte[] payload = MAPPER.writeValueAsBytes(Map.of("ok", false, "error_code", 400, "description", description));
+        exchange.getResponseHeaders().add("Content-Type", "application/json");
+        exchange.sendResponseHeaders(400, payload.length);
+        try (OutputStream out = exchange.getResponseBody()) {
+            out.write(payload);
+        }
     }
 
     private void respond(HttpExchange exchange, Object result) throws IOException {
