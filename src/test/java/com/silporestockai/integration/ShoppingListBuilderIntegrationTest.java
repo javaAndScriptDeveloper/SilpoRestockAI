@@ -369,6 +369,34 @@ class ShoppingListBuilderIntegrationTest extends AbstractIntegrationTest {
 
         assertThat(TELEGRAM.sentMessages())
                 .noneMatch(message -> message.path("text").asText().contains("Збираю кошик"));
+        // Ignored, but not silently: a tap that does nothing at all is what made people tap three times.
+        assertThat(TELEGRAM.sentMessages().getLast().path("text").asText()).contains("Ще збираю");
+    }
+
+    /**
+     * The guard is cleared in a {@code finally} that a JVM killed mid-build never reaches. A live account was left
+     * on it by a restart, and every «Замовити» after that was ignored for good. A guard older than any build
+     * could be is a build that is not coming back.
+     */
+    @Test
+    void aBuildGuardOlderThanAnyRealBuildIsTreatedAsAbandonedAndTheTapGoesAhead() throws Exception {
+        shoppingListItemRepository.save(ShoppingListItem.builder()
+                .id(UUID.randomUUID())
+                .userId(user.getId())
+                .name("Гречка")
+                .quantity(BigDecimal.ONE)
+                .unit("кг")
+                .status(com.silporestockai.model.ShoppingListStatus.ACTIVE)
+                .build());
+        var stuck = conversationStateService.save(
+                CHAT_ID, ConversationFlow.LIST_BUILDING, "BUILDING_CART", java.util.Map.of());
+        stuck.setUpdatedAt(java.time.Instant.now().minus(java.time.Duration.ofMinutes(10)));
+        conversationStateRepository.save(stuck);
+
+        tapButton(1, ShoppingListMessageService.CALLBACK_ORDER);
+
+        assertThat(TELEGRAM.sentMessages())
+                .anyMatch(message -> message.path("text").asText().contains("Збираю кошик"));
     }
 
     /**
@@ -390,6 +418,12 @@ class ShoppingListBuilderIntegrationTest extends AbstractIntegrationTest {
         tapButton(1, ShoppingListMessageService.CALLBACK_ORDER);
 
         assertThat(conversationStateService.load(CHAT_ID).getCurrentStep()).isEqualTo("AWAITING_APPROVAL");
+        // And the way to try again is a button under the failure, not a sentence promising a retry nobody runs.
+        var last = TELEGRAM.sentMessages().getLast();
+        assertThat(last.path("text").asText()).contains("Спробувати зібрати кошик ще раз");
+        assertThat(last.toString()).contains(ShoppingListMessageService.CALLBACK_ORDER);
+        assertThat(TELEGRAM.sentMessages())
+                .noneMatch(message -> message.path("text").asText().contains("Спробую ще раз трохи пізніше"));
     }
 
     @Test

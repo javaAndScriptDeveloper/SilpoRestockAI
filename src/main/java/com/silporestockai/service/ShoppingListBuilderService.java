@@ -2,6 +2,7 @@ package com.silporestockai.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.silporestockai.client.claude.ClaudeApiClient;
+import com.silporestockai.entity.ConversationState;
 import com.silporestockai.entity.ShoppingListItem;
 import com.silporestockai.entity.User;
 import com.silporestockai.model.ConversationFlow;
@@ -18,6 +19,8 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -50,6 +53,9 @@ public class ShoppingListBuilderService {
     private static final String STEP_BUILDING_CART = "BUILDING_CART";
 
     private static final String STEP_AWAITING_EDIT = "AWAITING_EDIT";
+
+    /** Longer than any cart build; shorter than a household's patience. See {@link #aCartIsStillBeingBuilt}. */
+    static final Duration BUILD_GUARD_TTL = Duration.ofMinutes(3);
 
     /** Own mapper, as elsewhere in the app: Boot 4 carries both Jackson 2 and Jackson 3. */
     private static final ObjectMapper MAPPER = new ObjectMapper().findAndRegisterModules();
@@ -355,8 +361,9 @@ public class ShoppingListBuilderService {
      */
     private void order(User user) {
         long chatId = user.getTelegramChatId();
-        if (STEP_BUILDING_CART.equals(stepOf(chatId))) {
+        if (aCartIsStillBeingBuilt(chatId)) {
             log.info("ignoring a second «Замовити» for chat {}: a cart is already being built", chatId);
+            telegramOutboundService.sendMessage(chatId, messages.stillBuildingCartText());
             return;
         }
         List<ShoppingListItem> items = currentItems(user.getId());
@@ -372,8 +379,9 @@ public class ShoppingListBuilderService {
                 : OrderType.INITIAL;
         conversationStateService.save(chatId, ConversationFlow.LIST_BUILDING, STEP_BUILDING_CART, Map.of());
         telegramOutboundService.sendMessage(chatId, messages.buildingCartText());
+        boolean presented = false;
         try {
-            cartConfirmationService.present(user, items, type);
+            presented = cartConfirmationService.present(user, items, type);
         } finally {
             // present() takes the state over on success (CART_CONFIRMATION) and reports its own failures without
             // throwing. Either way, a chat still sitting on the guard is one whose build ended without a cart —
@@ -381,6 +389,12 @@ public class ShoppingListBuilderService {
             if (STEP_BUILDING_CART.equals(stepOf(chatId))) {
                 conversationStateService.save(chatId, ConversationFlow.LIST_BUILDING, STEP_AWAITING_APPROVAL, Map.of());
             }
+        }
+        if (!presented) {
+            // The failure itself was already explained. This is the one thing the person can do about it, as a
+            // button rather than a sentence telling them to scroll up and find the list.
+            telegramOutboundService.sendMessageWithButtons(
+                    chatId, messages.retryOrderText(), messages.retryOrderButtons());
         }
     }
 
@@ -439,6 +453,27 @@ public class ShoppingListBuilderService {
             return;
         }
         text.append(label).append(": «").append(String.join(" ", values)).append("».\n");
+    }
+
+    /**
+     * Whether the build guard is genuinely live, as opposed to left behind.
+     *
+     * <p>The guard is cleared in a {@code finally}, which a JVM that dies mid-build never reaches — the tunnel
+     * supervisor restarted this application under a live cart build once, and from then on every «Замовити» in
+     * that chat was ignored for good. A build takes under two minutes; a guard older than {@link #BUILD_GUARD_TTL}
+     * is a build that is not coming back, and the tap goes ahead.
+     */
+    private boolean aCartIsStillBeingBuilt(long chatId) {
+        ConversationState state = conversationStateService.load(chatId);
+        if (!STEP_BUILDING_CART.equals(state.getCurrentStep())) {
+            return false;
+        }
+        Instant since = state.getUpdatedAt();
+        boolean stale = since == null || since.plus(BUILD_GUARD_TTL).isBefore(Instant.now());
+        if (stale) {
+            log.warn("chat {} was left on the cart-build guard since {}; treating it as abandoned", chatId, since);
+        }
+        return !stale;
     }
 
     private String stepOf(long chatId) {

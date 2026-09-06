@@ -239,6 +239,22 @@ public class ShoppingListMessageService {
         return "Збираю кошик у «Сільпо» — шукаю кожну позицію в каталозі. Це займе до хвилини.";
     }
 
+    /** Under a failed cart build: the list is still there, and this is the tap that tries again. */
+    public String retryOrderText() {
+        return "Список я зберіг. Спробувати зібрати кошик ще раз?";
+    }
+
+    public List<TelegramButton> retryOrderButtons() {
+        return List.of(
+                TelegramButton.callback("Спробувати ще раз", CALLBACK_ORDER),
+                TelegramButton.callback("Змінити список", CALLBACK_EDIT));
+    }
+
+    /** A second «Замовити» while the first is still working. Silence here read as a dead button. */
+    public String stillBuildingCartText() {
+        return "Ще збираю попередній кошик — зачекай хвилинку, він зараз буде.";
+    }
+
     public String couldNotBuildText() {
         return "Не вдалось скласти список. Спробуй описати інакше або надішли фото.";
     }
