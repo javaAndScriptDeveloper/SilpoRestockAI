@@ -235,8 +235,11 @@ class IntentRouterIntegrationTest extends AbstractIntegrationTest {
 
     @Test
     void blackoutIntentBuildsAnEmergencyCartFromFreeText() throws Exception {
-        CLAUDE.respondWithText(
-                "{\"intent\":\"BLACKOUT\",\"confidence\":0.92,\"themeDescription\":null,\"targetDateTimeIso\":null}");
+        // The classification, then the matcher's choice for the one line with a candidate — the matcher no
+        // longer degrades silently when its answer does not parse, so it needs a real one here.
+        CLAUDE.respondWithTexts(
+                "{\"intent\":\"BLACKOUT\",\"confidence\":0.92,\"themeDescription\":null,\"targetDateTimeIso\":null}",
+                "{\"choices\":[{\"lineIndex\":0,\"candidateIndex\":0,\"reason\":\"шпроти\"}]}");
         MCP.respondToTool("silpo_get_my_shopping_cart", "{\"cartId\":\"cart-b\"}");
         MCP.respondToTool("silpo_get_time_slots", "{\"timeSlots\":[{\"id\":\"slot-1\",\"from\":\"18:00\"}]}");
         MCP.respondToTool("silpo_add_or_update_cart_products", "{\"ok\":true}");

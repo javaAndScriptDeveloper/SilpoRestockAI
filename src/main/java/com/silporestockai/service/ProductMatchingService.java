@@ -2,13 +2,18 @@ package com.silporestockai.service;
 
 import com.silporestockai.client.claude.ClaudeApiClient;
 import com.silporestockai.config.ClaudeProperties;
+import com.silporestockai.exception.ProductMatchException;
 import com.silporestockai.model.ProductCandidate;
 import com.silporestockai.model.ProductMatchRequest;
+import com.silporestockai.model.SearchTermSuggestions;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
@@ -28,6 +33,10 @@ import org.springframework.stereotype.Service;
  * model could invent, and {@code -1} ("none of these is that product") is a legitimate answer. The second is the
  * important one: «Банан» comes back as chips, purées and two anti-stress toys with no fresh banana anywhere in it,
  * and reporting that line as unresolved — which the product already does honestly — beats ordering the chips.
+ *
+ * <p>Two things changed after the first live runs. The choice runs on the fast model: the flagship one took 88
+ * seconds for a 25-line cart, with the person waiting on every one of them, and the rules are spelled out in the
+ * prompt. And a failed call is a failed cart, not a silently worse one — see {@link ProductMatchException}.
  *
  * <p>See {@code docs/superpowers/plans/2026-09-06-product-matching.md}.
  */
@@ -51,14 +60,17 @@ public class ProductMatchingService {
     private final ClaudeApiClient claudeApiClient;
     private final ClaudeProperties claudeProperties;
     private final String systemPrompt;
+    private final String searchTermsSystemPrompt;
 
     public ProductMatchingService(
             ClaudeApiClient claudeApiClient,
             ClaudeProperties claudeProperties,
-            @Value("classpath:prompts/product-match-system.txt") Resource systemPromptResource) {
+            @Value("classpath:prompts/product-match-system.txt") Resource systemPromptResource,
+            @Value("classpath:prompts/search-terms-system.txt") Resource searchTermsSystemPromptResource) {
         this.claudeApiClient = claudeApiClient;
         this.claudeProperties = claudeProperties;
         this.systemPrompt = read(systemPromptResource);
+        this.searchTermsSystemPrompt = read(searchTermsSystemPromptResource);
     }
 
     /**
@@ -66,10 +78,13 @@ public class ProductMatchingService {
      *
      * <p>The returned list is always the same size as {@code requests} and in the same order, so a caller can zip
      * the two without checking. A line with no candidates at all is {@link #NONE} without asking anyone.
+     *
+     * @throws ProductMatchException when the model call fails — the cart is not built on Silpo's ranking instead
      */
     public List<Integer> choose(List<ProductMatchRequest> requests) {
-        if (requests.isEmpty()) {
-            return List.of();
+        if (requests.isEmpty()
+                || requests.stream().allMatch(request -> request.candidates().isEmpty())) {
+            return silpoRanking(requests);
         }
         if (!claudeProperties.apiKeyConfigured()) {
             // A supported configuration, not a failure: say plainly what the cart is being matched with.
@@ -80,20 +95,70 @@ public class ProductMatchingService {
         }
         Choices answer;
         try {
-            answer = claudeApiClient.completeStructured(systemPrompt, describe(requests), Choices.class);
+            answer = claudeApiClient.completeStructuredFast(systemPrompt, describe(requests), Choices.class);
         } catch (RuntimeException e) {
-            // Loud, and never a silent success: the cart is still real, it is just matched no worse and no better
-            // than Silpo's own ranking. Failing the whole cart instead would leave the household with nothing.
-            log.error(
-                    "could not choose products for {} shopping list lines; falling back to Silpo's own ranking",
-                    requests.size(),
-                    e);
-            return silpoRanking(requests);
+            // Loud, and never a wrong cart: the one time this fell back to Silpo's own ranking for real, the
+            // household was shown ₴7549 of jerky and konjac with a «Підтвердити» button under it.
+            throw new ProductMatchException(
+                    "could not choose products for %d shopping list lines".formatted(requests.size()), e);
         }
         return applied(requests, answer);
     }
 
-    /** Today's behaviour, kept as the degraded path: whatever Silpo put first. */
+    /**
+     * Other things each of these products might be called on a shelf — the second search pass for lines whose
+     * first search found nothing usable (task 09's «Яйця курячі» and «Йогурт натуральний» came back with zero
+     * candidates; «Вівсянка» with flavoured porridge cups only). Silpo's search is a plain text match, so the term
+     * is the problem, not the ranking. Keyed by position in {@code unresolved}; a line the model had no idea for is
+     * absent. Empty, never an exception, when the call fails: a second pass is a bonus, not a requirement.
+     */
+    public Map<Integer, List<String>> alternativeTerms(List<ProductMatchRequest> unresolved) {
+        if (unresolved.isEmpty() || !claudeProperties.apiKeyConfigured()) {
+            return Map.of();
+        }
+        StringBuilder text = new StringBuilder("Рядки, для яких пошук не дав нічого придатного:\n");
+        for (int i = 0; i < unresolved.size(); i++) {
+            text.append(i)
+                    .append(". «")
+                    .append(unresolved.get(i).requestedName())
+                    .append("»\n");
+        }
+        SearchTermSuggestions answer;
+        try {
+            answer = claudeApiClient.completeStructuredFast(
+                    searchTermsSystemPrompt, text.toString(), SearchTermSuggestions.class);
+        } catch (RuntimeException e) {
+            log.warn("could not get alternative search terms for {} lines", unresolved.size(), e);
+            return Map.of();
+        }
+        Map<Integer, List<String>> terms = new LinkedHashMap<>();
+        if (answer == null || answer.suggestions() == null) {
+            return terms;
+        }
+        for (SearchTermSuggestions.Suggestion suggestion : answer.suggestions()) {
+            if (suggestion == null
+                    || suggestion.lineIndex() < 0
+                    || suggestion.lineIndex() >= unresolved.size()
+                    || suggestion.terms() == null) {
+                continue;
+            }
+            String original = unresolved.get(suggestion.lineIndex()).requestedName();
+            List<String> cleaned = suggestion.terms().stream()
+                    .filter(term -> term != null && !term.isBlank())
+                    .map(String::trim)
+                    .filter(term -> !term.equalsIgnoreCase(original))
+                    .distinct()
+                    .limit(2)
+                    .toList();
+            if (!cleaned.isEmpty()) {
+                terms.put(suggestion.lineIndex(), cleaned);
+                log.info("«{}»: will also search {}", original, cleaned);
+            }
+        }
+        return terms;
+    }
+
+    /** Silpo's own ranking: whatever it put first. The only matching left when no model is configured. */
     private static List<Integer> silpoRanking(List<ProductMatchRequest> requests) {
         return requests.stream()
                 .map(request -> request.candidates().isEmpty() ? NONE : 0)
@@ -195,11 +260,15 @@ public class ProductMatchingService {
         try (var stream = resource.getInputStream()) {
             return new String(stream.readAllBytes(), StandardCharsets.UTF_8);
         } catch (IOException e) {
-            throw new UncheckedIOException("could not read the product match system prompt", e);
+            throw new UncheckedIOException("could not read a product matching prompt", e);
         }
     }
 
     private record Choice(int lineIndex, int candidateIndex, String reason) {}
 
     private record Choices(List<Choice> choices) {}
+
+    static String normalise(String value) {
+        return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+    }
 }

@@ -479,11 +479,11 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
     }
 
     /**
-     * «3 шт» of something sold loose by weight. What one piece weighs is not something to invent, so this takes
-     * the minimum step — the same refusal-to-guess the packaged path already had for a mismatched unit.
+     * «3 шт» of something sold loose by weight: about 150 g a piece, rounded to the step. The minimum step it used
+     * to send — 100 g of cucumber for a week — was silently wrong by a factor of six.
      */
     @Test
-    void aCountAgainstAWeightedProductTakesTheMinimumStepRatherThanGuessingAPieceWeight() {
+    void aCountAgainstAWeightedProductEstimatesAPieceWeightRatherThanSendingTheMinimumStep() {
         UUID userId = connectedUser(8426L);
         scriptCartTools();
         MCP.respondToTool("silpo_find_products_batch", """
@@ -495,8 +495,78 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
         cartBuildingService.buildCart(userId, List.of(item("цибуля", "3", "шт")));
 
         JsonNode added = MCP.callArguments("silpo_add_or_update_cart_products").getFirst();
+        // 3 × 150 g = 450 g, to the nearest 200 g step.
         assertThat(added.path("products").get(0).path("quantity").decimalValue())
-                .isEqualByComparingTo("0.2");
+                .isEqualByComparingTo("0.4");
+    }
+
+    /** «1кг» is a displayRatio too — it used to fail to parse and drop the line to the minimum step. */
+    @Test
+    void readsAKilogramDisplayRatio() {
+        UUID userId = connectedUser(8427L);
+        scriptCartTools();
+        MCP.respondToTool("silpo_find_products_batch", """
+                {"queries":[{"query":"рис","products":[{"name":"Рис Sacramento","productId":"p-1",\
+                "companyId":"company-3","branchId":"branch-7","step":1,"displayRatio":"1кг"}]}]}""");
+        MCP.respondToTool("silpo_add_or_update_cart_products", "{\"ok\":true}");
+
+        cartBuildingService.buildCart(userId, List.of(item("рис", "800", "г")));
+
+        JsonNode added = MCP.callArguments("silpo_add_or_update_cart_products").getFirst();
+        assertThat(added.path("products").get(0).path("quantity").asInt()).isEqualTo(1);
+    }
+
+    /** «2 шт» of a packaged product is two packages, whatever the package is labelled — two loaves, not one. */
+    @Test
+    void aCountAgainstAPackagedProductIsThatManyPackagesWhateverTheLabelSays() {
+        UUID userId = connectedUser(8428L);
+        scriptCartTools();
+        MCP.respondToTool("silpo_find_products_batch", """
+                {"queries":[{"query":"хліб","products":[{"name":"Хліб Київхліб Пшеничний","productId":"p-1",\
+                "companyId":"company-3","branchId":"branch-7","step":1,"displayRatio":"600г"}]}]}""");
+        MCP.respondToTool("silpo_add_or_update_cart_products", "{\"ok\":true}");
+
+        cartBuildingService.buildCart(userId, List.of(item("хліб", "2", "шт")));
+
+        JsonNode added = MCP.callArguments("silpo_add_or_update_cart_products").getFirst();
+        assertThat(added.path("products").get(0).path("quantity").asInt()).isEqualTo(2);
+    }
+
+    /**
+     * The arithmetic sanity check. «Яловичина 850 г» matched to 25 g packets of jerky is thirty-four packets at
+     * ₴3246 — held back and named in the summary, not added with a «Підтвердити» under it. The line is neither in
+     * the cart nor among the unfound: it was found, and refused.
+     */
+    @Test
+    void holdsBackALineThatWouldBeACrateOrASmallFortuneAndSaysSo() {
+        UUID userId = connectedUser(8429L);
+        scriptCartTools();
+        MCP.respondToTool("silpo_find_products_batch", """
+                {"queries":[\
+                {"query":"яловичина","products":[{"name":"Яловичина Objerky в'ялена","productId":"p-1",\
+                "companyId":"company-3","branchId":"branch-7","step":1,"displayRatio":"25г","price":95.5}]},\
+                {"query":"сир","products":[{"name":"Сир Gouda Black Label","productId":"p-2",\
+                "companyId":"company-3","branchId":"branch-7","step":0.1,"displayRatio":"100г","weighted":true,\
+                "price":1399}]},\
+                {"query":"гречка","products":[{"name":"Гречка","productId":"p-3",\
+                "companyId":"company-3","branchId":"branch-7","step":1,"displayRatio":"1кг","price":98}]}]}""");
+        MCP.respondToTool("silpo_add_or_update_cart_products", "{\"ok\":true}");
+        MCP.respondToTool("silpo_get_shopping_cart_by_id", """
+                {"cartId":"cart-1","branchId":"branch-7","companyId":"company-3","deliveryType":"delivery",\
+                "items":[{"productId":"p-3","name":"Гречка","unit":"кг","quantity":1,"price":98}],\
+                "total":98,"validations":[],\
+                "checkoutWebLink":"https://silpo.ua/checkout/cart-1","checkoutMobileLink":"silpo://checkout/cart-1"}""");
+
+        CartSummary summary = cartBuildingService.buildCart(
+                userId, List.of(item("яловичина", "850", "г"), item("сир", "2", "кг"), item("гречка", "1", "кг")));
+
+        JsonNode added = MCP.callArguments("silpo_add_or_update_cart_products").getFirst();
+        assertThat(added.path("products")).hasSize(1);
+        assertThat(added.path("products").get(0).path("productId").asText()).isEqualTo("p-3");
+        assertThat(summary.skippedLines()).hasSize(2);
+        assertThat(summary.skippedLines().get(0)).startsWith("яловичина — 34 шт «Яловичина Objerky в'ялена»");
+        assertThat(summary.skippedLines().get(1)).contains("2798 грн").contains("Gouda");
+        assertThat(summary.unresolved()).isEmpty();
     }
 
     @Test

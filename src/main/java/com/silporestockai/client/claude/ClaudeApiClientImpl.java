@@ -102,8 +102,21 @@ public class ClaudeApiClientImpl implements ClaudeApiClient {
     @CircuitBreaker(name = "claude")
     @Retry(name = "claude")
     public <T> T completeStructured(String systemPrompt, String userPrompt, Class<T> responseType) {
-        logPrompt("completeStructured " + responseType.getSimpleName(), systemPrompt, userPrompt);
-        StructuredMessageCreateParams<T> params = baseParams(systemPrompt, properties.model())
+        return completeStructured("completeStructured", properties.model(), systemPrompt, userPrompt, responseType);
+    }
+
+    @Override
+    @CircuitBreaker(name = "claude")
+    @Retry(name = "claude")
+    public <T> T completeStructuredFast(String systemPrompt, String userPrompt, Class<T> responseType) {
+        return completeStructured(
+                "completeStructuredFast", properties.fastModel(), systemPrompt, userPrompt, responseType);
+    }
+
+    private <T> T completeStructured(
+            String callName, String model, String systemPrompt, String userPrompt, Class<T> responseType) {
+        logPrompt(callName + " " + responseType.getSimpleName(), systemPrompt, userPrompt);
+        StructuredMessageCreateParams<T> params = baseParams(systemPrompt, model)
                 .addUserMessage(userPrompt)
                 .outputConfig(responseType, JsonSchemaLocalValidation.YES)
                 .build();
@@ -137,7 +150,7 @@ public class ClaudeApiClientImpl implements ClaudeApiClient {
         }
         // Already deserialised by the SDK, not the raw JSON — but this is still the line every "the model invented
         // something" bug so far turned out to need: not what the prompt asked for, but what actually came back.
-        logCompletion("completeStructured " + responseType.getSimpleName(), String.valueOf(value));
+        logCompletion(callName + " " + responseType.getSimpleName(), String.valueOf(value));
         return value;
     }
 

@@ -37,6 +37,8 @@ public final class StubMcpServer implements AutoCloseable {
     /** Canned JSON per tool name, returned as that tool's single text block. */
     private final Map<String, String> toolResponses = new ConcurrentHashMap<>();
 
+    private final Map<String, Deque<String>> orderedToolResponses = new ConcurrentHashMap<>();
+
     /** Tools that answer {@code isError: true}. */
     private final Set<String> failingTools = ConcurrentHashMap.newKeySet();
 
@@ -71,6 +73,17 @@ public final class StubMcpServer implements AutoCloseable {
         toolResponses.put(toolName, json);
     }
 
+    /**
+     * Scripts the next answers of {@code toolName} in order, for a tool the flow calls more than once with
+     * different expectations — the second search pass re-runs {@code silpo_find_products_batch}. Once the queue is
+     * empty the tool falls back to whatever {@link #respondToTool} set.
+     */
+    public void respondToToolInOrder(String toolName, String... jsons) {
+        orderedToolResponses
+                .computeIfAbsent(toolName, key -> new ArrayDeque<>())
+                .addAll(List.of(jsons));
+    }
+
     /** Makes {@code toolName} answer {@code isError: true} — a tool the server ran and refused, not a transport fault. */
     public void failTool(String toolName) {
         failingTools.add(toolName);
@@ -99,6 +112,7 @@ public final class StubMcpServer implements AutoCloseable {
         injectedStatuses.clear();
         callCounts.clear();
         toolResponses.clear();
+        orderedToolResponses.clear();
         failingTools.clear();
         calledTools.clear();
         callArguments.clear();
@@ -194,7 +208,9 @@ public final class StubMcpServer implements AutoCloseable {
                                 .toList());
             case "tools/call" -> {
                 String tool = request.path("params").path("name").asText();
-                String json = toolResponses.getOrDefault(tool, "stub tool result");
+                Deque<String> ordered = orderedToolResponses.get(tool);
+                String next = ordered == null ? null : ordered.poll();
+                String json = next != null ? next : toolResponses.getOrDefault(tool, "stub tool result");
                 yield Map.of(
                         "content",
                         List.of(Map.of("type", "text", "text", json)),

@@ -33,6 +33,16 @@ public interface ClaudeApiClient {
     <T> T completeStructured(String systemPrompt, String userPrompt, Class<T> responseType);
 
     /**
+     * {@link #completeStructured} on {@code claude.fast-model}.
+     *
+     * <p>For a structured answer whose judgement is small and whose latency is felt: picking the ordinary pasta
+     * out of twelve catalog hits per line took the flagship model 88 seconds for a 25-line cart on a live account,
+     * and the person tapping «Замовити» waited for all of it. The rules for that choice are spelled out in its
+     * prompt; the fast model follows spelled-out rules well and answers in a fraction of the time.
+     */
+    <T> T completeStructuredFast(String systemPrompt, String userPrompt, Class<T> responseType);
+
+    /**
      * Completion over an image plus a text prompt.
      *
      * @param imageBytes raw image bytes, base64-encoded before sending

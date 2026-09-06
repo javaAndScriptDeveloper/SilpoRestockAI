@@ -58,6 +58,12 @@ class DishIngredientsIntegrationTest extends AbstractIntegrationTest {
 
     private static final String IDENTIFIED = "{\"dishName\":\"карбонара\",\"confidence\":0.88}";
 
+    /**
+     * The matcher's answer for the one line with a candidate. Since the matcher stopped degrading silently to
+     * Silpo's own ranking, a cart build needs a real answer here — a canned prose reply would fail the cart.
+     */
+    private static final String MATCH = "{\"choices\":[{\"lineIndex\":0,\"candidateIndex\":0,\"reason\":\"паста\"}]}";
+
     @Autowired
     private MockMvc mockMvc;
 
@@ -248,7 +254,7 @@ class DishIngredientsIntegrationTest extends AbstractIntegrationTest {
 
     @Test
     void aNamedDishBecomesAnImmediateScheduledTaskAndAnAdHocCart() throws Exception {
-        CLAUDE.respondWithTexts(classified("карбонара"), INGREDIENTS);
+        CLAUDE.respondWithTexts(classified("карбонара"), INGREDIENTS, MATCH);
 
         sendText(1, "замов усе для карбонари");
 
@@ -265,7 +271,7 @@ class DishIngredientsIntegrationTest extends AbstractIntegrationTest {
 
     @Test
     void aPhotoWithACaptionIsIdentifiedAndConfirmedBeforeAnythingIsGenerated() throws Exception {
-        CLAUDE.respondWithTexts(classified(null), IDENTIFIED, INGREDIENTS);
+        CLAUDE.respondWithTexts(classified(null), IDENTIFIED, INGREDIENTS, MATCH);
 
         sendPhotoWithCaption(1, "замов все для цього");
 
@@ -284,7 +290,7 @@ class DishIngredientsIntegrationTest extends AbstractIntegrationTest {
 
     @Test
     void aRequestWithoutADishNameAsksForOne() throws Exception {
-        CLAUDE.respondWithTexts(classified(null), INGREDIENTS);
+        CLAUDE.respondWithTexts(classified(null), INGREDIENTS, MATCH);
 
         sendText(1, "хочу щось приготувати, замов інгредієнти");
         assertThat(sentTexts().getLast()).contains("Яку страву готуємо?");
@@ -297,7 +303,7 @@ class DishIngredientsIntegrationTest extends AbstractIntegrationTest {
 
     @Test
     void rejectingTheIdentifiedDishLetsThePersonNameItInstead() throws Exception {
-        CLAUDE.respondWithTexts(classified(null), IDENTIFIED, INGREDIENTS);
+        CLAUDE.respondWithTexts(classified(null), IDENTIFIED, INGREDIENTS, MATCH);
 
         sendPhotoWithCaption(1, "замов інгредієнти для цього");
         tapButton(2, "dish:no");

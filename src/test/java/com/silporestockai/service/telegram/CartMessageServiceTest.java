@@ -34,6 +34,35 @@ class CartMessageServiceTest {
                 unresolved);
     }
 
+    /**
+     * A line the sanity check held back is named with its reason, apart from the lines Silpo simply had nothing
+     * for — the person should know a ₴3246 line was dropped on purpose, not lost.
+     */
+    @Test
+    void namesTheLinesHeldBackBySanityCheckSeparatelyFromTheUnfound() {
+        CartSummary summary = new CartSummary(
+                "cart-1",
+                "slot-1",
+                Instant.parse("2026-09-03T15:00:00Z"),
+                List.of(new BasketItem("p-2", "Гречка", "кг", BigDecimal.ONE, new BigDecimal("48"))),
+                new BigDecimal("48"),
+                List.of(),
+                BigDecimal.ZERO,
+                false,
+                "https://silpo.ua/checkout/cart-1",
+                "silpo://checkout/cart-1",
+                List.of("Банан"),
+                List.of(),
+                List.of(
+                        "Яловичина — 34 шт «Яловичина Objerky в'ялена» — схоже, не той розмір упаковки, перевір позицію"));
+
+        String text = service.cartText(summary, SLOT, OrderType.INITIAL);
+
+        assertThat(text)
+                .contains("Не знайшов: Банан")
+                .contains("Не поклав, бо виглядає неправильно:\n— Яловичина — 34 шт");
+    }
+
     private static final OfferedSlot SLOT =
             new OfferedSlot("slot-1", "18:00 - 20:00", Instant.parse("2026-09-03T15:00:00Z"), null);
 

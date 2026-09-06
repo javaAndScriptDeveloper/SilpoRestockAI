@@ -1,7 +1,9 @@
 package com.silporestockai.integration;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.silporestockai.exception.ProductMatchException;
 import com.silporestockai.model.ProductCandidate;
 import com.silporestockai.model.ProductMatchRequest;
 import com.silporestockai.service.ProductMatchingService;
@@ -9,6 +11,7 @@ import com.silporestockai.support.StubAnthropicServer;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -149,16 +152,62 @@ class ProductMatchingIntegrationTest extends AbstractIntegrationTest {
     }
 
     /**
-     * A failed call degrades to Silpo's own ranking — the behaviour before this service existed — rather than
-     * failing the cart. The household gets a worse-matched cart, not no cart, and the log says which happened.
+     * A failed call is a failed cart, not a silently worse one. This used to degrade to Silpo's own ranking, and
+     * the one time it did so for real — an API-credit outage — the household was shown ₴7549 of konjac noodles,
+     * seventeen packets of jerky and a ₴1399 cheese, with a «Підтвердити» button under it.
      */
     @Test
-    void fallsBackToSilposOwnRankingWhenTheCallFails() {
+    void failsTheCartRatherThanMatchingBySilposOwnRankingWhenTheCallFails() {
+        CLAUDE.injectStatus(500);
+        CLAUDE.injectStatus(500);
         CLAUDE.injectStatus(500);
 
-        List<Integer> chosen = productMatchingService.choose(List.of(spaghetti(), banana()));
+        assertThatThrownBy(() -> productMatchingService.choose(List.of(spaghetti(), banana())))
+                .isInstanceOf(ProductMatchException.class);
+    }
 
-        assertThat(chosen).containsExactly(0, 0);
+    /** The choice runs on the fast model: the flagship one took 88 seconds for a 25-line cart on a live account. */
+    @Test
+    void asksTheFastModel() {
+        CLAUDE.respondWithText("{\"choices\":[{\"lineIndex\":0,\"candidateIndex\":2,\"reason\":\"паста\"}]}");
+
+        productMatchingService.choose(List.of(spaghetti()));
+
+        assertThat(CLAUDE.requests().getFirst().path("model").asText()).isEqualTo("claude-haiku-4-5-20251001");
+    }
+
+    /**
+     * The second search pass: other names the product might carry on a shelf, for lines whose first search found
+     * nothing usable. Keyed by the line's position; the original term and blanks are dropped; at most two each.
+     */
+    @Test
+    void suggestsOtherShelfNamesForLinesTheFirstSearchMissed() {
+        CLAUDE.respondWithText("""
+                {"suggestions":[\
+                {"lineIndex":0,"terms":["Вівсяні пластівці","Пластівці вівсяні","Геркулес"]},\
+                {"lineIndex":1,"terms":["Яйця курячі","Яйця"," "]},\
+                {"lineIndex":7,"terms":["зайве"]}]}""");
+
+        Map<Integer, List<String>> terms = productMatchingService.alternativeTerms(List.of(
+                new ProductMatchRequest("Вівсянка", BigDecimal.ONE, "уп", List.of()),
+                new ProductMatchRequest("Яйця курячі", BigDecimal.TEN, "шт", List.of())));
+
+        assertThat(terms).containsOnlyKeys(0, 1);
+        assertThat(terms.get(0)).containsExactly("Вівсяні пластівці", "Пластівці вівсяні");
+        assertThat(terms.get(1)).containsExactly("Яйця");
+        assertThat(CLAUDE.requests().getFirst().path("model").asText()).isEqualTo("claude-haiku-4-5-20251001");
+    }
+
+    /** A second pass is a bonus: a failed suggestion call costs nothing but the lines it would have found. */
+    @Test
+    void aFailedSuggestionCallMeansNoAlternativesNotAnException() {
+        CLAUDE.injectStatus(500);
+        CLAUDE.injectStatus(500);
+        CLAUDE.injectStatus(500);
+
+        assertThat(productMatchingService.alternativeTerms(
+                        List.of(new ProductMatchRequest("Вівсянка", BigDecimal.ONE, "уп", List.of()))))
+                .isEmpty();
     }
 
     /** A line Silpo returned nothing for needs no opinion from anyone. */

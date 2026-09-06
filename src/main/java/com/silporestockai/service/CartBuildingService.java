@@ -8,12 +8,14 @@ import com.silporestockai.entity.ShoppingListItem;
 import com.silporestockai.entity.UserProfile;
 import com.silporestockai.exception.CartBuildException;
 import com.silporestockai.exception.NoSilpoDeliveryAddressException;
+import com.silporestockai.exception.SilpoMcpException;
 import com.silporestockai.model.BasketItem;
 import com.silporestockai.model.CartContext;
 import com.silporestockai.model.CartSummary;
 import com.silporestockai.model.OfferedSlot;
 import com.silporestockai.model.ProductCandidate;
 import com.silporestockai.model.ProductMatchRequest;
+import com.silporestockai.model.ProductResolution;
 import com.silporestockai.model.ResolvedProduct;
 import com.silporestockai.repository.UserProfileRepository;
 import com.silporestockai.utils.McpResponses;
@@ -127,8 +129,14 @@ public class CartBuildingService {
                 context.deliveryType(),
                 deliverySlot.label(),
                 deliverySlot.end());
-        List<ResolvedProduct> resolved = resolveProducts(userId, context, items);
-        List<String> unresolved = unresolvedNames(items, resolved);
+        ProductResolution resolution = resolve(userId, context, items);
+        List<ResolvedProduct> resolved = resolution.resolved();
+        List<String> skippedNames = resolution.skipped().stream()
+                .map(line -> line.substring(0, line.indexOf(" — ")))
+                .toList();
+        List<String> unresolved = unresolvedNames(items, resolved).stream()
+                .filter(name -> !skippedNames.contains(name))
+                .toList();
         if (!unresolved.isEmpty()) {
             log.info("Silpo matched no product for {} of {} items: {}", unresolved.size(), items.size(), unresolved);
         }
@@ -142,7 +150,8 @@ public class CartBuildingService {
                         .filter(ResolvedProduct::promoted)
                         .map(ResolvedProduct::productId)
                         .distinct()
-                        .toList());
+                        .toList(),
+                resolution.skipped());
     }
 
     /**
@@ -432,6 +441,19 @@ public class CartBuildingService {
      * flat product list. The best match for a term is whichever product its own query entry lists first.
      */
     public List<ResolvedProduct> resolveProducts(UUID userId, CartContext context, List<ShoppingListItem> items) {
+        return resolve(userId, context, items).resolved();
+    }
+
+    /**
+     * {@link #resolveProducts}, keeping the lines the sanity check held back — the cart message names them.
+     *
+     * <p>Two passes. The first searches every line by its own name. Lines that come back with nothing acceptable
+     * — no candidates at all, or candidates the matcher refused — get a second search under the other names the
+     * product might carry on a shelf («Вівсянка» → «Вівсяні пластівці», «Яйця курячі» → «Яйця»): Silpo's search
+     * is a plain text match, and on a live account it returned nothing for eggs and only sauerkraut for cabbage.
+     */
+    public ProductResolution resolve(UUID userId, CartContext context, List<ShoppingListItem> items) {
+        List<String> skipped = new ArrayList<>();
         List<ResolvedProduct> resolved = new ArrayList<>();
         List<ShoppingListItem> preResolved = items.stream()
                 .filter(CartBuildingService::carriesASilpoProductId)
@@ -556,19 +578,143 @@ public class CartBuildingService {
                         chosen = resolvedFrom(item, match, context, null);
                     }
                 }
-                if (chosen != null) {
-                    resolved.add(chosen);
-                }
+                accept(item, chosen, resolved, skipped);
             }
         }
+
+        secondPass(userId, context, needsSearch, resolved, skipped);
+
         log.info(
-                "MCP <- resolved {} of {} shopping list lines ({} pre-resolved, {} searched, {} partner placements)",
+                "MCP <- resolved {} of {} shopping list lines ({} pre-resolved, {} searched, {} partner placements,"
+                        + " {} held back)",
                 resolved.size(),
                 items.size(),
                 preResolved.size(),
                 needsSearch.size(),
-                resolved.stream().filter(ResolvedProduct::promoted).count());
-        return resolved;
+                resolved.stream().filter(ResolvedProduct::promoted).count(),
+                skipped.size());
+        return new ProductResolution(resolved, skipped);
+    }
+
+    /** A resolved line goes in unless the sanity check names a problem with it, in which case the problem does. */
+    private static void accept(
+            ShoppingListItem item, ResolvedProduct chosen, List<ResolvedProduct> resolved, List<String> skipped) {
+        if (chosen == null) {
+            return;
+        }
+        Optional<String> problem = sanityProblem(item, chosen);
+        if (problem.isPresent()) {
+            log.warn("holding back «{}»: {}", item.getName(), problem.get());
+            skipped.add(item.getName() + " — " + problem.get());
+            return;
+        }
+        resolved.add(chosen);
+    }
+
+    /**
+     * The search again, under other names, for every line the first pass left with nothing.
+     *
+     * <p>One model call for the alternative phrasings, one Silpo search for all of them, one matcher call over
+     * the union of what came back. A line the second pass cannot help stays unresolved and is reported as before;
+     * a failure anywhere in this pass costs the lines it would have found, never the cart.
+     */
+    private void secondPass(
+            UUID userId,
+            CartContext context,
+            List<ShoppingListItem> searched,
+            List<ResolvedProduct> resolved,
+            List<String> skipped) {
+        List<ShoppingListItem> stillMissing = searched.stream()
+                .filter(item ->
+                        resolved.stream().noneMatch(p -> p.requestedName().equals(item.getName())))
+                .filter(item -> skipped.stream().noneMatch(line -> line.startsWith(item.getName() + " — ")))
+                .toList();
+        if (stillMissing.isEmpty()) {
+            return;
+        }
+        Map<Integer, List<String>> alternatives;
+        try {
+            alternatives = productMatchingService.alternativeTerms(stillMissing.stream()
+                    .map(item -> new ProductMatchRequest(item.getName(), quantityOf(item), item.getUnit(), List.of()))
+                    .toList());
+        } catch (RuntimeException e) {
+            log.warn("second search pass skipped: {}", e.getMessage());
+            return;
+        }
+        if (alternatives.isEmpty()) {
+            return;
+        }
+        List<String> terms = new ArrayList<>();
+        alternatives.values().forEach(list -> list.forEach(term -> addTerm(terms, term)));
+        JsonNode found;
+        try {
+            found = call(
+                    userId,
+                    TOOL_FIND_PRODUCTS,
+                    Map.of(
+                            "branchId", nullSafe(context.branchId()),
+                            "deliveryType", nullSafe(context.deliveryType()),
+                            "timeslotStart", nullSafe(context.timeslotStart()),
+                            "timeslotEnd", nullSafe(context.timeslotEnd()),
+                            "products", terms));
+        } catch (RuntimeException e) {
+            log.warn("second search pass failed: {}", e.getMessage());
+            return;
+        }
+        Map<String, List<JsonNode>> productsByQuery = new LinkedHashMap<>();
+        for (JsonNode query : McpResponses.findArray(found, McpResponses.QUERIES)) {
+            McpResponses.findString(query, McpResponses.NAME)
+                    .ifPresent(text -> productsByQuery.putIfAbsent(
+                            text.toLowerCase(Locale.ROOT), McpResponses.findArray(query, McpResponses.PRODUCTS)));
+        }
+        List<ShoppingListItem> toMatch = new ArrayList<>();
+        List<List<JsonNode>> candidatesFor = new ArrayList<>();
+        for (Map.Entry<Integer, List<String>> entry : alternatives.entrySet()) {
+            ShoppingListItem item = stillMissing.get(entry.getKey());
+            List<JsonNode> union = new ArrayList<>();
+            for (String term : entry.getValue()) {
+                for (JsonNode product :
+                        availableOnly(productsByQuery.getOrDefault(term.toLowerCase(Locale.ROOT), List.of()))) {
+                    String id = McpResponses.findString(product, McpResponses.PRODUCT_ID)
+                            .orElse(null);
+                    boolean seen = union.stream()
+                            .anyMatch(known -> McpResponses.findString(known, McpResponses.PRODUCT_ID)
+                                    .orElse("")
+                                    .equals(id));
+                    if (!seen) {
+                        union.add(product);
+                    }
+                }
+            }
+            if (!union.isEmpty()) {
+                toMatch.add(item);
+                candidatesFor.add(union);
+            }
+        }
+        if (toMatch.isEmpty()) {
+            log.info("second search pass found nothing for {} lines", stillMissing.size());
+            return;
+        }
+        List<Integer> picked;
+        try {
+            picked = productMatchingService.choose(matchRequests(toMatch, candidatesFor));
+        } catch (RuntimeException e) {
+            log.warn("second search pass could not match: {}", e.getMessage());
+            return;
+        }
+        int recovered = 0;
+        for (int i = 0; i < toMatch.size(); i++) {
+            int index = picked.get(i);
+            if (index == ProductMatchingService.NONE) {
+                continue;
+            }
+            ResolvedProduct chosen =
+                    resolvedFrom(toMatch.get(i), candidatesFor.get(i).get(index), context, null);
+            int before = resolved.size();
+            accept(toMatch.get(i), chosen, resolved, skipped);
+            recovered += resolved.size() - before;
+        }
+        log.info("second search pass recovered {} of {} lines", recovered, stillMissing.size());
     }
 
     private static void addTerm(List<String> terms, String term) {
@@ -585,6 +731,9 @@ public class CartBuildingService {
         if (productId == null) {
             return null;
         }
+        boolean weighted = McpResponses.findNode(product, McpResponses.WEIGHTED)
+                .map(node -> node.asBoolean(false))
+                .orElse(false);
         return new ResolvedProduct(
                 item.getName(),
                 productId,
@@ -592,7 +741,57 @@ public class CartBuildingService {
                 McpResponses.findString(product, McpResponses.BRANCH_ID).orElse(context.branchId()),
                 cartQuantity(item, product),
                 item.getUnit(),
-                promotionId);
+                promotionId,
+                McpResponses.findString(product, McpResponses.NAME).orElse(null),
+                McpResponses.findNumber(product, McpResponses.PRICE).orElse(null),
+                weighted);
+    }
+
+    /** More than this for one line of a household's shopping is a wrong product or a wrong quantity, not a purchase. */
+    static final BigDecimal MAX_LINE_COST = new BigDecimal("1500");
+
+    /** Twenty of anything is a crate. */
+    static final BigDecimal MAX_LINE_UNITS = new BigDecimal("20");
+
+    /** Six kilograms of one loose product is a sack. */
+    static final BigDecimal MAX_LINE_KILOGRAMS = new BigDecimal("6");
+
+    /**
+     * The one check that is arithmetic rather than judgement: what this line would cost, and how much of it there
+     * would be. A weekly cart once carried «Яловичина 850 г» as thirty-four 25 g packets of jerky at ₴3246, and a
+     * dish order two kilograms of DOP cheese at ₴2798. The matcher and the quantity conversion have both been fixed
+     * since, but the household is the one who pays when either slips, so a line past these limits is held back and
+     * named in the cart message rather than put in the basket with a «Підтвердити» under it.
+     */
+    static Optional<String> sanityProblem(ShoppingListItem item, ResolvedProduct product) {
+        BigDecimal quantity = product.quantity() == null ? BigDecimal.ONE : product.quantity();
+        String catalogName = product.catalogName() == null ? product.productId() : product.catalogName();
+        if (product.weighted() && quantity.compareTo(MAX_LINE_KILOGRAMS) > 0) {
+            return Optional.of("%s кг «%s» — забагато для одного замовлення, перевір кількість"
+                    .formatted(plain(quantity), catalogName));
+        }
+        if (!product.weighted() && quantity.compareTo(MAX_LINE_UNITS) > 0) {
+            return Optional.of("%s шт «%s» — схоже, не той розмір упаковки, перевір позицію"
+                    .formatted(plain(quantity), catalogName));
+        }
+        if (product.unitPrice() != null) {
+            BigDecimal cost = product.unitPrice().multiply(quantity);
+            if (cost.compareTo(MAX_LINE_COST) > 0) {
+                return Optional.of("«%s» вийшло б %s грн (%s %s по %s грн) — перевір, чи це той товар"
+                        .formatted(
+                                catalogName,
+                                plain(cost.setScale(0, RoundingMode.HALF_UP)),
+                                plain(quantity),
+                                product.weighted() ? "кг" : "шт",
+                                plain(product.unitPrice())));
+            }
+        }
+        return Optional.empty();
+    }
+
+    private static String plain(BigDecimal value) {
+        BigDecimal stripped = value.stripTrailingZeros();
+        return (stripped.scale() < 0 ? stripped.setScale(0, RoundingMode.UNNECESSARY) : stripped).toPlainString();
     }
 
     /** A weight (grams), a volume (millilitres) or a count — the three kinds {@code displayRatio} comes in. */
@@ -609,7 +808,15 @@ public class CartBuildingService {
      * number at all.
      */
     private static final Pattern DISPLAY_RATIO_PATTERN =
-            Pattern.compile("^(?:(\\d+)\\s*[*×]\\s*)?(\\d+(?:[.,]\\d+)?)\\s*(г|мл|л|шт)?");
+            Pattern.compile("^(?:(\\d+)\\s*[*×]\\s*)?(\\d+(?:[.,]\\d+)?)\\s*(кг|г|мл|л|шт)?");
+
+    /**
+     * What one piece of loose produce weighs, when a list says «4 шт» and Silpo sells the thing by the kilogram.
+     * Cucumbers, peppers, lemons and avocados are the cases the planner is told to count in pieces, and 150 g is a
+     * fair middle for all of them. A guess, said so in the log — but the previous answer, the minimum step, sent
+     * 100 g of cucumber for a week and was silently wrong by a factor of six.
+     */
+    private static final BigDecimal PIECE_WEIGHT_ESTIMATE_G = new BigDecimal("150");
 
     private static Optional<UnitAmount> parseDisplayRatio(String raw) {
         String trimmed = raw.strip();
@@ -626,6 +833,7 @@ public class CartBuildingService {
         BigDecimal amount = multiplier.multiply(value);
         return switch (unit == null ? "" : unit) {
             case "г" -> Optional.of(new UnitAmount(amount, UnitKind.WEIGHT));
+            case "кг" -> Optional.of(new UnitAmount(amount.multiply(BigDecimal.valueOf(1000)), UnitKind.WEIGHT));
             case "мл" -> Optional.of(new UnitAmount(amount, UnitKind.VOLUME));
             case "л" -> Optional.of(new UnitAmount(amount.multiply(BigDecimal.valueOf(1000)), UnitKind.VOLUME));
             case "шт" -> Optional.of(new UnitAmount(amount, UnitKind.COUNT));
@@ -685,14 +893,25 @@ public class CartBuildingService {
 
         if (weighted) {
             // Kilograms (or litres) of the thing itself. Nothing to divide by; displayRatio is not its unit.
-            if (wanted.isEmpty() || wanted.get().kind() == UnitKind.COUNT) {
-                // "3 шт" of something sold loose by weight: how much a piece weighs is not something to invent.
+            if (wanted.isEmpty()) {
                 log.warn(
-                        "\"{}\" {} is a count, but Silpo sells this product by weight — sending the minimum "
-                                + "step instead of guessing",
+                        "\"{}\" {} has no unit this cart understands, and Silpo sells the product by weight — "
+                                + "sending the minimum step",
                         item.getQuantity(),
                         item.getUnit());
                 return step;
+            }
+            if (wanted.get().kind() == UnitKind.COUNT) {
+                // «4 шт» of something sold loose by weight. An estimate, and said so — see the constant.
+                BigDecimal grams = wanted.get().amount().multiply(PIECE_WEIGHT_ESTIMATE_G);
+                log.info(
+                        "\"{}\" {} is a count, but Silpo sells «{}» by weight — estimating {} g a piece, {} g",
+                        item.getQuantity(),
+                        item.getUnit(),
+                        item.getName(),
+                        PIECE_WEIGHT_ESTIMATE_G,
+                        grams);
+                return roundToStep(grams.divide(BigDecimal.valueOf(1000), 4, RoundingMode.HALF_UP), step);
             }
             BigDecimal base = wanted.get().amount().divide(BigDecimal.valueOf(1000), 4, RoundingMode.HALF_UP);
             return roundToStep(base, step);
@@ -702,6 +921,15 @@ public class CartBuildingService {
             return roundToStep(quantityOf(item), step);
         }
         Optional<UnitAmount> packageAmount = parseDisplayRatio(displayRatio.get());
+        if (wanted.isPresent()
+                && wanted.get().kind() == UnitKind.COUNT
+                && packageAmount.isPresent()
+                && packageAmount.get().kind() != UnitKind.COUNT) {
+            // «2 шт» of a product packaged by weight or volume is two packages — two loaves of a 600 г bread,
+            // not the minimum step because "шт" and "600г" are different kinds of unit. A count against a
+            // count-labelled package («10 шт» of eggs sold as «10шт») still divides, below.
+            return roundToStep(wanted.get().amount(), step);
+        }
         if (packageAmount.isEmpty()
                 || wanted.isEmpty()
                 || packageAmount.get().kind() != wanted.get().kind()
@@ -767,20 +995,30 @@ public class CartBuildingService {
                     "{} requested lines matched the same Silpo product as another; quantities merged",
                     products.size() - merged.size());
         }
-        call(
-                userId,
-                TOOL_ADD_PRODUCTS,
-                Map.of(
-                        "shoppingCartId",
-                        context.cartId(),
-                        "products",
-                        merged.values().stream()
-                                .map(product -> Map.of(
-                                        "productId", product.productId(),
-                                        "companyId", nullSafe(product.companyId()),
-                                        "branchId", nullSafe(product.branchId()),
-                                        "quantity", product.quantity()))
-                                .toList()));
+        Map<String, Object> arguments = Map.of(
+                "shoppingCartId",
+                context.cartId(),
+                "products",
+                merged.values().stream()
+                        .map(product -> Map.of(
+                                "productId", product.productId(),
+                                "companyId", nullSafe(product.companyId()),
+                                "branchId", nullSafe(product.branchId()),
+                                "quantity", product.quantity()))
+                        .toList());
+        try {
+            call(userId, TOOL_ADD_PRODUCTS, arguments);
+        } catch (SilpoMcpException e) {
+            // The one call in the sequence that carries the whole week at once, and the one that timed out on a
+            // live account. It adds or updates by product id, so sending the same lines twice is harmless — and
+            // a second attempt is cheaper than telling the household to start over.
+            log.warn(
+                    "adding {} lines to cart {} failed once ({}); trying again",
+                    merged.size(),
+                    context.cartId(),
+                    e.getMessage());
+            call(userId, TOOL_ADD_PRODUCTS, arguments);
+        }
         // Task 46: the partner's second funnel step — the placement is now in a cart Silpo accepted.
         products.stream()
                 .filter(ResolvedProduct::promoted)
@@ -800,6 +1038,17 @@ public class CartBuildingService {
             OfferedSlot deliverySlot,
             List<String> unresolved,
             List<String> promotedProductIds) {
+        return getVerifiedCart(userId, context, deliverySlot, unresolved, promotedProductIds, List.of());
+    }
+
+    /** Same, with the lines the sanity check held back, so the message can say so. */
+    public CartSummary getVerifiedCart(
+            UUID userId,
+            CartContext context,
+            OfferedSlot deliverySlot,
+            List<String> unresolved,
+            List<String> promotedProductIds,
+            List<String> skipped) {
         JsonNode cart = call(userId, TOOL_CART_BY_ID, Map.of("shoppingCartId", context.cartId()));
 
         List<BasketItem> items = McpResponses.findArray(cart, McpResponses.ITEMS).stream()
@@ -862,7 +1111,8 @@ public class CartBuildingService {
                 checkoutWebLink,
                 checkoutMobileLink,
                 unresolved,
-                promotedProductIds == null ? List.of() : promotedProductIds);
+                promotedProductIds == null ? List.of() : promotedProductIds,
+                skipped == null ? List.of() : skipped);
         log.info(
                 "MCP <- cart {} verified: {} items, total {}, bonuses available {}, unresolved {}",
                 summary.cartId(),

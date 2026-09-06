@@ -68,6 +68,12 @@ public class CartMessageService {
                     .append(String.join(", ", summary.unresolved()))
                     .append(" — можеш додати вручну пізніше.");
         }
+        if (!summary.skippedLines().isEmpty()) {
+            // Held back on purpose, and said so with the number: a line that would have cost a small fortune is
+            // worse in the cart than out of it, but hiding that it was dropped would be worse still.
+            text.append("\n\nНе поклав, бо виглядає неправильно:");
+            summary.skippedLines().forEach(line -> text.append("\n— ").append(line));
+        }
         for (String validation : summary.validations()) {
             text.append("\n⚠ ").append(validation);
         }

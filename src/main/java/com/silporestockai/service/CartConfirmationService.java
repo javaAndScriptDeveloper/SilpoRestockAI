@@ -76,8 +76,8 @@ public class CartConfirmationService {
      * <p>Failures end here rather than propagating: the caller is an asynchronous hand-off from meal planning, and a
      * stack trace in a log is not an answer to somebody waiting in a chat.
      */
-    public void present(User user, List<ShoppingListItem> items) {
-        present(user, items, OrderType.INITIAL);
+    public boolean present(User user, List<ShoppingListItem> items) {
+        return present(user, items, OrderType.INITIAL);
     }
 
     /**
@@ -85,8 +85,11 @@ public class CartConfirmationService {
      *
      * <p>The type matters at confirmation time and nowhere else: only an {@link OrderType#INITIAL} order becomes the
      * baseline. An emergency lunch during a blackout is not evidence about what this household normally eats.
+     *
+     * @return whether a cart was put in front of the person — false when the failure was already reported here,
+     *     so a caller that has a way to offer another go (the list's «Замовити») can add it
      */
-    public void present(User user, List<ShoppingListItem> items, OrderType type) {
+    public boolean present(User user, List<ShoppingListItem> items, OrderType type) {
         long chatId = user.getTelegramChatId();
         CartSummary summary;
         try {
@@ -97,21 +100,23 @@ public class CartConfirmationService {
                     chatId,
                     "У «Сільпо» немає збереженої адреси доставки, тому я не можу створити кошик. Додай адресу "
                             + "в застосунку «Сільпо» (Профіль → Мої адреси доставки) і напиши мені ще раз.");
-            return;
+            return false;
         } catch (CartBuildException e) {
             log.error("could not build a cart for user {}", user.getId(), e);
             telegramOutboundService.sendMessage(chatId, cartBuildFailureMessage(e));
-            return;
+            return false;
         } catch (RuntimeException e) {
+            // No promise of a retry nobody performs: the person is told what to do, and the list flow adds the
+            // button that does it.
             log.error("could not build a cart for user {}", user.getId(), e);
-            telegramOutboundService.sendMessage(chatId, "Кошик зібрати не вдалось. Спробую ще раз трохи пізніше.");
-            return;
+            telegramOutboundService.sendMessage(chatId, CART_BUILD_FAILED_TEXT);
+            return false;
         }
         if (summary.items().isEmpty()) {
             log.warn("cart {} came back empty for user {}", summary.cartId(), user.getId());
             telegramOutboundService.sendMessage(
-                    chatId, "У «Сільпо» не знайшлось жодної позиції зі списку. Спробую інакше трохи пізніше.");
-            return;
+                    chatId, "У «Сільпо» не знайшлось жодної позиції зі списку. Спробуй описати продукти інакше.");
+            return false;
         }
 
         List<OfferedSlot> slots = slotsFor(user.getId());
@@ -146,6 +151,7 @@ public class CartConfirmationService {
                 cartMessageService.cartText(summary, selectedSlot, type),
                 cartMessageService.cartButtons(summary, !slots.isEmpty()));
         log.info("presented cart {} as draft order {} to user {}", summary.cartId(), order.getId(), user.getId());
+        return true;
     }
 
     /** No slots is not a reason to hide a finished order: checkout can still pick one. */
@@ -348,11 +354,15 @@ public class CartConfirmationService {
      */
     private static String cartBuildFailureMessage(CartBuildException e) {
         if (e.getValidations().isEmpty()) {
-            return "Кошик зібрати не вдалось. Спробую ще раз трохи пізніше.";
+            return CART_BUILD_FAILED_TEXT;
         }
         return "Кошик зібрати не вдалось:\n- " + String.join("\n- ", e.getValidations())
-                + "\nСпробую ще раз трохи пізніше.";
+                + "\nВиправ список і спробуй ще раз.";
     }
+
+    /** Said when a build fails for a reason a person cannot act on — a slow server, a failed model call. */
+    static final String CART_BUILD_FAILED_TEXT =
+            "Кошик зібрати не вдалось — «Сільпо» або каталог не відповіли " + "вчасно. Спробуй ще раз за хвилину.";
 
     private static CartSummary summaryOf(ConversationState state) {
         return MAPPER.convertValue(state.getContext().get(KEY_SUMMARY), CartSummary.class);
