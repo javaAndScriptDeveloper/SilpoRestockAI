@@ -350,6 +350,26 @@ Left standing, and recommended next: **product-match quality**, not quantities. 
 «Яловичина 850 г» to 34 packets of 25 g beef jerky (₴3246), «Рис» to a black-truffle rice (₴949). The
 arithmetic is right, the product is wrong — task 09's fuzzy name search, and most of a ₴7668 weekly total.
 
+## Third piece: choosing the product, not Silpo's top hit
+
+`resolveProducts` took `products[0]`, and Silpo does not rank the ordinary version of a thing first. The
+live candidate lists show why no stop-word list would have worked: «Яловичина» returns 26 products whose
+top three are jerky snacks and whose tail holds cat food and dog treats; «Спагеті» puts a **serving spoon**
+four places above the pasta; «Банан» returns thirty processed products and two anti-stress toys with no
+fresh banana at all.
+
+The model now chooses among the candidates Silpo really returned, one call per cart, answering with a
+*position* — never an id it could invent — and `-1` for "none of these". That last part is the point:
+«Банан» becomes an honest «Не знайшов» instead of banana chips. Fallbacks are loud (INFO with no API key,
+ERROR on a failed call), never a silent success.
+
+Verified live on the same 32-line list: checkout link issued, 27 of 32 resolved, 5 honestly unresolved,
+₴7668 → ₴3525 — not thrift, but the cart finally holding what the list asked for.
+
+**Next, and a different problem:** «Яйця курячі» and «Йогурт натуральний» came back with *zero* candidates —
+Silpo's search found nothing for those terms. Same class as «Банан». That is the search *term*, not the
+ranking, and fixing it needs a second query pass. This change makes those lines honest and countable first.
+
 ## Notion edits
 
 - **09** Done → **In review**, with the fabricated-`productId` root cause, the live verification and the
