@@ -44,6 +44,11 @@ public final class McpResponses {
      */
     public static final String[] WEIGHTED = {"weighted"};
 
+    /** Whether the branch can sell it at all right now, and how much of it is left. */
+    public static final String[] AVAILABLE = {"available"};
+
+    public static final String[] STOCK = {"stock"};
+
     public static final String[] ITEMS = {"items", "products", "lines"};
     public static final String[] NAME = {"name", "title", "query", "requestedName"};
     public static final String[] QUANTITY = {"quantity", "amount", "count"};

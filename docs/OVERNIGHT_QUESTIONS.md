@@ -662,3 +662,65 @@ the suite while the app is up and the component scan reads a directory being rew
 **Rule:** stop the app before `make test` / `make build`. With `bootRun` stopped, `./gradlew clean build`
 is green end to end; with it running, the same tree failed twice with different classes each time.
 Worth a line in the Makefile or a check in CI if this keeps costing time.
+
+## Session 5, third piece: choosing the right product, not Silpo's top hit
+
+`resolveProducts` took `products[0]`. The full candidate lists from one live search say why that could never
+work — and why no stop-word list would have either:
+
+- **«Спагеті»** — 19 candidates. Index 0 is Shirataki (konjac, not pasta). Index 4 is **«Ложка для спагеті»**,
+  a serving spoon. The pasta is at index 2, ₴43.49 for 400 г with 228 in stock.
+- **«Яловичина»** — 26 candidates. The top three are jerky snacks in 25 g packets; further down sit
+  **«Корм для котів Felix … яловичина»** and **«Ласощі для собак Club 4 Paws … яловичина»**.
+- **«Банан»** — 30 candidates: chips, dried, purées, a liqueur, an ice cream, and two
+  **«Іграшка-антистрес «Банан»»**. Not one fresh banana anywhere in the list.
+- **«Рис»** — index 0 is truffle rice at ₴949; ordinary Sacramento at ₴128 is at index 2.
+
+Knowing that Shirataki is konjac rather than pasta is not a keyword question, and the failure mode is
+open-ended: whatever list of banned words you write, the catalogue has another one.
+
+**Approach** (`docs/superpowers/plans/2026-09-06-product-matching.md`): the model chooses among the
+candidates Silpo really returned — the shape task 22 already proved for ready meals. One call per cart, not
+per line. The answer is a **position** in the candidate list, never a product id the model could invent; an
+index nobody offered is refused the same way a fabricated `productId` is. `available: false` candidates are
+dropped before the model sees them.
+
+**The part that matters most is `-1`.** "None of these is that product" is a legitimate answer, and it is
+what turns «Банан» from silently ordering banana chips into the unresolved line the product already reports
+honestly. Wrong-product-in-cart becomes "Не знайшов: Банан", which a household can act on.
+
+**Failure behaviour, deliberately not silent:** no `ANTHROPIC_API_KEY` falls back to Silpo's ranking at INFO
+(a supported configuration); a configured call that fails falls back the same way at ERROR with the
+exception. The cart is still real, just matched no better than before — failing the whole cart would leave
+the household with nothing.
+
+### Verified live on the same 32-line weekly list
+
+`presented cart … as draft order` — checkout link issued. 27 of 32 lines resolved, 5 honestly unresolved.
+Every decision is logged with its reason. What changed:
+
+| line | before | after |
+|---|---|---|
+| Яловичина | обJerky «Техаська» в'ялена, 34 packets | *none* — "справжня яловичина в недостатньому запасі" |
+| Спагеті | Yumart Shirataki | Вироби макаронні La Pasta спагеті |
+| Рис | Tartufi Jimmy з чорним трюфелем ₴949 | Рис Sacramento ₴128 |
+| Банан | Банан чіпси смажені | *none* — "немає свіжого банана серед кандидатів" |
+| Сир твердий | Плай Бердо ₴1199/кг | «Пирятин» «Голландський» ₴79.99 |
+| Борошно пшеничне | La Farina di Cuneo манітоба ₴189 | «Повна Чаша» ₴19.99 |
+| Скумбрія | холодного копчення ₴699/кг | свіжоморожена ₴411/кг |
+| Бекон | Лавка традицій ₴899/кг | Свинячий бекон нарізаний ₴349/кг |
+| Картопля | рожева мита | Картопля Беллароса |
+| Морква / Яблуко / Помідор | Голден, коктейльний | «Морква», «Яблуко», «Томат» |
+
+Cart total **₴7668 → ₴3525** on the same list, and the difference is not thrift — it is that the cart now
+holds the things the list asked for.
+
+### The next thing, and it is a different problem
+
+Two lines came back with **zero candidates**: «Яйця курячі» and «Йогурт натуральний». Silpo's search found
+nothing at all for those terms, so there was nothing to choose between — and the household is simply told
+those were not found. Eggs and plain yoghurt obviously exist. Same class as «Банан», whose 30 results
+contained no fresh banana: **the search term is wrong, not the ranking**. Fixing it means a second pass —
+re-query with a differently phrased term when the first returns nothing usable — which is a round-trip and a
+design of its own. This change makes that case honest and *countable*; the log now says exactly which lines
+fall into it, which is what a fix should be measured against.

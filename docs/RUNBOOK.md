@@ -1016,6 +1016,21 @@ The bug: every `weighted: true` line was ten times too large, because grams were
 3. A tell-tale of the regression: any single line costing thousands of hryvnia (chicken at ₴4996), or a
    cart refused with `order.weight.max` for an ordinary week's shopping.
 
+### Session 5: verify the cart holds the products the list asked for
+
+The bug: `products[0]` of Silpo's search went into the cart, and Silpo does not rank the ordinary version
+of a thing first.
+
+1. Get a weekly list on screen and tap «Замовити», then read the cart message.
+2. Every line should be the everyday version of what the list said: plain potatoes, plain carrots, ordinary
+   pasta, a normal hard cheese. Tell-tales of the regression are a jerky snack for «Яловичина», konjac
+   noodles or a **serving spoon** for «Спагеті», truffle rice for «Рис», banana chips for «Банан».
+3. Some lines *should* come back as «Не знайшов». That is the fix working, not failing: Silpo's search for
+   «Банан» returns thirty processed products and no fresh banana, and saying so beats ordering the chips.
+4. The reasoning is in the log — one `ProductMatchingService` line per decision, with why.
+5. With no `ANTHROPIC_API_KEY` set the cart still builds, matched by Silpo's own ranking, and the log says
+   so at INFO. That is a supported configuration, not a failure.
+
 ### Session 5: what a full weekly cart does now
 
 A full weekly list now builds a real Silpo cart **and gets a checkout link** — verified live after the

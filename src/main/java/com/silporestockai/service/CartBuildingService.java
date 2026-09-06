@@ -12,6 +12,8 @@ import com.silporestockai.model.BasketItem;
 import com.silporestockai.model.CartContext;
 import com.silporestockai.model.CartSummary;
 import com.silporestockai.model.OfferedSlot;
+import com.silporestockai.model.ProductCandidate;
+import com.silporestockai.model.ProductMatchRequest;
 import com.silporestockai.model.ResolvedProduct;
 import com.silporestockai.repository.UserProfileRepository;
 import com.silporestockai.utils.McpResponses;
@@ -73,6 +75,42 @@ public class CartBuildingService {
     private final SilpoMcpClient silpoMcpClient;
     private final UserProfileRepository userProfileRepository;
     private final PartnerPromotionService partnerPromotionService;
+    private final ProductMatchingService productMatchingService;
+
+    /**
+     * Candidates Silpo says it can actually sell right now. {@code available: false} is not a judgement call, so it
+     * is settled here rather than spent on the model's attention — and a product the branch cannot sell is not a
+     * better answer than none.
+     */
+    private static List<JsonNode> availableOnly(List<JsonNode> candidates) {
+        return candidates.stream()
+                .filter(candidate -> McpResponses.findNode(candidate, McpResponses.AVAILABLE)
+                        .map(node -> node.asBoolean(true))
+                        .orElse(true))
+                .toList();
+    }
+
+    /** The shelf tags of each line's candidates, in Silpo's own order, as the matcher wants them. */
+    private static List<ProductMatchRequest> matchRequests(
+            List<ShoppingListItem> items, List<List<JsonNode>> candidatesFor) {
+        List<ProductMatchRequest> requests = new ArrayList<>();
+        for (int i = 0; i < items.size(); i++) {
+            ShoppingListItem item = items.get(i);
+            List<ProductCandidate> candidates = candidatesFor.get(i).stream()
+                    .map(node -> new ProductCandidate(
+                            McpResponses.findString(node, McpResponses.NAME).orElse(""),
+                            McpResponses.findNumber(node, McpResponses.PRICE).orElse(null),
+                            McpResponses.findString(node, McpResponses.DISPLAY_RATIO)
+                                    .orElse(null),
+                            McpResponses.findNode(node, McpResponses.WEIGHTED)
+                                    .map(weighted -> weighted.asBoolean(false))
+                                    .orElse(false),
+                            McpResponses.findNumber(node, McpResponses.STOCK).orElse(null)))
+                    .toList();
+            requests.add(new ProductMatchRequest(item.getName(), quantityOf(item), item.getUnit(), candidates));
+        }
+        return requests;
+    }
 
     /** Steps 1 to 6, in the documented order. Unresolved items are reported, not fatal. */
     public CartSummary buildCart(UUID userId, List<ShoppingListItem> items) {
@@ -465,6 +503,24 @@ public class CartBuildingService {
                         .ifPresent(text -> productsByQuery.putIfAbsent(
                                 text.toLowerCase(Locale.ROOT), McpResponses.findArray(query, McpResponses.PRODUCTS)));
             }
+            // Every line, decided in one call rather than by taking whatever Silpo ranked first — see
+            // ProductMatchingService for what that ranking actually returns. A line a partner placement claims is
+            // matched here too, deliberately: the placement is only used if it comes back live (task 46), and
+            // without an ordinary match behind it a placement that does not would leave the line unresolved.
+            List<ShoppingListItem> toMatch = chunk;
+            List<List<JsonNode>> candidatesFor = toMatch.stream()
+                    .map(item -> availableOnly(productsByQuery.getOrDefault(
+                            biasedSearchTerm(item.getName(), onlyUaProducer).toLowerCase(Locale.ROOT), List.of())))
+                    .toList();
+            List<Integer> picked = productMatchingService.choose(matchRequests(toMatch, candidatesFor));
+            Map<ShoppingListItem, JsonNode> matched = new IdentityHashMap<>();
+            for (int i = 0; i < toMatch.size(); i++) {
+                int index = picked.get(i);
+                if (index != ProductMatchingService.NONE) {
+                    matched.put(toMatch.get(i), candidatesFor.get(i).get(index));
+                }
+            }
+
             for (ShoppingListItem item : chunk) {
                 ResolvedProduct chosen = null;
                 PartnerPromotion promotion = promotionFor.get(item);
@@ -495,13 +551,9 @@ public class CartBuildingService {
                     }
                 }
                 if (chosen == null) {
-                    String term =
-                            biasedSearchTerm(item.getName(), onlyUaProducer).toLowerCase(Locale.ROOT);
-                    JsonNode first = productsByQuery.getOrDefault(term, List.of()).stream()
-                            .findFirst()
-                            .orElse(null);
-                    if (first != null) {
-                        chosen = resolvedFrom(item, first, context, null);
+                    JsonNode match = matched.get(item);
+                    if (match != null) {
+                        chosen = resolvedFrom(item, match, context, null);
                     }
                 }
                 if (chosen != null) {

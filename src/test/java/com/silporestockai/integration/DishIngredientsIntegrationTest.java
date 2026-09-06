@@ -256,10 +256,11 @@ class DishIngredientsIntegrationTest extends AbstractIntegrationTest {
                 .anyMatch(text -> text.contains("Зберу все для «карбонара»"))
                 .anyMatch(text -> text.contains("Інгредієнти для «карбонара» на 2 порції"));
         assertDishWasOrdered("карбонара");
-        // The ingredient prompt is scoped to one dish and this household's size, not a weekly plan.
-        assertThat(CLAUDE.requests().getLast().toString())
-                .contains("Страва: карбонара")
-                .contains("Порцій: 2");
+        // The ingredient prompt is scoped to one dish and this household's size, not a weekly plan. Not the
+        // last request any more: choosing which catalogue product each ingredient means is a call of its own.
+        assertThat(CLAUDE.requests())
+                .anyMatch(request -> request.toString().contains("Страва: карбонара")
+                        && request.toString().contains("Порцій: 2"));
     }
 
     @Test
@@ -305,6 +306,6 @@ class DishIngredientsIntegrationTest extends AbstractIntegrationTest {
         sendText(3, "лазанья");
 
         assertDishWasOrdered("лазанья");
-        assertThat(CLAUDE.requests().getLast().toString()).contains("Страва: лазанья");
+        assertThat(CLAUDE.requests()).anyMatch(request -> request.toString().contains("Страва: лазанья"));
     }
 }
