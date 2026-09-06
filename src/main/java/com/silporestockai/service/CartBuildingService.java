@@ -613,15 +613,43 @@ public class CartBuildingService {
      * asking for "2 шт" of something Silpo prices as "100г" — there is no safe conversion to guess at, so this falls
      * back to the smallest valid amount, {@code step}, rather than a number that might silently order far more or
      * far less than intended.
+     *
+     * <p><b>A weighted product is the exception, and getting it wrong is expensive.</b> For {@code weighted: true}
+     * lines Silpo's {@code quantity} is the weight itself in kilograms, not a count of anything: its {@code price}
+     * is the price per kilogram and {@code quantity * price} is exactly the {@code subTotal} it answers with. Its
+     * {@code displayRatio} ("100г") is a pricing-display hint and has nothing to do with the unit of
+     * {@code quantity}. Dividing by it anyway made every weighted line ten times too large on a live cart —
+     * «Картопля 2000 г» was ordered as 20 kg against a branch holding 7, «Фарш свинячий 550 г» as 5.5 kg, chicken
+     * as 15.4 kg at ₴4996 — which is what put a perfectly ordinary week's groceries at ~58 kg and over Silpo's
+     * 40 kg order cap. The correct weight was ~5.8 kg.
      */
     private static BigDecimal cartQuantity(ShoppingListItem item, JsonNode product) {
         BigDecimal step = McpResponses.findNumber(product, McpResponses.STEP).orElse(BigDecimal.ONE);
         Optional<String> displayRatio = McpResponses.findString(product, McpResponses.DISPLAY_RATIO);
+        Optional<UnitAmount> wanted = shoppingListAmount(item);
+        boolean weighted = McpResponses.findNode(product, McpResponses.WEIGHTED)
+                .map(node -> node.asBoolean(false))
+                .orElse(false);
+
+        if (weighted) {
+            // Kilograms (or litres) of the thing itself. Nothing to divide by; displayRatio is not its unit.
+            if (wanted.isEmpty() || wanted.get().kind() == UnitKind.COUNT) {
+                // "3 шт" of something sold loose by weight: how much a piece weighs is not something to invent.
+                log.warn(
+                        "\"{}\" {} is a count, but Silpo sells this product by weight — sending the minimum "
+                                + "step instead of guessing",
+                        item.getQuantity(),
+                        item.getUnit());
+                return step;
+            }
+            BigDecimal base = wanted.get().amount().divide(BigDecimal.valueOf(1000), 4, RoundingMode.HALF_UP);
+            return roundToStep(base, step);
+        }
+
         if (displayRatio.isEmpty()) {
             return roundToStep(quantityOf(item), step);
         }
         Optional<UnitAmount> packageAmount = parseDisplayRatio(displayRatio.get());
-        Optional<UnitAmount> wanted = shoppingListAmount(item);
         if (packageAmount.isEmpty()
                 || wanted.isEmpty()
                 || packageAmount.get().kind() != wanted.get().kind()
@@ -830,7 +858,16 @@ public class CartBuildingService {
             case "order.adult.is_not_confirmed" ->
                 "у кошику є алкоголь — «Сільпо» просить підтвердити вік на своїй сторінці оплати, "
                         + "або прибери цю позицію зі списку";
-            case "order.weight.max" -> "замовлення важче, ніж «Сільпо» приймає за раз — прибери частину зі списку";
+            // Says the number, because "too heavy" without one leaves nothing to act on. Silpo names the cap in
+            // context when it sends one; 40 кг is the documented limit and the fallback when it does not.
+            case "order.weight.max" -> {
+                String limit = context == null
+                        ? ""
+                        : McpResponses.findString(context, "weightMax", "maxWeight", "weight")
+                                .orElse("");
+                yield "у кошику більше ніж %s — «Сільпо» стільки за раз не везе, прибери щось зі списку"
+                        .formatted(limit.isBlank() ? "40 кг" : limit + " кг");
+            }
             case "order.cost.min" -> {
                 String minimum = context == null
                         ? ""

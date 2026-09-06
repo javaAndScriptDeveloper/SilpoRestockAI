@@ -35,8 +35,15 @@ public final class McpResponses {
     public static final String[] SLOT_START = {"from", "start", "startTime", "dateTime", "date"};
     public static final String[] PRODUCTS = {"products", "items", "results"};
     public static final String[] QUERIES = {"queries", "results"};
-    public static final String[] STEP = {"step"};
+    public static final String[] STEP = {"step", "addToBasketStep"};
     public static final String[] DISPLAY_RATIO = {"displayRatio"};
+
+    /**
+     * Whether the product is sold by weight rather than by the package. Decides what {@code quantity} even means
+     * — see {@code CartBuildingService.cartQuantity} — so it is the difference between 1.5 kg of cheese and 15.
+     */
+    public static final String[] WEIGHTED = {"weighted"};
+
     public static final String[] ITEMS = {"items", "products", "lines"};
     public static final String[] NAME = {"name", "title", "query", "requestedName"};
     public static final String[] QUANTITY = {"quantity", "amount", "count"};

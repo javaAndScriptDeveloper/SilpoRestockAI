@@ -435,6 +435,70 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
      * is "50г" does not ask for 800 grams of beef — it asks for eight hundred 50-gram packages. Silpo's own API
      * refused a request built that way with a bare 400 and no further detail.
      */
+    /**
+     * The live cart that put an ordinary week's groceries at ~58 kg and over Silpo's 40 kg cap. For a
+     * {@code weighted} product Silpo's {@code quantity} is the weight in kilograms — its {@code price} is per
+     * kilogram and {@code quantity * price} is exactly the {@code subTotal} it answers with — while
+     * {@code displayRatio} ("100г") is only a pricing-display hint. Dividing by it anyway made every weighted line
+     * ten times too large: «Картопля 2000 г» was ordered as 20 kg from a branch holding 7, chicken as 15.4 kg at
+     * ₴4996. These are the real numbers from that cart.
+     */
+    @Test
+    void sendsKilogramsForAProductSilpoSellsByWeightRatherThanUnitsOfItsDisplayRatio() {
+        UUID userId = connectedUser(8424L);
+        scriptCartTools();
+        MCP.respondToTool("silpo_find_products_batch", """
+                {"queries":[{"query":"картопля","products":[{"name":"Картопля рожева мита",\
+                "productId":"1ed07616-9a9b-668e-85e4-dd63763181f9","companyId":"company-3","branchId":"branch-7",\
+                "step":1,"displayRatio":"100г","weighted":true}]}]}""");
+        MCP.respondToTool("silpo_add_or_update_cart_products", "{\"ok\":true}");
+
+        cartBuildingService.buildCart(userId, List.of(item("картопля", "2000", "г")));
+
+        JsonNode added = MCP.callArguments("silpo_add_or_update_cart_products").getFirst();
+        assertThat(added.path("products").get(0).path("quantity").decimalValue())
+                .isEqualByComparingTo("2");
+    }
+
+    /** The same rule below a kilogram, where the step is finer than one: 200 г of cheese is 0.2, not 2. */
+    @Test
+    void aWeightedProductUnderAKilogramIsSentAsAFractionOfOne() {
+        UUID userId = connectedUser(8425L);
+        scriptCartTools();
+        MCP.respondToTool("silpo_find_products_batch", """
+                {"queries":[{"query":"сир твердий","products":[{"name":"Сир твердий",\
+                "productId":"1edb0357-8e0a-68ec-821d-9f7fd78fecf4","companyId":"company-3","branchId":"branch-7",\
+                "step":0.1,"displayRatio":"100г","weighted":true}]}]}""");
+        MCP.respondToTool("silpo_add_or_update_cart_products", "{\"ok\":true}");
+
+        cartBuildingService.buildCart(userId, List.of(item("сир твердий", "200", "г")));
+
+        JsonNode added = MCP.callArguments("silpo_add_or_update_cart_products").getFirst();
+        assertThat(added.path("products").get(0).path("quantity").decimalValue())
+                .isEqualByComparingTo("0.2");
+    }
+
+    /**
+     * «3 шт» of something sold loose by weight. What one piece weighs is not something to invent, so this takes
+     * the minimum step — the same refusal-to-guess the packaged path already had for a mismatched unit.
+     */
+    @Test
+    void aCountAgainstAWeightedProductTakesTheMinimumStepRatherThanGuessingAPieceWeight() {
+        UUID userId = connectedUser(8426L);
+        scriptCartTools();
+        MCP.respondToTool("silpo_find_products_batch", """
+                {"queries":[{"query":"цибуля","products":[{"name":"Цибуля ріпчаста жовта",\
+                "productId":"1ed075db-b30f-6912-ab4d-dd63763181f9","companyId":"company-3","branchId":"branch-7",\
+                "step":0.2,"displayRatio":"100г","weighted":true}]}]}""");
+        MCP.respondToTool("silpo_add_or_update_cart_products", "{\"ok\":true}");
+
+        cartBuildingService.buildCart(userId, List.of(item("цибуля", "3", "шт")));
+
+        JsonNode added = MCP.callArguments("silpo_add_or_update_cart_products").getFirst();
+        assertThat(added.path("products").get(0).path("quantity").decimalValue())
+                .isEqualByComparingTo("0.2");
+    }
+
     @Test
     void convertsGramsToAWholeNumberOfDisplayRatioSizedUnits() {
         UUID userId = connectedUser(8418L);

@@ -333,6 +333,23 @@ reported phrases now route correctly from the exact parked state, and the dish o
   `TelegramWebhookRegistrationIntegrationTest` failing on a missing `telegramUpdateDedupCache` bean);
   both pass in isolation and the final `make build` is fully green. Same flake noted in session 2.
 
+## Follow-up in the same session: the 40 kg cap was our bug
+
+Pushed back on the "product decision" framing with the right instinct — an order heavier than 40 kg is
+strange. It was. Every `weighted: true` line was **exactly ten times too large**: Silpo's `quantity` for a
+weighted product is the weight in kilograms (its `price` is per kg and `quantity * price == subTotal`),
+while `displayRatio` ("100г") is only a pricing-display hint. `cartQuantity` divided by it anyway.
+«Картопля 2000 г» was ordered as 20 kg from a branch holding 7; chicken as 15.4 kg at ₴4996. Weighted
+lines summed to ~58 kg instead of ~5.8 kg — which is also where all three stock errors came from.
+
+Fixed, and re-verified live on the same 32-line list: ~8 kg, `presented cart … as draft order`, checkout
+link issued. **The weekly path now reaches a checkout link end to end.** The weight message still names
+the number for the day a genuinely large week hits the cap.
+
+Left standing, and recommended next: **product-match quality**, not quantities. That cart matched
+«Яловичина 850 г» to 34 packets of 25 g beef jerky (₴3246), «Рис» to a black-truffle rice (₴949). The
+arithmetic is right, the product is wrong — task 09's fuzzy name search, and most of a ₴7668 weekly total.
+
 ## Notion edits
 
 - **09** Done → **In review**, with the fabricated-`productId` root cause, the live verification and the

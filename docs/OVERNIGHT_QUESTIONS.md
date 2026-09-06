@@ -571,7 +571,52 @@ Driven through the real webhook against the real Silpo MCP with the account's ow
 - The **32-line weekly list** now also builds a real cart — 31 of 32 lines resolved live, 30 products
   added, real names and prices — see the caveat below.
 
-## What I could not fix, and needs your product decision
+## Follow-up the same session: the weight cap was our bug, not a product limit
+
+The reaction to the section below was the right instinct — "it is strange that an order weighs more than
+40 kg". It was. **Every weighted line was exactly ten times too large.**
+
+For a `weighted: true` product Silpo's `quantity` is the weight in **kilograms**, not a count of anything.
+Its `price` is the price per kilogram and `quantity * price` is exactly the `subTotal` it answers with;
+its `displayRatio` ("100г") is a pricing-display hint with no relation to the unit of `quantity`.
+`cartQuantity` divided by `displayRatio` regardless, so grams / 100 produced a number Silpo then read as
+kilograms. The arithmetic from the live cart, which is what proves it:
+
+| line | asked | sent | price | subTotal |
+|---|---|---|---|---|
+| Картопля рожева мита | 2000 г | **20** | ₴36.49 | ₴729.80 |
+| Філе стегна курчат-бройлерів | 1550 г | **15.4** | ₴324.45 | ₴4996.53 |
+| Фарш свинячий | 550 г | **5.5** | ₴241.36 | ₴1327.48 |
+| Капуста білоголова | 400 г | **4.2** | ₴19.99 | ₴83.96 |
+| Морква | 300 г | **3** | ₴21.99 | ₴65.97 |
+| Скумбрія холодного копчення | 300 г | **3** | ₴699 | ₴2097 |
+
+₴36.49 is potato per kilogram, ₴324.45 is chicken thigh fillet per kilogram — the prices only make sense
+per kg, and `quantity * price == subTotal` in every row. So the cart really did hold 20 kg of potatoes.
+Weighted lines summed to ~58 kg against a 40 kg cap; the correct weight was ~5.8 kg. The three
+`product.offer.stock.max` errors were the same bug — 20 kg of potato against a branch holding 7.
+
+**Fixed** in `cartQuantity`: a weighted product's quantity is the amount in the base unit (grams / 1000),
+rounded to `step`; `displayRatio` is used only for packaged goods, where dividing by it is correct and
+documented. A count against a weighted product ("3 шт" of loose onion) still falls back to `step` rather
+than inventing what one piece weighs. `McpResponses.STEP` also learned `addToBasketStep`, the name the live
+server actually uses.
+
+**Re-verified live on the same 32-line list:** 31 of 32 resolved, weighted lines now total ~8 kg,
+`presented cart … as draft order` — Silpo issued the checkout link. No `order.weight.max`, no stock errors.
+`order.adult.is_not_confirmed` did not block the link on this run either.
+
+The weekly path therefore now reaches a checkout link end to end. The "needs your product decision" section
+below is superseded on the weight question — but the message improvement stands, and if a genuinely large
+week ever does hit the cap the household is now told the number.
+
+**What is still worth your eye — product-match quality, not quantities.** That same cart shows
+«Яловичина 850 г» matched to «Яловичина обJerky «Техаська» в'ялена» — 34 packets of 25 g beef jerky at
+₴3246 — «Рис» to a black-truffle rice at ₴949, and «Пластівці» to a ₴399 Mornflake. The arithmetic is
+right (34 × 25 g really is 850 g); the *product* is wrong. Cart total ₴7668 for a week for two is almost
+entirely those three lines. That is task 09's fuzzy name search, and it is the next thing I would fix.
+
+## Superseded: what I could not fix, and needs your product decision
 
 **A full weekly list for a household may be un-orderable at Silpo, and no code change can fix it.** With the
 product-id bug gone, the 32-line weekly cart builds correctly and then Silpo refuses to issue a checkout

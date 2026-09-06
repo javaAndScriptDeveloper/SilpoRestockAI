@@ -1005,19 +1005,34 @@ Callback queries expire in about a minute, and the app restarts on every tunnel 
    too old`, that threw, and the handler died before doing anything — you got «Щось пішло не так»
    from a button that had worked.
 
-### Session 5: what a full weekly cart still does, and why
+### Session 5: verify a weighted product is ordered in kilograms
 
-Not a bug to verify — a known limit to recognise. A full weekly list builds a real Silpo cart and then
-Silpo refuses the checkout link. You should see plain-Ukrainian reasons, e.g.:
+The bug: every `weighted: true` line was ten times too large, because grams were divided by
+`displayRatio` ("100г") and Silpo read the result as kilograms. «Картопля 2000 г» went in as 20 kg.
 
-- «замовлення важче, ніж «Сільпо» приймає за раз — прибери частину зі списку» (`order.weight.max`);
+1. Get a weekly list on screen and tap «Замовити».
+2. Open the Silpo checkout link and look at the loose produce and meat — potatoes, carrots, mince,
+   cheese, bacon. Each should be roughly what the list asked for, in hundreds of grams or a kilo or two.
+3. A tell-tale of the regression: any single line costing thousands of hryvnia (chicken at ₴4996), or a
+   cart refused with `order.weight.max` for an ordinary week's shopping.
+
+### Session 5: what a full weekly cart does now
+
+A full weekly list now builds a real Silpo cart **and gets a checkout link** — verified live after the
+weighted-quantity fix above (31 of 32 lines resolved, ~8 kg, link issued). If a genuinely large week ever
+does hit a limit, you should see plain-Ukrainian reasons rather than machine codes, e.g.:
+
+- «у кошику більше ніж 40 кг — «Сільпо» стільки за раз не везе, прибери щось зі списку»
+  (`order.weight.max`, with Silpo's own number when it sends one);
 - «у кошику є алкоголь — «Сільпо» просить підтвердити вік на своїй сторінці оплати…» if wine is on
   the list;
 - «<товар>: на складі лишилось N, а в кошику замовлено більше» for lines the branch is short on.
 
 If you see raw codes like `order.weight.max` instead of those sentences, that is a regression.
-There is no policy yet for what the agent should *do* about a too-heavy week — see
-`docs/OVERNIGHT_QUESTIONS.md`, it needs your decision.
+
+Still worth your eye, and *not* a quantity problem: product matching. The same cart matched «Яловичина»
+to 34 packets of beef jerky (₴3246), «Рис» to a black-truffle rice (₴949). The weights are right, the
+products are wrong — task 09's fuzzy name search.
 
 The manual runbook exists for what stubs cannot answer: whether Silpo's real catalogue matches the
 words we search for, whether a real transcription is accurate, and whether a real fridge photo produces
