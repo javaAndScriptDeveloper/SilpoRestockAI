@@ -22,5 +22,10 @@ public enum ConversationFlow {
     /** The Анкета button reopens the profile form after onboarding; awaiting its resubmission or a regenerate confirm. */
     PROFILE_REEDIT,
     /** Editing one pending scheduled_ad_hoc_task's time or theme — awaiting the free-text replacement value. */
-    SCHEDULED_TASK_EDIT
+    SCHEDULED_TASK_EDIT,
+    /**
+     * The «Фідбек» button is waiting for one message (task 47). Its context is a snapshot of the flow it
+     * interrupted, written back the moment the message arrives.
+     */
+    FEEDBACK
 }

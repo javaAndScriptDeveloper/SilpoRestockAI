@@ -1,0 +1,30 @@
+databaseChangeLog:
+  - changeSet:
+      id: 024-feedback
+      author: komora
+      comment: >-
+        Task 47: raw feedback from the «Фідбек» button, stored as typed — no categorisation, no AI, no
+        admin UI; read it with a SELECT. user_id is nullable by spec (feedback must be capturable from a
+        chat with no finished profile), though today every chat has a users row from its first message.
+      changes:
+        - createTable:
+            tableName: feedback
+            columns:
+              - column: { name: id, type: UUID, constraints: { primaryKey: true, nullable: false } }
+              - column:
+                  name: user_id
+                  type: UUID
+                  constraints:
+                    foreignKeyName: fk_feedback_user
+                    references: users(id)
+                    deleteCascade: true
+              - column: { name: telegram_chat_id, type: BIGINT, constraints: { nullable: false } }
+              - column: { name: raw_text, type: TEXT, constraints: { nullable: false } }
+              - column: { name: source, type: VARCHAR(16), constraints: { nullable: false } }
+              - column: { name: created_at, type: TIMESTAMP WITH TIME ZONE, constraints: { nullable: false } }
+        - createIndex:
+            indexName: ix_feedback_created_at
+            tableName: feedback
+            columns:
+              - column:
+                  name: created_at
