@@ -1,5 +1,6 @@
 package com.silporestockai.entity;
 
+import com.silporestockai.model.ScheduledAdHocTaskKind;
 import com.silporestockai.model.ScheduledAdHocTaskStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -44,4 +45,10 @@ public class ScheduledAdHocTask {
 
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
+
+    /** Which kind of one-off order this fires (task 36); the theme is a snack theme or a dish name accordingly. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "kind", nullable = false, length = 32)
+    @Builder.Default
+    private ScheduledAdHocTaskKind kind = ScheduledAdHocTaskKind.SNACK_THEME;
 }

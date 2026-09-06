@@ -4,6 +4,7 @@ import com.silporestockai.client.claude.ClaudeApiClient;
 import com.silporestockai.entity.ScheduledAdHocTask;
 import com.silporestockai.entity.User;
 import com.silporestockai.model.ConversationFlow;
+import com.silporestockai.model.ScheduledAdHocTaskKind;
 import com.silporestockai.model.ScheduledAdHocTaskStatus;
 import com.silporestockai.model.TelegramButton;
 import com.silporestockai.model.TelegramIncomingUpdate;
@@ -66,7 +67,7 @@ public class ScheduledTaskManagementService {
         for (ScheduledAdHocTask task : pending) {
             telegramOutboundService.sendMessageWithButtons(
                     chatId,
-                    task.getThemeDescription(),
+                    describe(task),
                     List.of(
                             TelegramButton.callback("Редагувати", PREFIX_EDIT + task.getId()),
                             TelegramButton.callback("Скасувати", PREFIX_CANCEL + task.getId())));
@@ -88,8 +89,15 @@ public class ScheduledTaskManagementService {
             return;
         }
         StringBuilder text = new StringBuilder("Нещодавно виконав:");
-        fired.forEach(task -> text.append("\n✅ ").append(task.getThemeDescription()));
+        fired.forEach(task -> text.append("\n✅ ").append(describe(task)));
         telegramOutboundService.sendMessage(chatId, text.toString());
+    }
+
+    /** A dish task's theme is the dish name; say what was done with it (task 36). */
+    private static String describe(ScheduledAdHocTask task) {
+        return task.getKind() == ScheduledAdHocTaskKind.DISH_INGREDIENTS
+                ? "інгредієнти для «" + task.getThemeDescription() + "»"
+                : task.getThemeDescription();
     }
 
     public void handleButtonTap(User user, TelegramIncomingUpdate.ButtonTap tap) {

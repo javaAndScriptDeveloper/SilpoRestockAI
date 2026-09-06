@@ -1,0 +1,18 @@
+databaseChangeLog:
+  - changeSet:
+      id: 026-scheduled-ad-hoc-task-kind
+      author: komora
+      comment: >-
+        Task 36: a dish-ingredients order («замов усе для карбонари») goes through the same scheduled
+        one-off mechanism as a themed snack purchase, so the sweep needs to know which kind of order a row
+        asks for. Existing rows are all snack-theme purchases, hence the default.
+      changes:
+        - addColumn:
+            tableName: scheduled_ad_hoc_task
+            columns:
+              - column:
+                  name: kind
+                  type: VARCHAR(32)
+                  defaultValue: SNACK_THEME
+                  constraints:
+                    nullable: false

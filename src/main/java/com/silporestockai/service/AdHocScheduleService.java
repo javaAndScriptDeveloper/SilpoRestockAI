@@ -2,6 +2,7 @@ package com.silporestockai.service;
 
 import com.silporestockai.entity.ScheduledAdHocTask;
 import com.silporestockai.entity.User;
+import com.silporestockai.model.ScheduledAdHocTaskKind;
 import com.silporestockai.model.ScheduledAdHocTaskStatus;
 import com.silporestockai.repository.ScheduledAdHocTaskRepository;
 import com.silporestockai.repository.UserRepository;
@@ -19,7 +20,11 @@ import org.springframework.stereotype.Service;
  * as {@code triggerAt}, so this fires on the very next sweep; the deadline itself is never enforced here
  * because "as soon as possible" is always at or before it. See docs/OVERNIGHT_QUESTIONS.md for the live-test
  * report that caught the earlier, literal reading. Firing the order itself is {@link AdHocOrderService}'s job
- * (task 24), unchanged; this only decides *when*.
+ * (task 24) or, for a dish, {@link DishIngredientsService}'s (task 36); this only decides *when* and *which*.
+ *
+ * <p>{@link #fire} is the one place a task turns into an order, whether the sweep found it
+ * due or {@link #scheduleDishIngredients} fired it the moment it was written. "Execute now" is not a bypass —
+ * it is the same row and the same method with zero delay.
  */
 @Slf4j
 @Service
@@ -29,6 +34,7 @@ public class AdHocScheduleService {
     private final ScheduledAdHocTaskRepository scheduledAdHocTaskRepository;
     private final UserRepository userRepository;
     private final AdHocOrderService adHocOrderService;
+    private final DishIngredientsService dishIngredientsService;
     private final TelegramOutboundService telegramOutboundService;
 
     public void schedule(User user, String themeDescription, Instant triggerAt) {
@@ -37,6 +43,7 @@ public class AdHocScheduleService {
                 .userId(user.getId())
                 .triggerAt(triggerAt)
                 .themeDescription(themeDescription)
+                .kind(ScheduledAdHocTaskKind.SNACK_THEME)
                 .status(ScheduledAdHocTaskStatus.PENDING)
                 .createdAt(Instant.now())
                 .build());
@@ -47,6 +54,28 @@ public class AdHocScheduleService {
         log.info("scheduled an ad-hoc purchase for user {} at {}", user.getId(), triggerAt);
     }
 
+    /**
+     * A dish-ingredients order (task 36): the same row every one-off purchase gets, then fired at once through
+     * the same {@link #fire} the sweep uses. The person asked for it now; a fifteen-minute cron between "замов усе
+     * для карбонари" and the cart is a wait nobody asked for, and the row still exists — «Заплановані» shows it
+     * under «Нещодавно виконав».
+     */
+    public void scheduleDishIngredients(User user, String dishName) {
+        ScheduledAdHocTask task = scheduledAdHocTaskRepository.save(ScheduledAdHocTask.builder()
+                .id(UUID.randomUUID())
+                .userId(user.getId())
+                .triggerAt(Instant.now())
+                .themeDescription(dishName)
+                .kind(ScheduledAdHocTaskKind.DISH_INGREDIENTS)
+                .status(ScheduledAdHocTaskStatus.PENDING)
+                .createdAt(Instant.now())
+                .build());
+        telegramOutboundService.sendMessage(
+                user.getTelegramChatId(), "Зберу все для «%s» — секунду.".formatted(dishName));
+        log.info("scheduled a dish-ingredients order for «{}» for user {}, firing now", dishName, user.getId());
+        fire(task, user);
+    }
+
     /** Fires every {@code PENDING} task whose trigger time has passed. Returns how many fired. */
     public int sweepDue() {
         List<ScheduledAdHocTask> due = scheduledAdHocTaskRepository.findByStatusAndTriggerAtBefore(
@@ -55,12 +84,7 @@ public class AdHocScheduleService {
             userRepository
                     .findById(task.getUserId())
                     .ifPresentOrElse(
-                            user -> {
-                                adHocOrderService.buildAdHocOrder(
-                                        user, task.getThemeDescription(), task.getTriggerAt());
-                                task.setStatus(ScheduledAdHocTaskStatus.FIRED);
-                                scheduledAdHocTaskRepository.save(task);
-                            },
+                            user -> fire(task, user),
                             () -> log.warn(
                                     "scheduled ad-hoc task {} has no matching user; leaving it pending", task.getId()));
         }
@@ -68,5 +92,16 @@ public class AdHocScheduleService {
             log.info("fired {} scheduled ad-hoc purchases", due.size());
         }
         return due.size();
+    }
+
+    /** Turns one task into one order, by kind, and marks it fired. */
+    private void fire(ScheduledAdHocTask task, User user) {
+        switch (task.getKind() == null ? ScheduledAdHocTaskKind.SNACK_THEME : task.getKind()) {
+            case SNACK_THEME ->
+                adHocOrderService.buildAdHocOrder(user, task.getThemeDescription(), task.getTriggerAt());
+            case DISH_INGREDIENTS -> dishIngredientsService.orderIngredients(user, task.getThemeDescription());
+        }
+        task.setStatus(ScheduledAdHocTaskStatus.FIRED);
+        scheduledAdHocTaskRepository.save(task);
     }
 }
