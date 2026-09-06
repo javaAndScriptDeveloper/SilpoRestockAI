@@ -30,6 +30,7 @@ public class CartMessageService {
     public static final String CALLBACK_SLOT_MENU = "cart:slotmenu";
     public static final String CALLBACK_SLOT_PREFIX = "cart:slot:";
     public static final String CALLBACK_CANCEL = "cart:cancel";
+    public static final String CALLBACK_TOP_UP = "cart:topup";
 
     /**
      * The cart itself: what is in it, what could not be found, what Silpo warned about, what it costs.
@@ -121,6 +122,43 @@ public class CartMessageService {
         }
         if (hasAlternativeSlots) {
             buttons.add(TelegramButton.callback("Інший час", CALLBACK_SLOT_MENU));
+        }
+        buttons.add(TelegramButton.callback("Скасувати", CALLBACK_CANCEL));
+        return buttons;
+    }
+
+    /**
+     * The same cart, plus the one fact that stops it: how far the goods are from Silpo's minimum order, and the two
+     * ways out. Nothing has been added on the household's behalf at this point — that is what the button is for.
+     */
+    public String belowMinimumText(CartSummary summary, OfferedSlot slot, OrderType type, boolean hasBaseline) {
+        StringBuilder text = new StringBuilder(cartText(summary, slot, type));
+        text.append("\n\nТоварів тут на ")
+                .append(money(summary.goodsTotal()))
+                .append(" грн, а «Сільпо» доставляє замовлення від ")
+                .append(amount(summary.minimumOrder()))
+                .append(" грн — бракує ")
+                .append(money(summary.shortfall()))
+                .append(" грн.");
+        if (hasBaseline) {
+            text.append("\nМожу докласти з твого звичайного набору — або скасуй і докинь щось сам у застосунку")
+                    .append(" «Сільпо», кошик уже там.");
+        } else {
+            text.append("\nКошик уже в застосунку «Сільпо» — докинь щось там, або скасуй.");
+        }
+        return text.toString();
+    }
+
+    /** Top up from the baseline when there is one to draw on; cancel either way. No confirm: there is nothing to confirm yet. */
+    public List<TelegramButton> belowMinimumButtons(CartSummary summary, boolean hasBaseline) {
+        List<TelegramButton> buttons = new ArrayList<>();
+        if (hasBaseline) {
+            buttons.add(TelegramButton.callback(
+                    "Докласти з мого набору (~%s грн)"
+                            .formatted(summary.shortfall()
+                                    .setScale(0, RoundingMode.CEILING)
+                                    .toPlainString()),
+                    CALLBACK_TOP_UP));
         }
         buttons.add(TelegramButton.callback("Скасувати", CALLBACK_CANCEL));
         return buttons;

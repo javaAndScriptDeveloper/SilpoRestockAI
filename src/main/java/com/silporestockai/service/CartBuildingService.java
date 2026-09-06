@@ -213,43 +213,64 @@ public class CartBuildingService {
                 .map(ResolvedProduct::productId)
                 .distinct()
                 .toList();
-        try {
-            return getVerifiedCart(userId, context, deliverySlot, unresolved, promoted, resolution.skipped());
-        } catch (CartBuildException refused) {
-            if (!refused.belowMinimumOrder()) {
-                throw refused;
-            }
-            List<ResolvedProduct> topUp =
-                    topUpFromBaseline(userId, context, resolved, refused.getTotal(), refused.getMinimumOrder());
-            if (topUp.isEmpty()) {
-                throw refused;
-            }
-            addProductsToCart(userId, context, topUp);
-            return getVerifiedCart(
-                    userId,
-                    context,
-                    deliverySlot,
-                    unresolved,
-                    promoted,
-                    resolution.skipped(),
-                    topUp.stream().map(CartBuildingService::describeTopUp).toList());
+        // A cart under Silpo's minimum order comes back as such, with the goods total and the minimum on it, and no
+        // checkout link. It is not topped up here: a carbonara that came back with twelve lines of vegetables under
+        // it was the household's first sight of the top-up, and «тут забагато лишнього» was the verdict. The
+        // decision — add from the baseline, or go and add something in the Silpo app — is asked, see
+        // CartConfirmationService; only a reorder, which is restocking staples anyway, takes {@link #topUp} unasked.
+        return getVerifiedCart(userId, context, deliverySlot, unresolved, promoted, resolution.skipped());
+    }
+
+    /**
+     * Lifts a cart that came back under Silpo's minimum order over it with the household's own baseline, on request.
+     *
+     * @throws CartBuildException carrying the amount and the minimum when there is no baseline to draw on
+     */
+    public CartSummary topUp(UUID userId, CartSummary cart) {
+        CartContext context = getOrCreateCartContext(userId);
+        OfferedSlot deliverySlot = firstDeliverableSlot(userId, context);
+        java.util.Set<String> alreadyInCart = cart.items().stream()
+                .map(BasketItem::silpoProductId)
+                .filter(java.util.Objects::nonNull)
+                .collect(java.util.stream.Collectors.toSet());
+        List<ResolvedProduct> topUp =
+                topUpFromBaseline(userId, context, alreadyInCart, cart.goodsTotal(), cart.minimumOrder());
+        if (topUp.isEmpty()) {
+            throw new CartBuildException(
+                    "no baseline to top cart %s up from".formatted(cart.cartId()),
+                    cart.validations(),
+                    cart.goodsTotal(),
+                    cart.minimumOrder());
         }
+        addProductsToCart(userId, context, topUp);
+        return getVerifiedCart(
+                userId,
+                context,
+                deliverySlot,
+                cart.unresolved(),
+                cart.promotedProductIds(),
+                cart.skippedLines(),
+                topUp.stream().map(CartBuildingService::describeTopUp).toList());
+    }
+
+    /** Whether there is a confirmed baseline to top a small cart up from — decides whether to offer it. */
+    public boolean hasBaseline(UUID userId) {
+        return baselineBasketRepository.findByUserIdAndIsCurrentTrue(userId).isPresent();
     }
 
     /**
      * Lines a small cart is short of Silpo's minimum delivery order, taken from the household's own baseline.
      *
      * <p>A dish's ingredients, a blackout lunch or a Friday-night snack cart comes to a few hundred hryvnia, and
-     * Silpo's home delivery starts at ₴799 (its own {@code order.cost.min}). Rather than a dead end, the shortfall
-     * is filled with what this household buys every week anyway — their confirmed baseline, cheapest lines first,
-     * each carrying the product id and price of a real past order — and every added line is named in the cart
-     * message with the right to take it out. Nothing is added for a household with no baseline yet; that case is
-     * explained instead.
+     * Silpo's home delivery starts at ₴799 (its own {@code order.cost.min}). The shortfall is filled with what this
+     * household buys every week anyway — their confirmed baseline, cheapest lines first, each carrying the product
+     * id and price of a real past order — and every added line is named in the cart message with the right to take
+     * it out. Nothing is added for a household with no baseline yet; that case is explained instead.
      */
     private List<ResolvedProduct> topUpFromBaseline(
             UUID userId,
             CartContext context,
-            List<ResolvedProduct> alreadyInCart,
+            java.util.Set<String> alreadyInCart,
             BigDecimal total,
             BigDecimal minimum) {
         List<BasketItem> baseline =
@@ -261,8 +282,7 @@ public class CartBuildingService {
                         .filter(item -> item.silpoProductId() != null
                                 && item.price() != null
                                 && item.price().signum() > 0)
-                        .filter(item -> alreadyInCart.stream()
-                                .noneMatch(p -> p.productId().equals(item.silpoProductId())))
+                        .filter(item -> !alreadyInCart.contains(item.silpoProductId()))
                         .sorted(java.util.Comparator.comparing(item ->
                                 item.price().multiply(item.quantity() == null ? BigDecimal.ONE : item.quantity())))
                         .toList();
@@ -1323,6 +1343,33 @@ public class CartBuildingService {
                 McpResponses.findString(cart, McpResponses.CHECKOUT_WEB).orElse(null);
         String checkoutMobileLink =
                 McpResponses.findString(cart, McpResponses.CHECKOUT_MOBILE).orElse(null);
+        if ((isBlank(checkoutWebLink) || isBlank(checkoutMobileLink)) && minimumOrder != null && blocking.size() == 1) {
+            // Silpo's one objection is the amount. That is a decision for the household, not a failure: the cart
+            // is real, its lines are right, and the message says how far it is from the minimum.
+            log.info(
+                    "cart {} holds {} of goods against a {} minimum order; leaving the decision to the household",
+                    context.cartId(),
+                    goodsTotal,
+                    minimumOrder);
+            return new CartSummary(
+                    context.cartId(),
+                    deliverySlot == null ? null : deliverySlot.id(),
+                    deliverySlot == null ? null : deliverySlot.startsAt(),
+                    items,
+                    total,
+                    validations,
+                    bonusAvailable,
+                    false,
+                    null,
+                    null,
+                    unresolved,
+                    promotedProductIds == null ? List.of() : promotedProductIds,
+                    skipped == null ? List.of() : skipped,
+                    toppedUp == null ? List.of() : toppedUp,
+                    savings,
+                    goodsTotal,
+                    minimumOrder);
+        }
         if (isBlank(checkoutWebLink) || isBlank(checkoutMobileLink)) {
             log.error(
                     "verified cart {} has no usable checkout link — checkoutWebLink={}, checkoutMobileLink={}, "
@@ -1351,7 +1398,9 @@ public class CartBuildingService {
                 promotedProductIds == null ? List.of() : promotedProductIds,
                 skipped == null ? List.of() : skipped,
                 toppedUp == null ? List.of() : toppedUp,
-                savings);
+                savings,
+                goodsTotal,
+                null);
         log.info(
                 "MCP <- cart {} verified: {} items, total {}, bonuses available {}, unresolved {}",
                 summary.cartId(),

@@ -858,3 +858,13 @@ puts lines there. Reorders now go through `buildCart` like every order.
   shell, and an unquoted `*` runs a command instead of setting the variable.
 - The Anthropic prompt log now keeps 12 000 characters of the user message, so the candidate lists a wrong
   match was made from are readable.
+
+### Addendum: the top-up is a button, not a default
+
+The owner's verdict on the first live carbonara with the automatic fill was «тут забагато лишнього для
+карбонари» — 12 baseline lines under 3 dish lines. Reversed the same evening: `buildCart` returns a cart under
+the minimum as it is (`CartSummary.belowMinimumOrder()`, goods total and minimum on it, no checkout link),
+`CartConfirmationService` shows it with the shortfall and offers «Докласти з мого набору (~N грн)» only when a
+baseline exists; `CartBuildingService.topUp` runs on the tap. The one place that still fills unasked is the
+delta reorder — restocking staples with more staples is what a reorder is, and a reorder always has a baseline.
+Open follow-up, not built: offering self-pickup as the other way under the minimum.

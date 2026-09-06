@@ -11,6 +11,7 @@ import com.silporestockai.entity.ShoppingListItem;
 import com.silporestockai.entity.SilpoOAuthToken;
 import com.silporestockai.entity.User;
 import com.silporestockai.entity.UserProfile;
+import com.silporestockai.model.BasketItem;
 import com.silporestockai.model.ConversationFlow;
 import com.silporestockai.model.OrderStatus;
 import com.silporestockai.model.OrderType;
@@ -218,6 +219,92 @@ class CartConfirmationIntegrationTest extends AbstractIntegrationTest {
 
     private String lastMessageText() {
         return textOf(TELEGRAM.sentMessages().getLast());
+    }
+
+    /**
+     * A cart under Silpo's minimum order is shown exactly as built, with the shortfall and a «Докласти» button —
+     * not silently doubled with the baseline's vegetables. The tap does the top-up and brings the confirm button.
+     */
+    @Test
+    void aCartUnderTheMinimumOrderAsksBeforeToppingUpFromTheBaseline() throws Exception {
+        User user = onboardedUser();
+        baselineBasketRepository.save(BaselineBasket.builder()
+                .id(UUID.randomUUID())
+                .userId(user.getId())
+                .items(List.of(
+                        new BasketItem("b-chicken", "Філе курчати", "кг", BigDecimal.ONE, new BigDecimal("700")),
+                        new BasketItem("b-milk", "Молоко", "шт", new BigDecimal("2"), new BigDecimal("46")),
+                        new BasketItem("b-bread", "Хліб", "шт", BigDecimal.ONE, new BigDecimal("28"))))
+                .confirmedAt(Instant.now())
+                .isCurrent(true)
+                .build());
+        String context = """
+                {"cartId":"cart-1","branchId":"branch-7","companyId":"company-3","deliveryType":"delivery","items":[]}""";
+        String refused = """
+                {"cartId":"cart-1","branchId":"branch-7","companyId":"company-3","deliveryType":"delivery",\
+                "items":[{"productId":"p-1","name":"Цибуля","unit":"кг","quantity":0.5,"price":25.5},\
+                {"productId":"p-2","name":"Гречка","unit":"кг","quantity":1,"price":48}],\
+                "total":73.5,"productsTotal":73.5,"validations":[\
+                {"level":"error","type":"order","message":"order.cost.min","context":{"orderCostMin":799}}],\
+                "checkoutWebLink":null,"checkoutMobileLink":null}""";
+        String toppedUp = """
+                {"cartId":"cart-1","branchId":"branch-7","companyId":"company-3","deliveryType":"delivery",\
+                "items":[{"productId":"p-1","name":"Цибуля","unit":"кг","quantity":0.5,"price":25.5},\
+                {"productId":"p-2","name":"Гречка","unit":"кг","quantity":1,"price":48},\
+                {"productId":"b-bread","name":"Хліб","unit":"шт","quantity":1,"price":28},\
+                {"productId":"b-milk","name":"Молоко","unit":"шт","quantity":2,"price":46},\
+                {"productId":"b-chicken","name":"Філе курчати","unit":"кг","quantity":1,"price":700}],\
+                "total":893.5,"productsTotal":893.5,"validations":[],\
+                "checkoutWebLink":"https://silpo.ua/checkout/cart-1","checkoutMobileLink":"silpo://checkout/cart-1"}""";
+        // Build: context read, refused read-back. Presenting reads the context once more for the slots. The
+        // top-up: its own context read, then the read-back over the minimum.
+        MCP.respondToToolInOrder("silpo_get_shopping_cart_by_id", context, refused, context, context, toppedUp);
+
+        cartConfirmationService.present(user, shoppingList());
+
+        JsonNode asked = TELEGRAM.sentMessages().getLast();
+        assertThat(textOf(asked))
+                .contains("Цибуля")
+                .contains("Гречка")
+                .contains("бракує")
+                .contains("799");
+        assertThat(asked.path("reply_markup").toString()).contains("Докласти").doesNotContain("Підтвердити");
+        assertThat(MCP.callArguments("silpo_add_or_update_cart_products")).hasSize(1);
+        assertThat(conversationStateService.load(CHAT_ID).getCurrentFlow())
+                .isEqualTo(ConversationFlow.CART_CONFIRMATION);
+
+        tapButton(1, CartMessageService.CALLBACK_TOP_UP);
+
+        assertThat(MCP.callArguments("silpo_add_or_update_cart_products")).hasSize(2);
+        JsonNode offered = TELEGRAM.sentMessages().getLast();
+        assertThat(textOf(offered))
+                .contains("додав із твого звичайного набору")
+                .contains("+ Хліб — 1 шт, 28.00 грн")
+                .contains("893.50")
+                .doesNotContain("бракує");
+        assertThat(offered.path("reply_markup").toString()).contains("Підтвердити");
+        List<CustomerOrder> orders = customerOrderRepository.findByUserIdOrderByCreatedAtDesc(user.getId());
+        assertThat(orders).hasSize(1);
+        assertThat(orders.getFirst().getItems()).hasSize(5);
+    }
+
+    /** Without a baseline there is nothing to top up from, so the button is not offered and the message says so. */
+    @Test
+    void aCartUnderTheMinimumOrderWithNoBaselineOffersOnlyCancel() {
+        User user = onboardedUser();
+        String refused = """
+                {"cartId":"cart-1","branchId":"branch-7","companyId":"company-3","deliveryType":"delivery",\
+                "items":[{"productId":"p-1","name":"Цибуля","unit":"кг","quantity":0.5,"price":25.5}],\
+                "total":25.5,"productsTotal":25.5,"validations":[\
+                {"level":"error","type":"order","message":"order.cost.min","context":{"orderCostMin":799}}],\
+                "checkoutWebLink":null,"checkoutMobileLink":null}""";
+        MCP.respondToToolInOrder("silpo_get_shopping_cart_by_id", refused, refused);
+
+        cartConfirmationService.present(user, shoppingList());
+
+        JsonNode asked = TELEGRAM.sentMessages().getLast();
+        assertThat(textOf(asked)).contains("бракує").contains("застосунку «Сільпо»");
+        assertThat(asked.path("reply_markup").toString()).contains("Скасувати").doesNotContain("Докласти");
     }
 
     @Test

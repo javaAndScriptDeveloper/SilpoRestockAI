@@ -17,6 +17,10 @@ import java.util.List;
  *     Null for carts built before this field existed.
  * @param savings what Silpo's own promotions took off this cart ({@code calculation.subDiscount}); null when
  *     unknown, zero when nothing was on offer
+ * @param goodsTotal what the goods alone come to ({@code calculation.productsTotal}), which is what Silpo measures
+ *     its minimum order against; null for carts stored before this field existed
+ * @param minimumOrder Silpo's minimum delivery order when the cart came back under it and so has no checkout link
+ *     yet — the household decides what to do about that; null when the cart can check out
  */
 public record CartSummary(
         String cartId,
@@ -33,7 +37,46 @@ public record CartSummary(
         List<String> promotedProductIds,
         List<String> skipped,
         List<String> toppedUp,
-        BigDecimal savings) {
+        BigDecimal savings,
+        BigDecimal goodsTotal,
+        BigDecimal minimumOrder) {
+
+    /** The pre-minimum-order shape: a cart that could check out. */
+    public CartSummary(
+            String cartId,
+            String deliverySlot,
+            Instant deliverySlotStartsAt,
+            List<BasketItem> items,
+            BigDecimal total,
+            List<String> validations,
+            BigDecimal bonusAvailable,
+            boolean bonusDecisionPending,
+            String checkoutWebLink,
+            String checkoutMobileLink,
+            List<String> unresolved,
+            List<String> promotedProductIds,
+            List<String> skipped,
+            List<String> toppedUp,
+            BigDecimal savings) {
+        this(
+                cartId,
+                deliverySlot,
+                deliverySlotStartsAt,
+                items,
+                total,
+                validations,
+                bonusAvailable,
+                bonusDecisionPending,
+                checkoutWebLink,
+                checkoutMobileLink,
+                unresolved,
+                promotedProductIds,
+                skipped,
+                toppedUp,
+                savings,
+                null,
+                null);
+    }
 
     /** The pre-savings shape: nothing known about discounts. */
     public CartSummary(
@@ -177,5 +220,15 @@ public record CartSummary(
     /** Whether any promotion actually took money off this cart. */
     public boolean hasSavings() {
         return savings != null && savings.signum() > 0;
+    }
+
+    /** Silpo refused this cart for its amount, so there is no checkout link until somebody adds to it. */
+    public boolean belowMinimumOrder() {
+        return minimumOrder != null && goodsTotal != null && goodsTotal.compareTo(minimumOrder) < 0;
+    }
+
+    /** How far the goods are from the minimum order; zero when the cart can check out. */
+    public BigDecimal shortfall() {
+        return belowMinimumOrder() ? minimumOrder.subtract(goodsTotal) : BigDecimal.ZERO;
     }
 }

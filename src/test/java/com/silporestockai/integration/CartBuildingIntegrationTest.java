@@ -588,12 +588,14 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
 
     /**
      * Silpo's home delivery starts at ₴799 (its own {@code order.cost.min}), and a dish's ingredients come to a
-     * few hundred. The shortfall is filled from the household's confirmed baseline — real product ids and prices
-     * from a real past order, cheapest lines first — and every added line is named. The «info»-level note Silpo
-     * sends alongside (a payment type unavailable for the total) is not a reason and is not shown.
+     * few hundred. The build comes back as it is — the goods total and the minimum on it, no checkout link, no
+     * lines added unasked. Only {@code topUp} fills the shortfall from the household's confirmed baseline — real
+     * product ids and prices from a real past order, cheapest lines first — and every added line is named. The
+     * «info»-level note Silpo sends alongside (a payment type unavailable for the total) is not a reason and is not
+     * shown.
      */
     @Test
-    void topsASmallCartUpFromTheBaselineToClearSilposMinimumOrder() {
+    void aSmallCartComesBackBelowTheMinimumAndIsToppedUpOnlyOnRequest() {
         UUID userId = connectedUser(8432L);
         baselineBasketRepository.deleteAll();
         baselineBasketRepository.save(com.silporestockai.entity.BaselineBasket.builder()
@@ -616,17 +618,18 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
                 {"queries":[{"query":"спагеті","products":[{"name":"Спагеті La Pasta","productId":"p-1",\
                 "companyId":"company-3","branchId":"branch-7","step":1,"displayRatio":"400г","price":43}]}]}""");
         MCP.respondToTool("silpo_add_or_update_cart_products", "{\"ok\":true}");
-        // The cart-context read first; then the read-back refused for the amount, with an info note alongside;
-        // then the read-back after the top-up, over the minimum.
-        MCP.respondToToolInOrder("silpo_get_shopping_cart_by_id", """
-                {"cartId":"cart-1","branchId":"branch-7","companyId":"company-3","deliveryType":"delivery",\
-                "items":[],"checkoutWebLink":"https://silpo.ua/checkout/cart-1","checkoutMobileLink":"silpo://checkout/cart-1"}""", """
+        String refused = """
                 {"cartId":"cart-1","branchId":"branch-7","companyId":"company-3","deliveryType":"delivery",\
                 "items":[{"productId":"p-1","name":"Спагеті La Pasta","unit":"шт","quantity":1,"price":43}],\
                 "total":43,"validations":[\
                 {"level":"error","type":"order","message":"order.cost.min","context":{"orderCostMin":799}},\
                 {"level":"info","type":"order","message":"order.payment_types.disabled","context":{"paymentTypes":["BNPL"]}}],\
-                "checkoutWebLink":null,"checkoutMobileLink":null}""", """
+                "checkoutWebLink":null,"checkoutMobileLink":null}""";
+        // The cart-context read first; then the read-back refused for the amount, with an info note alongside;
+        // then the top-up's own context read; then the read-back after the top-up, over the minimum.
+        MCP.respondToToolInOrder("silpo_get_shopping_cart_by_id", """
+                {"cartId":"cart-1","branchId":"branch-7","companyId":"company-3","deliveryType":"delivery",\
+                "items":[],"checkoutWebLink":"https://silpo.ua/checkout/cart-1","checkoutMobileLink":"silpo://checkout/cart-1"}""", refused, refused, """
                 {"cartId":"cart-1","branchId":"branch-7","companyId":"company-3","deliveryType":"delivery",\
                 "items":[{"productId":"p-1","name":"Спагеті La Pasta","unit":"шт","quantity":1,"price":43},\
                 {"productId":"b-bread","name":"Хліб пшеничний","unit":"шт","quantity":1,"price":28},\
@@ -635,7 +638,19 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
                 "total":433,"validations":[],\
                 "checkoutWebLink":"https://silpo.ua/checkout/cart-1","checkoutMobileLink":"silpo://checkout/cart-1"}""");
 
-        CartSummary summary = cartBuildingService.buildCart(userId, List.of(item("спагеті", "400", "г")));
+        CartSummary below = cartBuildingService.buildCart(userId, List.of(item("спагеті", "400", "г")));
+
+        assertThat(below.belowMinimumOrder()).isTrue();
+        assertThat(below.goodsTotal()).isEqualByComparingTo("43");
+        assertThat(below.minimumOrder()).isEqualByComparingTo("799");
+        assertThat(below.shortfall()).isEqualByComparingTo("756");
+        assertThat(below.checkoutWebLink()).isNull();
+        assertThat(below.items()).hasSize(1);
+        assertThat(below.toppedUpLines()).isEmpty();
+        assertThat(below.validations()).hasSize(1).first().asString().contains("799");
+        assertThat(MCP.callArguments("silpo_add_or_update_cart_products")).hasSize(1);
+
+        CartSummary summary = cartBuildingService.topUp(userId, below);
 
         // The spaghetti is already in the cart, so it is not a top-up candidate; the rest go cheapest line first
         // until the running total clears the minimum: bread (28), milk (92), chicken (270).
@@ -644,13 +659,15 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
         assertThat(adds.get(1).path("products"))
                 .extracting(node -> node.path("productId").asText())
                 .containsExactly("b-bread", "b-milk", "b-chicken");
+        assertThat(summary.belowMinimumOrder()).isFalse();
         assertThat(summary.toppedUpLines()).hasSize(3).first().asString().isEqualTo("Хліб пшеничний — 1 шт, 28.00 грн");
         assertThat(summary.validations()).isEmpty();
+        assertThat(summary.checkoutWebLink()).isNotNull();
     }
 
-    /** With no baseline to draw on, the refusal says the amount and the minimum, and carries both for the message. */
+    /** With no baseline to draw on, the build still comes back; the top-up is what refuses, naming the amounts. */
     @Test
-    void aSmallCartWithNoBaselineFailsNamingTheMinimum() {
+    void aSmallCartWithNoBaselineCannotBeToppedUpAndSaysWhy() {
         UUID userId = connectedUser(8433L);
         baselineBasketRepository.deleteAll();
         scriptCartTools();
@@ -666,8 +683,10 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
                 {"level":"info","type":"order","message":"order.payment_types.disabled","context":{}}],\
                 "checkoutWebLink":null,"checkoutMobileLink":null}""");
 
-        org.assertj.core.api.Assertions.assertThatThrownBy(
-                        () -> cartBuildingService.buildCart(userId, List.of(item("спагеті", "400", "г"))))
+        CartSummary below = cartBuildingService.buildCart(userId, List.of(item("спагеті", "400", "г")));
+        assertThat(below.belowMinimumOrder()).isTrue();
+
+        assertThatThrownBy(() -> cartBuildingService.topUp(userId, below))
                 .isInstanceOfSatisfying(com.silporestockai.exception.CartBuildException.class, e -> {
                     assertThat(e.belowMinimumOrder()).isTrue();
                     assertThat(e.getMinimumOrder()).isEqualByComparingTo("799");

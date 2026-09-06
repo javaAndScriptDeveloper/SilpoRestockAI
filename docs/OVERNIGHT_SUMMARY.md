@@ -454,9 +454,11 @@ first) → gastritis → calendar (named day) → back to normal → mass-gain d
 
 ## Requires your decision
 
-- **How much top-up is too much?** A ₴172 delta reorder became a ₴840 cart with 14 baseline staples; a
-  carbonara became 15 lines. The mechanism is honest and each line is removable, but a cap («доповнюю не
-  більше ніж на N грн, інакше питаю») or an ask-first variant is a product call.
+- ~~**How much top-up is too much?**~~ **Decided by the owner the same evening** («тут забагато лишнього для
+  карбонари», on a 15-line cart): a cart under the minimum is now shown as built, with the shortfall and a
+  «Докласти з мого набору (~N грн)» button; nothing is added unasked. Only a delta reorder still tops itself
+  up, since restocking staples with more staples is what a reorder is. See the addendum at the end of this
+  section.
 - **Eggs are not in this branch's delivery catalog** (the search for «Яйця» returns chocolate eggs, then
   dairy). Every list will report them unfound. Worth checking on your own account/branch.
 - **Task 32's kit** is now water/isotonic/sorbent. Atoxil is in the catalog at ₴114; whether a grocery bot
@@ -471,3 +473,11 @@ first) → gastritis → calendar (named day) → back to normal → mass-gain d
 - `.env` carries three session-only knobs (`AD_HOC_SCHEDULE_SWEEP_CRON`, `CHECKIN_INTERVAL`,
   `CHECKIN_SWEEP_CRON`) — **reverted at the end of this session**; the tunnel supervisor was stopped for the
   live run and restarted afterwards.
+
+## Addendum, same evening: three things the owner saw on the phone
+
+| What they saw | Cause | Fix (commit) |
+|---|---|---|
+| «План на тиждень готовий, 7 днів. Понеділок: … » — «почему нету раціона на другие дни?» | The announcement showed Monday alone by design («the only part anyone reads immediately») | All seven days, one line each, then the purchase-list count (`e2de986`) |
+| Carbonara: «Кошик зібрати не вдалось — «Сільпо» або каталог не відповіли вчасно» | Not a timeout. The top-up's add-to-cart came one second after the first and Silpo answered «Rate limit exceeded» as an ordinary tool error, which neither retry path saw | Every cart tool call waits 2 s, then 4 s, and asks again on a rate-limit reply; any other tool error stays fatal (`80ada32`) |
+| Carbonara again, now with 12 baseline lines of vegetables under it — «тут забагато лишнього» | The automatic top-up, working as designed | **Ask, don't add.** Below the minimum the cart is shown as built, with «бракує N грн» and a «Докласти з мого набору (~N грн)» button; the tap adds the baseline lines and brings «Підтвердити». No baseline → cancel only and a pointer to the Silpo app. Reorders keep the automatic fill |

@@ -152,12 +152,79 @@ public class CartConfirmationService {
         context.put(KEY_SLOT, summary.deliverySlot());
         conversationStateService.save(chatId, ConversationFlow.CART_CONFIRMATION, STEP_AWAITING_DECISION, context);
 
+        if (summary.belowMinimumOrder()) {
+            // Silpo's minimum order, and the household's call what to do about it. The cart is shown exactly as
+            // built; topping it up from the baseline is a button, not a default — twelve lines of vegetables under
+            // a carbonara was the first thing a person said «забагато лишнього» about.
+            boolean hasBaseline = cartBuildingService.hasBaseline(user.getId());
+            telegramOutboundService.sendMessageWithButtons(
+                    chatId,
+                    cartMessageService.belowMinimumText(summary, selectedSlot, type, hasBaseline),
+                    cartMessageService.belowMinimumButtons(summary, hasBaseline));
+            log.info(
+                    "presented cart {} as draft order {} to user {}, {} short of the minimum order",
+                    summary.cartId(),
+                    order.getId(),
+                    user.getId(),
+                    summary.shortfall());
+            return true;
+        }
         telegramOutboundService.sendMessageWithButtons(
                 chatId,
                 cartMessageService.cartText(summary, selectedSlot, type),
                 cartMessageService.cartButtons(summary, !slots.isEmpty()));
         log.info("presented cart {} as draft order {} to user {}", summary.cartId(), order.getId(), user.getId());
         return true;
+    }
+
+    /**
+     * The «Докласти з мого набору» tap: the baseline lines go in, the cart is read back, and the household sees it
+     * again — with the confirm button this time, if the minimum is cleared.
+     */
+    private void topUp(User user, ConversationState state, CustomerOrder order, CartSummary summary) {
+        long chatId = user.getTelegramChatId();
+        if (!summary.belowMinimumOrder()) {
+            log.debug("ignoring a top-up tap for cart {}: it is not below the minimum", summary.cartId());
+            return;
+        }
+        CartSummary topped;
+        try {
+            topped = cartBuildingService.topUp(user.getId(), summary);
+        } catch (RuntimeException e) {
+            log.error("could not top cart {} up for user {}", summary.cartId(), user.getId(), e);
+            telegramOutboundService.sendMessage(chatId, CART_BUILD_FAILED_TEXT);
+            return;
+        }
+        order.setItems(topped.items());
+        order.setUnresolvedCount(
+                topped.unresolved() == null ? 0 : topped.unresolved().size());
+        customerOrderRepository.save(order);
+        Map<String, Object> context = new LinkedHashMap<>(state.getContext());
+        context.put(KEY_SUMMARY, asMap(topped));
+        conversationStateService.save(chatId, ConversationFlow.CART_CONFIRMATION, STEP_AWAITING_DECISION, context);
+
+        List<OfferedSlot> slots = slotsOf(state);
+        OfferedSlot selectedSlot = slots.stream()
+                .filter(slot -> slot.id().equals(topped.deliverySlot()))
+                .findFirst()
+                .orElse(null);
+        if (topped.belowMinimumOrder()) {
+            // The whole baseline was not enough. Nothing more to offer from here; the Silpo app is.
+            telegramOutboundService.sendMessageWithButtons(
+                    chatId,
+                    cartMessageService.belowMinimumText(topped, selectedSlot, order.getType(), false),
+                    cartMessageService.belowMinimumButtons(topped, false));
+            return;
+        }
+        telegramOutboundService.sendMessageWithButtons(
+                chatId,
+                cartMessageService.cartText(topped, selectedSlot, order.getType()),
+                cartMessageService.cartButtons(topped, !slots.isEmpty()));
+        log.info(
+                "topped cart {} up with {} baseline lines for user {}",
+                topped.cartId(),
+                topped.toppedUpLines().size(),
+                user.getId());
     }
 
     /** No slots is not a reason to hide a finished order: checkout can still pick one. */
@@ -199,6 +266,8 @@ public class CartConfirmationService {
                     tap.chatId(), cartMessageService.slotMenuText(), cartMessageService.slotButtons(slotsOf(state)));
         } else if (data.startsWith(CartMessageService.CALLBACK_SLOT_PREFIX)) {
             pickSlot(user, state, order, summary, data.substring(CartMessageService.CALLBACK_SLOT_PREFIX.length()));
+        } else if (CartMessageService.CALLBACK_TOP_UP.equals(data)) {
+            topUp(user, state, order, summary);
         } else if (CartMessageService.CALLBACK_CANCEL.equals(data)) {
             cancel(user, order);
         } else {
@@ -242,6 +311,15 @@ public class CartConfirmationService {
     private void confirm(
             User user, CustomerOrder order, ConversationState state, CartSummary summary, boolean spendBonuses) {
         long chatId = user.getTelegramChatId();
+        if (summary.belowMinimumOrder()) {
+            // A confirm tap on a keyboard that never had one: there is no checkout link to hand over yet.
+            boolean hasBaseline = cartBuildingService.hasBaseline(user.getId());
+            telegramOutboundService.sendMessageWithButtons(
+                    chatId,
+                    cartMessageService.belowMinimumText(summary, null, order.getType(), hasBaseline),
+                    cartMessageService.belowMinimumButtons(summary, hasBaseline));
+            return;
+        }
         String selectedSlotId = String.valueOf(state.getContext().get(KEY_SLOT));
         if (!selectedSlotId.equals(summary.deliverySlot())) {
             bookSlot(user.getId(), summary.cartId(), selectedSlotId);

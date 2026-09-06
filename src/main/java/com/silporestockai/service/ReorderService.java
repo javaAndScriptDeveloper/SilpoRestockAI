@@ -85,6 +85,11 @@ public class ReorderService {
         List<ShoppingListItem> items = withBaselineQuantities(userId, needs);
         CartContext context = cartBuildingService.getOrCreateCartContext(userId);
         CartSummary cart = cartBuildingService.buildCart(userId, items);
+        if (cart.belowMinimumOrder()) {
+            // A reorder is the household restocking its staples; more of its staples is the natural way over
+            // Silpo's minimum, and there is always a baseline here — a reorder is measured against one.
+            cart = cartBuildingService.topUp(userId, cart);
+        }
 
         List<String> reordered = new ArrayList<>();
         List<String> missing = new ArrayList<>();
