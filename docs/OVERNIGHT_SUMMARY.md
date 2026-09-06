@@ -277,3 +277,72 @@ incl. Done/In review/Dropped, demo script, Selling Points, setup notes). Queue a
 Every commit: `spotlessApply` + the touched test classes green before landing. After every task: full
 `./gradlew test` green (exit 0) — 38, 39+47, 37, 35, 36 each had their own run. Final gate on the committed
 tree after task 46: **66 classes, 420 tests, 0 failures, 0 errors, 0 skipped** (`./gradlew test`, exit 0; session 3 ended at 58 classes / 386 tests).
+
+# Session 5 — the «every message comes back as the same weekly list» bug, 2026-09-06 (evening)
+
+Not a backlog session. One report, investigated from the foundation up rather than at the symptom, as
+asked: neither «замов сир з вином на п'ятницю» nor «замов усе для карбонари» produced a narrow result,
+*and* an ordinary weekly list could not be pushed through to a real cart. The suspected cause was a
+silent catch-all fallback returning a cached list instead of an honest error.
+
+**There is no such fallback.** It was four defects. Full reasoning in `docs/OVERNIGHT_QUESTIONS.md`.
+
+## What was actually wrong
+
+1. **`LIST_BUILDING/AWAITING_APPROVAL` swallowed every free-text message, forever.** Showing a list
+   parks `conversation_state` there and nothing clears it; the routing layer gated the whole flow on it
+   and rewrote any sentence as a list edit. From a household's first weekly plan onwards
+   `IntentRouterService` was never called at all. Confirmed against the live database before any code
+   was touched — the account was sitting in exactly that state, with «Вино» and «Сир твердий» folded
+   into its list from a swallowed message. The suite stayed green because every intent test deletes
+   `conversation_state` first.
+2. **A failed callback acknowledgment destroyed the tap's work** — `[400] query is too old` threw, and
+   every flow acknowledges the tap first, so the handler died before building anything.
+3. **Fabricated `productId`s made a list permanently unorderable** — model-invented ids `1..32` counted
+   as "pre-resolved", the product search was skipped entirely, and Silpo refused the whole cart with
+   `Invalid UUID` on every retry.
+4. **Two Silpo refusal codes reached the household as raw machine text.**
+
+## Verified on the live account, not only in tests
+
+Driven through the real webhook against the real Silpo MCP with the account's own OAuth token: both
+reported phrases now route correctly from the exact parked state, and the dish order runs end to end —
+4 of 4 lines resolved live → cart → «Підтвердити» → `order … confirmed` with the checkout link. The
+32-line weekly list now also builds a real cart (31 of 32 resolved, 30 products added).
+
+## Deviations and judgement calls
+
+- **Went wider than the two repro phrases, deliberately.** The instruction was to fix a silent
+  swallowing at the root rather than patch two cases. That meant hoisting the list keyboard to global
+  dispatch and stopping a list awaiting approval from counting as "busy" for check-ins — the same root
+  cause, silently ending check-ins for anyone shown a list they did not order.
+- **Rewrote two existing tests rather than preserving them.** `typingInsteadOfTappingIsTreatedAsAnEdit`
+  encoded the bug itself; it now asserts the sentence is classified and a genuine edit still edits.
+  Test fixtures using `"p-1"`-style product ids were changed to UUIDs — no live Silpo response has ever
+  contained a non-UUID product id, and the live `Invalid UUID` refusal is the evidence.
+- **Did not invent a policy for a too-heavy weekly cart.** Silpo's 40 kg cap, age confirmation for
+  alcohol and per-branch stock limits genuinely block a full week's order. The household is now told
+  why in plain Ukrainian, but *what the agent should do next* is a product decision (split the order,
+  cap the plan's weight at generation, trim to stock, or ask which lines to drop) and is the one thing
+  left between «Список» and a completed weekly order.
+- **Did not chase a quantity-conversion bug found in the same live run** — «Куряче філе 850 г» became
+  `quantity=15.4` of a 100 г-ratio product (₴4996 for one line). Distinct bug in task 09's
+  `displayRatio`/`step` handling, very likely the main reason the weight cap fires at all, and it needs
+  its own reproduction against live catalog data. Recommended as the next task.
+- **Two suite runs showed an unrelated flake** (`VoiceReplyIntegrationTest`,
+  `TelegramWebhookRegistrationIntegrationTest` failing on a missing `telegramUpdateDedupCache` bean);
+  both pass in isolation and the final `make build` is fully green. Same flake noted in session 2.
+
+## Notion edits
+
+- **09** Done → **In review**, with the fabricated-`productId` root cause, the live verification and the
+  open quantity-conversion question.
+- **24** Done → **In review** — the flow was unreachable from chat despite being Done; the scheduling
+  half is now verified live, the ad-hoc cart build is not.
+- **26** Done → **In review** — no silent fallback exists, but two error-handling defects did.
+- **28**, **31**, **36** stay **In review**, each with what the live run proved and what it did not.
+
+## Checked in
+
+One commit, unpushed: `Stop a finished list from swallowing every message a household types`.
+RUNBOOK gained three session-5 checklists.

@@ -978,6 +978,47 @@ make test          # unit + integration, needs Docker
 ./gradlew build    # the above plus formatting and the coverage gate
 ```
 
+### Session 5 fixes: verify a list stops swallowing what you type
+
+The bug: once any list was on screen, `conversation_state` sat in `LIST_BUILDING/AWAITING_APPROVAL`
+forever and every sentence you typed came back as a regenerated weekly list. Check it is gone.
+
+1. Get a list on screen — «Список», or finish onboarding and wait for the weekly plan.
+2. **Without tapping anything**, type «замов усе для карбонари». You should get «Зберу все для
+   «карбонара»» and a small ingredients cart — *not* a weekly list.
+3. Get a list on screen again, then type «замов сир з вином на п'ятницю». You should get the
+   «зберу найближчим часом» confirmation for a one-off purchase — *not* a weekly list.
+4. Get a list on screen again, then type «прибери молоко зі списку, додай яйця». This one *should*
+   still edit the list — the classifier's `LIST_MODIFY` intent hands it back to the list builder.
+5. Tap «Список», answer the «Що беремо на цей тиждень?» question with a sentence. That answer must
+   still build a list and must *not* be classified — the question owns its own answer.
+6. Leave a list on screen unordered and wait out a check-in interval. The check-in prompt should now
+   arrive; before this fix a list awaiting approval counted as "busy" forever and check-ins stopped.
+
+### Session 5 fixes: verify a stale tap still does its work
+
+Callback queries expire in about a minute, and the app restarts on every tunnel reconnect.
+
+1. Get a list on screen with its «Замовити / Змінити» keyboard.
+2. Leave it for two or three minutes (or restart the app), then tap «Замовити».
+3. The cart must be built. Before this fix Telegram answered the acknowledgment with `[400] query is
+   too old`, that threw, and the handler died before doing anything — you got «Щось пішло не так»
+   from a button that had worked.
+
+### Session 5: what a full weekly cart still does, and why
+
+Not a bug to verify — a known limit to recognise. A full weekly list builds a real Silpo cart and then
+Silpo refuses the checkout link. You should see plain-Ukrainian reasons, e.g.:
+
+- «замовлення важче, ніж «Сільпо» приймає за раз — прибери частину зі списку» (`order.weight.max`);
+- «у кошику є алкоголь — «Сільпо» просить підтвердити вік на своїй сторінці оплати…» if wine is on
+  the list;
+- «<товар>: на складі лишилось N, а в кошику замовлено більше» for lines the branch is short on.
+
+If you see raw codes like `order.weight.max` instead of those sentences, that is a regression.
+There is no policy yet for what the agent should *do* about a too-heavy week — see
+`docs/OVERNIGHT_QUESTIONS.md`, it needs your decision.
+
 The manual runbook exists for what stubs cannot answer: whether Silpo's real catalogue matches the
 words we search for, whether a real transcription is accurate, and whether a real fridge photo produces
 a sensible reading.
