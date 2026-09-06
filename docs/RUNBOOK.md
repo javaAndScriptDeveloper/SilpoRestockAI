@@ -474,6 +474,20 @@ Needs a connected Silpo account with at least one past order.
 | Tap «Замовити» | The cart builds **without** a `silpo_find_products_batch` call (check the log: only cart/slot/add calls) |
 | If the buttons show «Замовлення» with no date/count, or a tap says «без переліку позицій» | Silpo's listing tool returned a shape the key guesses in `McpResponses` (`ORDERS`, `ORDER_ID`, `ORDER_DATE`, `ITEMS`) do not cover, or summaries without lines — paste the logged JSON into `docs/OVERNIGHT_QUESTIONS.md` and the fix is one key array |
 
+### Task 36: order the ingredients for a dish
+
+| Say / do | Expect |
+|---|---|
+| «замов усе для карбонари» | «Зберу все для «карбонара» — секунду.» → «Інгредієнти для «карбонара» на N порцій — збираю кошик.» → the usual cart with Підтвердити, and «Не знайшов: …» for anything the catalog lacks |
+| Tap «🗓 Заплановані» | «Нещодавно виконав: ✅ інгредієнти для «карбонара»» |
+| Confirm the cart | «Еталонний набір лишаю як був.» — AD_HOC, baseline untouched |
+| Send a photo of a plated dish **with the caption** «замов все для цього» | «Схоже на «X». Замовляти інгредієнти для неї?» with Так/Ні — the vision guess is the thing to check here |
+| Same photo, no caption | The list builder as before (it reads it as a fridge/receipt) — expected |
+| «хочу щось приготувати, замов інгредієнти» | «Яку страву готуємо?» → type a name → same as row 1 |
+
+Watch `logs/app.log` for `Страва: …` / `Порцій: …` in the ingredients prompt and confirm quantities are
+shop-sized (a pack of pasta, a dozen eggs), not recipe grams.
+
 ### Task 37: pull the pitch numbers after a rehearsal
 
 Set `METRICS_TOKEN` in `.env` (`openssl rand -hex 16`), restart, walk the demo once (onboarding → first

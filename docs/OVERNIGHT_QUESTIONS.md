@@ -442,3 +442,25 @@ since been reset, or never confirmed an order. Inventing a number would defeat t
    exact products do not transfer.
 4. **Prices ride along.** An order line's price ÷ quantity becomes the list line's unit price, so task
    39's «Орієнтовно» line is right from the first screen on this path.
+
+### Task 36: same row, zero delay; photos need a caption to mean "a dish"
+
+**Deviation, deliberate:** the spec says "create a `scheduled_ad_hoc_task` row with `trigger_at = now()` and
+let the existing sweep pick it up — don't special-case run now". The sweep runs on a cron every 15 minutes.
+A person who just typed «замов усе для карбонари» would wait up to a quarter of an hour for a cart they
+asked for now, and on a demo that is a dead screen. Built it as the spec's architectural point wants —
+one row per request, one `AdHocScheduleService.fire(task)` for every kind, «Заплановані» shows it — and
+then call that same `fire` immediately after writing the row. Not a bypass: the sweep would fire the
+identical row the identical way if the immediate call had not. The demo-config trick (shorten the cron)
+still works, it just is no longer necessary.
+
+**Photo routing:** a bare photo has meant "fridge / shelf / receipt → list builder" since task 20 and task
+43, and nothing on the image itself says whether it is a fridge or a plate. Rather than guess with a second
+vision call on every photo, the caption decides: Telegram photos now carry it, and a caption the router
+classifies as `DISH_INGREDIENTS_ORDER` («замов все для цього») goes to dish identification; any other
+caption, or none, keeps the old behaviour. Discoverable through «Інструкція». A wrong identification is a
+«Ні, інша страва» tap and a typed name.
+
+**Resolution path:** task 09's name search, on purpose — «спагеті», «яйця» are what it is good at; task
+22's search-first override exists for branded ready meals, where the model naming a product *is* the bug.
+The test's cart deliberately resolves one of three lines so the honest «Не знайшов: …» line is asserted.
