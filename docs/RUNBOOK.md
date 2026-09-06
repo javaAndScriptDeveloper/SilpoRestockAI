@@ -506,6 +506,38 @@ dashes, not zeros dressed up as results.
 SELECT tool_name, count(*) FROM mcp_tool_call GROUP BY tool_name ORDER BY 2 DESC;
 ```
 
+### Task 46: paid partner placement, end to end
+
+Needs `METRICS_TOKEN` in `.env` and a connected user (yours). Find your user id:
+`SELECT id FROM users WHERE telegram_chat_id = <your chat>;`
+
+1. Create a placement for a category your list will contain — the product is verified against the
+   catalog through your session, and the response shows the real id and name that will be featured:
+
+```bash
+curl -s -X POST -H "X-Metrics-Token: $METRICS_TOKEN" -H "Content-Type: application/json" \
+  localhost:8080/internal/promotions -d '{
+    "partnerName": "Яготинське", "categoryOrQuery": "молоко",
+    "productQuery": "Молоко Яготинське 2.5% 900г", "verifyAsUserId": "<your user id>" }'
+```
+
+2. Run a normal flow that needs milk — «зроби список», «замов усе для омлету», or the weekly plan — and tap
+   «Замовити».
+
+| Expect | Where |
+|---|---|
+| The cart line is the partner's product, marked «★», and the footer says «★ — партнерська пропозиція…» | the cart message |
+| `partner placement … answered «молоко» with product …` | `logs/app.log` |
+| `IMPRESSION` then `ADDED_TO_CART` rows | `SELECT event_type, occurred_at FROM partner_promotion_event ORDER BY occurred_at;` |
+| After Підтвердити: a `CONFIRMED_ORDER` row | same query |
+| `make promotions` → one table row with 1 / 1 / 1 and two «100 %» conversions | terminal |
+
+3. Set «Лактоза» in the Анкета and rebuild the list: the ordinary milk comes back, no ★, no new events,
+   and the log says `skipped … conflicts with the household's «lactose»`. The guard is keyword-based
+   (product name / category vs. restriction stems) — not an allergen database; say so if asked.
+
+4. Pause it: `UPDATE partner_promotion SET status='PAUSED';` — the next cart resolves normally.
+
 ### Task 47: verify the Фідбек button
 
 | Do | Expect |

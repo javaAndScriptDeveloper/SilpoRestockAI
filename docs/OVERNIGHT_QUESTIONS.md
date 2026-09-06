@@ -464,3 +464,26 @@ caption, or none, keeps the old behaviour. Discoverable through «Інструк
 **Resolution path:** task 09's name search, on purpose — «спагеті», «яйця» are what it is good at; task
 22's search-first override exists for branded ready meals, where the model naming a product *is* the bug.
 The test's cart deliberately resolves one of three lines so the honest «Не знайшов: …» line is asserted.
+
+### Task 46: live verification without a new call, restrictions as keywords, and the ★
+
+**Decisions:**
+1. **Verification rides on the existing search.** "Verify the promoted product is genuinely still
+   resolvable — don't trust a stale record" could mean a second `silpo_find_products_batch` per cart.
+   Instead the partner's exact catalog name is one more term in the batch the cart build runs anyway; the
+   placement is used only if that query returns the exact stored product id for this branch and slot. Zero
+   extra calls, and "not returned live" falls back to the ordinary first match with a log line.
+2. **Restrictions are keyword lists, said plainly.** `user_profile` stores chip codes («lactose», «gluten»,
+   «nuts», «seafood»), free text, dislikes and a diet type; the catalog returns no allergen data. So the
+   guard maps each to Ukrainian product-name stems («молок», «сир», «горіх», …) and skips a promotion whose
+   product name or category contains any of them — *before* matching, as the spec asks. Honest limit: this
+   never surfaces an obvious conflict; it is not an allergen database, and the RUNBOOK says so.
+3. **Disclosure.** The spec leaves "sponsored" labelling open. Went with the minimum that is still honest:
+   ★ on the line, one footer sentence — a partner chose the brand, the household chose the category, and
+   «не подобається — скажи, заміню» is the same editing right every line has. Hiding it would contradict
+   the pitch's own "helper, not upseller" line.
+4. **Creation needs a guest session.** The MCP is per-guest OAuth, so an admin endpoint cannot ask the
+   catalog on its own; `POST /internal/promotions` takes `verifyAsUserId` (the operator's connected user for
+   a demo) and stores what the catalog answered, never the request text. Behind the task-37 token.
+5. **Category matching is a whole-word contains** («молоко» ⊂ «молоко 2.5%», not ⊂ «молочний коктейль»);
+   highest `priority_weight` wins if two overlap. No auction — out of scope per the spec.
