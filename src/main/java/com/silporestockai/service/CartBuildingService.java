@@ -23,6 +23,7 @@ import com.silporestockai.repository.UserProfileRepository;
 import com.silporestockai.utils.McpResponses;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -1361,13 +1362,50 @@ public class CartBuildingService {
         return summary;
     }
 
+    /**
+     * How long to wait before asking again when Silpo answers a tool call with «Rate limit exceeded». Seen live on
+     * the minimum-order top-up: the second {@code add_or_update_cart_products} came one second after the first and
+     * was refused, and the household read «Сільпо або каталог не відповіли вчасно» for a cart that was one pause
+     * away from done. The transport-level 429 is retried by Resilience4j; this is the tool-level variant, which
+     * comes back as an ordinary error result and never reaches that retry.
+     */
+    static final List<Duration> RATE_LIMIT_PAUSES = List.of(Duration.ofSeconds(2), Duration.ofSeconds(4));
+
+    private static final Pattern TOOL_RATE_LIMITED = Pattern.compile("rate limit", Pattern.CASE_INSENSITIVE);
+
     private JsonNode call(UUID userId, String tool, Map<String, Object> arguments) {
         log.info("MCP -> {} {}", tool, arguments);
         McpToolResponse response = silpoMcpClient.callTool(tool, arguments, userId);
+        for (Duration pause : RATE_LIMIT_PAUSES) {
+            if (!response.isError() || !rateLimited(response)) {
+                break;
+            }
+            log.warn(
+                    "Silpo rate-limited {} for cart user {}; waiting {} s and asking again",
+                    tool,
+                    userId,
+                    pause.toSeconds());
+            pauseFor(pause);
+            response = silpoMcpClient.callTool(tool, arguments, userId);
+        }
         if (response.isError()) {
             throw new CartBuildException("Silpo tool %s reported an error".formatted(tool));
         }
         return McpResponses.tree(response);
+    }
+
+    private static boolean rateLimited(McpToolResponse response) {
+        return response.text() != null
+                && TOOL_RATE_LIMITED.matcher(response.text()).find();
+    }
+
+    private static void pauseFor(Duration pause) {
+        try {
+            Thread.sleep(pause.toMillis());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new CartBuildException("interrupted while waiting out a Silpo rate limit");
+        }
     }
 
     /**

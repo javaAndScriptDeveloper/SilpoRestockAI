@@ -110,8 +110,11 @@ public class DishIngredientsService {
                 chatId,
                 "Інгредієнти для «%s» на %d %s — збираю кошик."
                         .formatted(dishName, servings, servings == 1 ? "порцію" : servings < 5 ? "порції" : "порцій"));
-        cartConfirmationService.present(user, items, OrderType.AD_HOC);
-        log.info("presented a {}-line ingredient cart for «{}» to user {}", items.size(), dishName, user.getId());
+        if (cartConfirmationService.present(user, items, OrderType.AD_HOC)) {
+            log.info("presented a {}-line ingredient cart for «{}» to user {}", items.size(), dishName, user.getId());
+        } else {
+            log.info("could not present an ingredient cart for «{}» to user {}", dishName, user.getId());
+        }
     }
 
     /**

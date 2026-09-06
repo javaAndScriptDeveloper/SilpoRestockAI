@@ -42,6 +42,9 @@ public final class StubMcpServer implements AutoCloseable {
     /** Tools that answer {@code isError: true}. */
     private final Set<String> failingTools = ConcurrentHashMap.newKeySet();
 
+    /** Error texts a tool answers with once each, before falling back to its scripted answers. */
+    private final Map<String, Deque<String>> oneOffFailures = new ConcurrentHashMap<>();
+
     /** Names of the tools called, in order — this is what a sequence test asserts on. */
     private final List<String> calledTools = Collections.synchronizedList(new ArrayList<>());
 
@@ -87,6 +90,14 @@ public final class StubMcpServer implements AutoCloseable {
     /** Makes {@code toolName} answer {@code isError: true} — a tool the server ran and refused, not a transport fault. */
     public void failTool(String toolName) {
         failingTools.add(toolName);
+    }
+
+    /**
+     * Makes the next call to {@code toolName} answer {@code isError: true} with {@code text}, then behave normally —
+     * Silpo's «Rate limit exceeded» is exactly this shape: an ordinary error result, gone on the next attempt.
+     */
+    public void failToolOnce(String toolName, String text) {
+        oneOffFailures.computeIfAbsent(toolName, key -> new ArrayDeque<>()).add(text);
     }
 
     /** Every {@code tools/call} the server saw, in order. */
@@ -208,6 +219,11 @@ public final class StubMcpServer implements AutoCloseable {
                                 .toList());
             case "tools/call" -> {
                 String tool = request.path("params").path("name").asText();
+                Deque<String> failures = oneOffFailures.get(tool);
+                String failure = failures == null ? null : failures.poll();
+                if (failure != null) {
+                    yield Map.of("content", List.of(Map.of("type", "text", "text", failure)), "isError", true);
+                }
                 Deque<String> ordered = orderedToolResponses.get(tool);
                 String next = ordered == null ? null : ordered.poll();
                 String json = next != null ? next : toolResponses.getOrDefault(tool, "stub tool result");

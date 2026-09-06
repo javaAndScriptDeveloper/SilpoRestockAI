@@ -255,6 +255,50 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
     }
 
     /**
+     * Silpo's «Rate limit exceeded» arrives as an ordinary error result, not a 429, so the transport-level retry
+     * never sees it. Seen live on a carbonara: the top-up add came a second after the first add and was refused,
+     * and the household was told Silpo «did not answer in time» for a cart one short pause away from done.
+     */
+    @Test
+    void waitsOutAToolLevelRateLimitInsteadOfFailingTheCart() {
+        UUID userId = connectedUser(8431L);
+        scriptCartTools();
+        scriptProductTools();
+        scriptVerifiedCart();
+        MCP.failToolOnce(
+                "silpo_add_or_update_cart_products",
+                "Error in add-or-update-cart-products: Rate limit exceeded. Please wait and try again.");
+
+        CartSummary summary = cartBuildingService.buildCart(userId, List.of(item("цибуля", "0.5", "кг")));
+
+        assertThat(summary.items()).isNotEmpty();
+        assertThat(MCP.callArguments("silpo_add_or_update_cart_products")).hasSize(2);
+        // The same lines both times: a rate limit is a reason to wait, not to rebuild the request.
+        assertThat(MCP.callArguments("silpo_add_or_update_cart_products").get(0))
+                .isEqualTo(
+                        MCP.callArguments("silpo_add_or_update_cart_products").get(1));
+    }
+
+    /**
+     * Any other tool error is still fatal: only the rate limit is worth a pause, and a second wrong answer must
+     * not be paid for with another one.
+     */
+    @Test
+    void doesNotRetryAToolErrorThatIsNotARateLimit() {
+        UUID userId = connectedUser(8432L);
+        scriptCartTools();
+        scriptProductTools();
+        MCP.failToolOnce("silpo_add_or_update_cart_products", "Error in add-or-update-cart-products: Invalid UUID");
+
+        assertThatThrownBy(() -> cartBuildingService.buildCart(userId, List.of(item("цибуля", "0.5", "кг"))))
+                .isInstanceOf(CartBuildException.class)
+                .hasMessageContaining("reported an error");
+
+        // The existing once-more retry for a transport fault does not fire on a tool-level refusal either.
+        assertThat(MCP.callArguments("silpo_add_or_update_cart_products")).hasSize(1);
+    }
+
+    /**
      * The verified cart is the one authoritative read for whether checkout can actually happen — a cart
      * with no usable checkout link is not something any consuming flow (task 10, 15, 19) can present to
      * a user, so this must fail loudly here rather than let a confirmation message reach the user with a
