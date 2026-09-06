@@ -5,6 +5,7 @@ import com.silporestockai.entity.User;
 import com.silporestockai.exception.TelegramApiFailureException;
 import com.silporestockai.model.TelegramButton;
 import com.silporestockai.repository.UserRepository;
+import com.silporestockai.utils.SecretRedactor;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.net.URI;
@@ -72,6 +73,7 @@ public class TelegramOutboundService {
      * items at a time would be worse than not speaking at all.
      */
     public void sendMessage(long chatId, String text) {
+        logOutbound(chatId, text, List.of());
         SendMessage message = SendMessage.builder().chatId(chatId).text(text).build();
         try {
             client.execute(message);
@@ -127,6 +129,7 @@ public class TelegramOutboundService {
      * offers first become usable, not on every message.
      */
     public void sendMessageWithMainMenu(long chatId, String text) {
+        logOutbound(chatId, text, List.of());
         SendMessage message = SendMessage.builder()
                 .chatId(chatId)
                 .text(text)
@@ -141,6 +144,7 @@ public class TelegramOutboundService {
     }
 
     public void sendMessageWithButtons(long chatId, String text, List<TelegramButton> buttons) {
+        logOutbound(chatId, text, buttons.stream().map(TelegramButton::label).toList());
         InlineKeyboardRow row = new InlineKeyboardRow(
                 buttons.stream().map(TelegramOutboundService::toInlineButton).toList());
         SendMessage message = SendMessage.builder()
@@ -165,6 +169,7 @@ public class TelegramOutboundService {
      */
     public void sendMessageWithWebAppButton(
             long chatId, String text, String webAppLabel, String webAppUrl, String fallbackLabel) {
+        logOutbound(chatId, text, List.of(webAppLabel, fallbackLabel));
         ReplyKeyboardMarkup markup = ReplyKeyboardMarkup.builder()
                 .keyboardRow(new KeyboardRow(KeyboardButton.builder()
                         .text(webAppLabel)
@@ -244,6 +249,24 @@ public class TelegramOutboundService {
         } catch (TelegramApiException e) {
             throw failure("setWebhook", e);
         }
+    }
+
+    /**
+     * What the household is about to read, in the log next to the MCP and Claude lines that produced it.
+     *
+     * <p>Every inbound update, every tool call and every prompt was already logged; the one thing missing was the
+     * answer the person actually saw, so auditing a live run meant reading the chat on a phone. A checkout link is
+     * the only thing in a message worth redacting and {@link SecretRedactor} already knows the shape.
+     */
+    private static void logOutbound(long chatId, String text, List<String> buttonLabels) {
+        if (!log.isDebugEnabled()) {
+            return;
+        }
+        log.debug(
+                "Telegram -> chat {}{}: {}",
+                chatId,
+                buttonLabels.isEmpty() ? "" : " buttons=" + buttonLabels,
+                SecretRedactor.truncate(text, 3000));
     }
 
     private static InlineKeyboardButton toInlineButton(TelegramButton button) {
