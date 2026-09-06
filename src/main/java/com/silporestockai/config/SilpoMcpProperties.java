@@ -17,6 +17,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param clientName client name sent during Dynamic Client Registration
  * @param redirectUri OAuth redirect, must match what was registered
  * @param requestTimeout per-MCP-request timeout
+ * @param initializationTimeout how long the session handshake ({@code initialize}) may take before the client gives
+ *     up on it and opens a fresh session — shorter than a request, because a hung handshake is retried once
  * @param loginStateTtl how long an unused PKCE login state stays valid
  * @param tokenEncryptionKey base64-encoded 32-byte AES key; blank generates an ephemeral key at startup
  */
@@ -29,6 +31,7 @@ public record SilpoMcpProperties(
         String clientName,
         String redirectUri,
         Duration requestTimeout,
+        Duration initializationTimeout,
         Duration loginStateTtl,
         String tokenEncryptionKey) {
 

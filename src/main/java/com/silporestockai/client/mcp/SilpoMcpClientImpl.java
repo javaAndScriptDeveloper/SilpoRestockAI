@@ -129,10 +129,22 @@ public class SilpoMcpClientImpl implements SilpoMcpClient {
         } catch (RuntimeException e) {
             // The session may be holding a dead token or a closed server session; drop it so the next call rebuilds.
             disconnect(userId);
-            if (refreshedTokens.remove(userId) == null) {
+            boolean refreshed = refreshedTokens.remove(userId) != null;
+            if (!refreshed && !handshakeFailed(e)) {
                 throw translate(e);
             }
-            log.debug("replaying the Silpo MCP call for user {} on a session built with the refreshed token", userId);
+            if (refreshed) {
+                log.debug(
+                        "replaying the Silpo MCP call for user {} on a session built with the refreshed token", userId);
+            } else {
+                // Seen live: the initialize handshake got no answer for the whole timeout on a fresh JVM while the
+                // server answered a plain probe in a tenth of a second. Nothing about the request was wrong, so a
+                // fresh session is worth one more try before the household hears «не відповіли вчасно».
+                log.warn(
+                        "Silpo MCP session handshake failed for user {} ({}); opening a fresh session once more",
+                        userId,
+                        e.getMessage());
+            }
             try {
                 return action.apply(session(userId));
             } catch (RuntimeException afterRefresh) {
@@ -144,6 +156,16 @@ public class SilpoMcpClientImpl implements SilpoMcpClient {
 
     private McpSyncClient session(UUID userId) {
         return sessions.computeIfAbsent(userId, this::openSession);
+    }
+
+    /** The SDK reports a failed or timed-out {@code initialize} as «Client failed to initialize …». */
+    private static boolean handshakeFailed(Throwable e) {
+        for (Throwable cause = e; cause != null; cause = cause.getCause()) {
+            if (String.valueOf(cause.getMessage()).contains("failed to initialize")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private McpSyncClient openSession(UUID userId) {
@@ -182,7 +204,10 @@ public class SilpoMcpClientImpl implements SilpoMcpClient {
 
         McpSyncClient client = McpClient.sync(transport)
                 .requestTimeout(properties.requestTimeout())
-                .initializationTimeout(properties.requestTimeout())
+                .initializationTimeout(
+                        properties.initializationTimeout() == null
+                                ? properties.requestTimeout()
+                                : properties.initializationTimeout())
                 .clientInfo(new McpSchema.Implementation(CLIENT_NAME, null, CLIENT_VERSION, null, null, null))
                 .build();
 

@@ -63,6 +63,7 @@ class TokenCipherTest {
                 "Komora",
                 "http://localhost:8080/auth/silpo/callback",
                 Duration.ofSeconds(30),
+                Duration.ofSeconds(20),
                 Duration.ofMinutes(10),
                 key));
     }

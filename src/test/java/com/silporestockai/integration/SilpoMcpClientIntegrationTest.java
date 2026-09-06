@@ -126,6 +126,34 @@ class SilpoMcpClientIntegrationTest extends AbstractIntegrationTest {
         assertThat(STUB.callCount("tools/call")).isEqualTo(2);
     }
 
+    /**
+     * A handshake that fails or hangs is not a reason to fail the call: nothing about the request was wrong, and
+     * a fresh session usually answers. Seen live as «Client failed to initialize by explicit API call» after the
+     * full timeout, on a server that answered a probe in a tenth of a second.
+     */
+    @Test
+    void opensAFreshSessionOnceWhenTheHandshakeFails() {
+        STUB.injectStatus("initialize", 500);
+
+        McpToolResponse response = silpoMcpClient.callTool("silpo_get_my_profile", Map.of(), userId);
+
+        assertThat(response.text()).isEqualTo("stub tool result");
+        assertThat(STUB.callCount("initialize")).isEqualTo(2);
+        assertThat(recordingTokenProvider.refreshCount()).isZero();
+    }
+
+    @Test
+    void givesUpWhenTheHandshakeFailsTwice() {
+        STUB.injectStatus("initialize", 500);
+        STUB.injectStatus("initialize", 500);
+
+        assertThatThrownBy(() -> silpoMcpClient.callTool("silpo_get_my_profile", Map.of(), userId))
+                .isInstanceOf(SilpoMcpException.class)
+                .hasMessageContaining("initialize");
+
+        assertThat(STUB.callCount("initialize")).isEqualTo(2);
+    }
+
     @Test
     void refreshesTheTokenExactlyOnceOnUnauthorizedAndReplaysTheCall() {
         STUB.injectStatus("tools/call", 401);

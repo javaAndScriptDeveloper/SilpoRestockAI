@@ -128,6 +128,9 @@ silpo:
     redirect-uri: ${SILPO_MCP_REDIRECT_URI:http://localhost:8080/auth/silpo/callback}
     # Adding a whole week's cart in one call took the live server longer than 30s once, and the cart died with it.
     request-timeout: ${SILPO_MCP_REQUEST_TIMEOUT:60s}
+    # The session handshake hung for the full request timeout once on a fresh JVM, and the cart died with it.
+    # A hung handshake is cheap to redo, so it gets a short leash and one more try on a fresh session.
+    initialization-timeout: ${SILPO_MCP_INITIALIZATION_TIMEOUT:20s}
     login-state-ttl: ${SILPO_MCP_LOGIN_STATE_TTL:10m}
     # Base64-encoded 32-byte AES key encrypting stored tokens. Unset generates an ephemeral key at
     # startup, which means stored tokens do not survive a restart. Never commit a real key.
