@@ -328,3 +328,25 @@ the same reason. New regression test: `editAndCancelButtonsWorkEvenWhenAnUnrelat
 at all — now just the bare theme description. Showing a specific time was actively misleading once
 scheduling always fires ASAP (see the deadline entry above): it looked like a real appointment when it
 never was one.
+
+## Session 4 (autonomous, 2026-09-06): queue 38 → 39 → 47 → 37 → 35 → 36 → 46
+
+### Task 38: the manual fallback never asked the question the task wants asked first
+
+**Observation:** the task reads as pure reordering ("no new fields, no schema changes"), and for the WebApp
+form that is exactly what it is. But acceptance criterion 1 says "first question in both the WebApp form
+and the fallback sequential flow" — and the fallback chain (`ASK_HOUSEHOLD → ASK_RESTRICTIONS →
+ASK_DISLIKES → ASK_BUDGET`) had never collected `cooking_time_preference` at all. A household that tapped
+«Заповнити вручну» finished with the column `NULL`, so task 22's ready-meals fork could never fire for
+them — they got the recipe planner whether they cook or not.
+
+**Decision:** add `OnboardingStep.ASK_COOKING_TIME` as the fallback's first step, answered by three inline
+buttons (`onb:cook:<enum>`), not free text — three fixed options are a button question, and parsing «не
+готую» vs «готую наперед» by keyword would be a fourth classifier for no gain. A typed answer re-shows the
+buttons. `finish()` now persists the preference on the fallback branch too (it only did so on the WebApp
+branch). The form's legend was reworded from «Скільки часу на готування» to «Як у тебе з готуванням?» and
+the options to segment-shaped labels («Не готую — лише готова їжа»), since the jury feedback behind this
+task is "ask who they are", not "ask about minutes".
+
+**Why safe to decide alone:** the criterion asks for exactly this; the values, ids and payload are
+unchanged, so `onboarding.js`, the Анкета prefill and every existing profile round-trip stay as they were.

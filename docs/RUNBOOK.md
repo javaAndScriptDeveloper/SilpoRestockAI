@@ -176,26 +176,40 @@ something is very wrong; stop and say so.
 
 ## 4. Finish the profile
 
-Answer the questions as they come:
+The primary path is the WebApp form («Заповнити анкету») — one screen, and since task 38 its first section
+is «Як у тебе з готуванням?», because that answer picks the planner (recipes vs ready meals). Tap
+«Заповнити вручну» instead to walk the chat fallback, which asks the same question first, as buttons:
 
 | Question | Send | Note |
 |---|---|---|
+| «Спершу головне: як у тебе з готуванням?» | tap one of the three buttons | typed text re-shows the buttons, it is not parsed |
 | «Скільки вас удома?» | `2` | «двоє» works too — Ukrainian numerals are parsed |
 | «Є алергії чи дієтичні обмеження?» | `нема` | or `лактоза, горіхи` |
 | «Що вдома точно не їдять?» | `печінка` | or `нема` |
 | «Який бюджет на тиждень, у гривнях?» | `2500` | |
 
-**Expect:** «Записав. Готую перший план на тиждень.» — and, under the text box, a persistent keyboard:
-📝 Список, 🔁 Замовити ще, 🎙 Голосові, 🌙 Блекаут, 📅 Календар. It stays there for the rest of the chat.
-Every `/command` this runbook tells you to **Send** from here on can be tapped instead — the button sends
-the exact same text the slash command does, so both keep working.
+**Expect:** «Записав. Готую перший план на тиждень.» — and, under the text box, the persistent 2×2
+keyboard: 📝 Список / 🗓 Заплановані, 🧾 Анкета / ❓ Інструкція. It stays there for the rest of the chat.
+Every `/command` this runbook tells you to **Send** from here on still works if typed; the buttons and
+plain sentences (see Task 31 below) are the intended way in.
 
 **Verify:**
 
 ```sql
-SELECT household_size, dietary_restrictions, disliked_foods, weekly_budget FROM user_profile;
+SELECT household_size, cooking_time_preference, dietary_restrictions, disliked_foods, weekly_budget
+FROM user_profile;                              -- cooking_time_preference is never NULL after task 38
 SELECT current_flow FROM conversation_state;   -- NONE
 ```
+
+### Task 38: verify the cooking-time question comes first
+
+- [ ] Open «Заповнити анкету» on a phone: the first section is «Як у тебе з готуванням?» with three chips,
+      «Готую потроху щодня» pre-selected; the rest of the form is unchanged below it.
+- [ ] Tap 🧾 Анкета after onboarding: the saved choice is pre-selected in that first section.
+- [ ] Chat fallback: «Заповнити вручну» → three buttons; type `готую щодня` → the buttons come back
+      unchanged; tap «Не готую — лише готова їжа» → «Скільки вас удома?».
+- [ ] Finish the fallback and check `cooking_time_preference = 'READY_MEALS_ONLY'`; the first plan is the
+      ready-meals one (product names, no recipes — see «READY_MEALS_ONLY» under section 6).
 
 **Try the error path too:** answer the household question with `багато`. The bot should re-ask rather
 than store nonsense.
