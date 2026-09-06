@@ -1,0 +1,17 @@
+databaseChangeLog:
+  - changeSet:
+      id: 023-shopping-list-item-estimated-price
+      author: komora
+      comment: >-
+        Task 39: the list a household reads before any cart exists should carry a price signal. The
+        READY_MEALS_ONLY fork (task 22) already knows each product's price at generation time, from the
+        catalog candidates Claude curated from; this column keeps that unit price on the list line so the
+        preview can add it up without a Silpo call. Nullable because only that fork sets it — recipe-derived
+        lines are priced, if at all, from the household's baseline basket at display time.
+      changes:
+        - addColumn:
+            tableName: shopping_list_item
+            columns:
+              - column:
+                  name: estimated_price
+                  type: NUMERIC(10, 2)

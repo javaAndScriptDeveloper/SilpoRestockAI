@@ -66,4 +66,11 @@ public class ShoppingListItem {
 
     @Column(name = "silpo_product_id", length = 64)
     private String silpoProductId;
+
+    /**
+     * Unit price known at plan time — set only by the {@code READY_MEALS_ONLY} fork, from the catalog candidate the
+     * line was curated from (task 39). Null means "price it from the baseline, or not at all".
+     */
+    @Column(name = "estimated_price", precision = 10, scale = 2)
+    private BigDecimal estimatedPrice;
 }

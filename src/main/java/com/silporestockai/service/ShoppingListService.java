@@ -160,7 +160,8 @@ public class ShoppingListService {
                 ingredient.quantity(),
                 ingredient.unit(),
                 categoryKeywordFallbackService.categorize(ingredient.name()),
-                ingredient.productId());
+                ingredient.productId(),
+                ingredient.price());
     }
 
     /**
@@ -186,13 +187,14 @@ public class ShoppingListService {
                             ingredient.quantity(),
                             ingredient.unit(),
                             ingredient.category(),
-                            ingredient.productId()),
+                            ingredient.productId(),
+                            ingredient.price()),
                     ShoppingListService::add);
         }
         return List.copyOf(byNameAndUnit.values());
     }
 
-    /** Keeps the first line's spelling, unit and category; only the quantity accumulates. */
+    /** Keeps the first line's spelling, unit, category and unit price; only the quantity accumulates. */
     private static PlannedIngredient add(PlannedIngredient existing, PlannedIngredient extra) {
         BigDecimal quantity;
         if (existing.quantity() == null) {
@@ -204,7 +206,8 @@ public class ShoppingListService {
         }
         String category =
                 existing.category() != null && !existing.category().isBlank() ? existing.category() : extra.category();
-        return new PlannedIngredient(existing.name(), quantity, existing.unit(), category, existing.productId());
+        return new PlannedIngredient(
+                existing.name(), quantity, existing.unit(), category, existing.productId(), existing.price());
     }
 
     private static String normalise(String value) {

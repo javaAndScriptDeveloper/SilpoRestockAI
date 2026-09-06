@@ -216,13 +216,17 @@ public class MealPlanService {
                                         meal.type(),
                                         meal.name(),
                                         meal.ingredients().stream()
-                                                .map(ingredient -> new PlannedIngredient(
-                                                        ingredient.name(),
-                                                        ingredient.quantity(),
-                                                        ingredient.unit(),
-                                                        ingredient.category(),
-                                                        Objects.requireNonNull(byName.get(normalise(ingredient.name())))
-                                                                .productId()))
+                                                .map(ingredient -> {
+                                                    CatalogCandidate candidate = Objects.requireNonNull(
+                                                            byName.get(normalise(ingredient.name())));
+                                                    return new PlannedIngredient(
+                                                            ingredient.name(),
+                                                            ingredient.quantity(),
+                                                            ingredient.unit(),
+                                                            ingredient.category(),
+                                                            candidate.productId(),
+                                                            candidate.price());
+                                                })
                                                 .toList()))
                                 .toList()))
                 .toList();
@@ -250,6 +254,7 @@ public class MealPlanService {
                                                         ingredient.quantity(),
                                                         ingredient.unit(),
                                                         ingredient.category(),
+                                                        null,
                                                         null))
                                                 .toList()))
                                 .toList()))

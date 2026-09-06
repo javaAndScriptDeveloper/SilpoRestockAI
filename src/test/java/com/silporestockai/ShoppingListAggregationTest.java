@@ -38,6 +38,18 @@ class ShoppingListAggregationTest {
     }
 
     @Test
+    void keepsTheUnitPriceWhenTheSameReadyMealIsPickedTwice() {
+        PlannedIngredient priced = new PlannedIngredient(
+                "Плов з куркою готовий", BigDecimal.ONE, "порція", "Готові страви", "p-42", new BigDecimal("89.90"));
+
+        List<PlannedIngredient> aggregated = ShoppingListService.aggregate(List.of(priced, priced));
+
+        // A unit price, not a line price: the quantity doubles, the price does not.
+        assertThat(aggregated.getFirst().price()).isEqualByComparingTo("89.90");
+        assertThat(aggregated.getFirst().quantity()).isEqualByComparingTo("2");
+    }
+
+    @Test
     void sumsTheSameIngredientAcrossEveryMealThatUsesIt() {
         List<PlannedIngredient> aggregated = ShoppingListService.aggregate(List.of(
                 of("цибуля", "0.2", "кг"),

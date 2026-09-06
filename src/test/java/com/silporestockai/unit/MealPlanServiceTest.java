@@ -228,6 +228,10 @@ class MealPlanServiceTest {
         assertThat(stored.days().getFirst().meals())
                 .allSatisfy(meal ->
                         assertThat(meal.ingredients().getFirst().productId()).isEqualTo("p-1"));
+        // Task 39: the candidate's price rides along, so the list can be priced before any cart exists.
+        assertThat(stored.days().getFirst().meals())
+                .allSatisfy(meal -> assertThat(meal.ingredients().getFirst().price())
+                        .isEqualByComparingTo(oneCandidate().getFirst().price()));
     }
 
     /**

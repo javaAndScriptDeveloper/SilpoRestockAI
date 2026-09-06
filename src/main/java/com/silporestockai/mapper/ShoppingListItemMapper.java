@@ -21,6 +21,7 @@ public interface ShoppingListItemMapper {
     @Mapping(target = "userId", source = "userId")
     @Mapping(target = "category", source = "ingredient.category")
     @Mapping(target = "silpoProductId", source = "ingredient.productId")
+    @Mapping(target = "estimatedPrice", source = "ingredient.price")
     @Mapping(target = "status", constant = "ACTIVE")
     @Mapping(target = "sourceType", ignore = true)
     ShoppingListItem toItem(PlannedIngredient ingredient, UUID mealPlanId, UUID userId);

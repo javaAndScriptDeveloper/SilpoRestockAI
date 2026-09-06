@@ -17,5 +17,14 @@ import java.math.BigDecimal;
  * @param productId Silpo's real product id, set only by the {@code READY_MEALS_ONLY} generation fork (task 22) once
  *     Claude's choice has been matched back to the candidate it was chosen from — null for every recipe-derived
  *     ingredient, which still resolves to a product by name search in {@code CartBuildingService}.
+ * @param price the candidate's unit price, set by the same fork at the same moment (task 39) and null everywhere
+ *     else — like {@code productId}, never trusted from the model's own answer
  */
-public record PlannedIngredient(String name, BigDecimal quantity, String unit, String category, String productId) {}
+public record PlannedIngredient(
+        String name, BigDecimal quantity, String unit, String category, String productId, BigDecimal price) {
+
+    /** The pre-task-39 shape: everything that is not the ready-meals fork has no price to give. */
+    public PlannedIngredient(String name, BigDecimal quantity, String unit, String category, String productId) {
+        this(name, quantity, unit, category, productId, null);
+    }
+}
