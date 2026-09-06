@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help run dev test build format check db-up db-down up down image clean
+.PHONY: help run dev test build format check db-up db-down up down image clean metrics
 
 # Prefer .env if present, otherwise fall back to the committed example.
 ENV_FILE := $(if $(wildcard .env),.env,.env.example)
@@ -43,3 +43,8 @@ image: ## Build the OCI image (tag: silpo-restock-ai)
 
 clean: ## Remove build artifacts
 	./gradlew clean
+
+metrics: ## Print the pitch-metrics report from the running app (needs METRICS_TOKEN in .env)
+	@set -a; . ./$(ENV_FILE); set +a; \
+	curl -sf -H "X-Metrics-Token: $$METRICS_TOKEN" "http://localhost:$${SERVER_PORT:-8080}/internal/metrics/pitch" \
+	|| echo "no report: is the app running, and is METRICS_TOKEN set in .env?"

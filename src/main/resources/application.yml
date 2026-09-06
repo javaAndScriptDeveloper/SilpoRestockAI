@@ -183,6 +183,9 @@ komora:
     sweep-cron: ${SPECIAL_MODE_SWEEP_CRON:0 0 * * * *}
   ad-hoc-schedule:
     sweep-cron: ${AD_HOC_SCHEDULE_SWEEP_CRON:0 */15 * * * *}
+  # Task 37: GET /internal/metrics/pitch with header X-Metrics-Token. Blank disables the endpoint (404).
+  metrics:
+    token: ${METRICS_TOKEN:}
 
 springdoc:
   swagger-ui:
