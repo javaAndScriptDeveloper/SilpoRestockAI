@@ -12,6 +12,7 @@ import com.silporestockai.service.CheckinFlowService;
 import com.silporestockai.service.ConversationStateService;
 import com.silporestockai.service.FeedbackService;
 import com.silporestockai.service.IntentRouterService;
+import com.silporestockai.service.PastOrderSeedService;
 import com.silporestockai.service.ReorderConfirmationService;
 import com.silporestockai.service.ScheduledTaskManagementService;
 import com.silporestockai.service.ShoppingListBuilderService;
@@ -61,6 +62,7 @@ public class TelegramRoutingService {
     private final TelegramFailureRecoveryService failureRecoveryService;
     private final ScheduledTaskManagementService scheduledTaskManagementService;
     private final FeedbackService feedbackService;
+    private final PastOrderSeedService pastOrderSeedService;
 
     /**
      * Off the webhook thread on purpose. A fridge photo means a vision call — the slowest and most expensive kind
@@ -243,6 +245,10 @@ public class TelegramRoutingService {
         }
         if (flow == ConversationFlow.SCHEDULED_TASK_EDIT) {
             scheduledTaskManagementService.handleEditReply(user, incoming);
+            return;
+        }
+        if (flow == ConversationFlow.PAST_ORDER_PICK) {
+            pastOrderSeedService.handle(user, incoming);
             return;
         }
         if (incoming instanceof TelegramIncomingUpdate.Text voice && matches(voice.text(), "/voice", "")) {

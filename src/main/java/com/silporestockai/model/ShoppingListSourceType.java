@@ -5,5 +5,7 @@ public enum ShoppingListSourceType {
     /** Aggregated from a weekly plan's recipe ingredients. */
     RECIPE_DERIVED,
     /** The ready-to-eat product itself, for {@link CookingTimePreference#READY_MEALS_ONLY} households. */
-    READY_MEAL_DIRECT
+    READY_MEAL_DIRECT,
+    /** Copied line-for-line from a real past Silpo order the household picked (task 35). */
+    PAST_ORDER
 }

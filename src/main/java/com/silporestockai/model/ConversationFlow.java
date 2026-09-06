@@ -27,5 +27,7 @@ public enum ConversationFlow {
      * The «Фідбек» button is waiting for one message (task 47). Its context is a snapshot of the flow it
      * interrupted, written back the moment the message arrives.
      */
-    FEEDBACK
+    FEEDBACK,
+    /** Choosing which past Silpo order to seed the list from (task 35); the candidates live in the context. */
+    PAST_ORDER_PICK
 }

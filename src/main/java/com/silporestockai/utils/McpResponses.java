@@ -54,6 +54,14 @@ public final class McpResponses {
     public static final String[] CHECKOUT_WEB = {"checkoutWebLink", "webLink"};
     public static final String[] CHECKOUT_MOBILE = {"checkoutMobileLink", "mobileLink"};
 
+    /** Order history (task 35): the list, one order's id and date. Items inside an order use {@link #ITEMS}. */
+    public static final String[] ORDERS = {"orders", "items", "results", "data"};
+
+    public static final String[] ORDER_ID = {"orderId", "orderNumber", "number", "id"};
+    public static final String[] ORDER_DATE = {
+        "date", "createdAt", "created", "orderDate", "dateCreated", "deliveryDate"
+    };
+
     // Cart creation for a guest with no cart yet (silpo_create_shopping_cart's own documented workflow).
     public static final String[] ADDRESSES = {"addresses", "items", "results"};
     public static final String[] ADDRESS_TYPE = {"addressType", "type"};

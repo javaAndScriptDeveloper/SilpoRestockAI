@@ -78,10 +78,17 @@ public class ShoppingListService {
      */
     @Transactional
     public List<ShoppingListItem> createAdHocList(UUID userId, List<PlannedIngredient> ingredients) {
+        return createAdHocList(userId, ingredients, ShoppingListSourceType.RECIPE_DERIVED);
+    }
+
+    /** Same, with the source named — a list copied from a past order (task 35) is not recipe-derived. */
+    @Transactional
+    public List<ShoppingListItem> createAdHocList(
+            UUID userId, List<PlannedIngredient> ingredients, ShoppingListSourceType sourceType) {
         List<ShoppingListItem> items = aggregate(ingredients).stream()
                 .map(this::withFallbackCategory)
                 .map(ingredient -> shoppingListItemMapper.toItem(ingredient, null, userId))
-                .peek(item -> item.setSourceType(ShoppingListSourceType.RECIPE_DERIVED))
+                .peek(item -> item.setSourceType(sourceType))
                 .toList();
         log.info("stored {} ad-hoc shopping list lines for user {}", items.size(), userId);
         return shoppingListItemRepository.saveAll(items);

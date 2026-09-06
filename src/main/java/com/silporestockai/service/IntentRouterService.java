@@ -45,6 +45,7 @@ public class IntentRouterService {
             — «Замов до п'ятниці вино та сир зі знижкою» — разове замовлення поза тижневим планом.
             — «Що треба докупити?» — зберу дозамовлення того, що закінчується.
             — «Прибери молоко зі списку, додай яйця» — правка поточного списку.
+            — «Зроби список як минулого разу» — покажу твої останні замовлення в «Сільпо», візьму обране за основу.
             — «Я захворів, гастрит» — тимчасово щадне харчування, потім сам поверну звичайне.
             — «Зроби менш калорійним» — той самий раціон, менше калорій.
             — «Хочу набрати масу» — план під набір маси.
@@ -68,6 +69,7 @@ public class IntentRouterService {
     private final CalendarIntegrationService calendarIntegrationService;
     private final ReorderConfirmationService reorderConfirmationService;
     private final TelegramOutboundService telegramOutboundService;
+    private final PastOrderSeedService pastOrderSeedService;
     private final String systemPrompt;
 
     public IntentRouterService(
@@ -84,6 +86,7 @@ public class IntentRouterService {
             CalendarIntegrationService calendarIntegrationService,
             ReorderConfirmationService reorderConfirmationService,
             TelegramOutboundService telegramOutboundService,
+            PastOrderSeedService pastOrderSeedService,
             @Value("classpath:prompts/intent-router-system.txt") Resource systemPromptResource) {
         this.claudeApiClient = claudeApiClient;
         this.speechToTextClient = speechToTextClient;
@@ -98,6 +101,7 @@ public class IntentRouterService {
         this.calendarIntegrationService = calendarIntegrationService;
         this.reorderConfirmationService = reorderConfirmationService;
         this.telegramOutboundService = telegramOutboundService;
+        this.pastOrderSeedService = pastOrderSeedService;
         this.systemPrompt = read(systemPromptResource);
     }
 
@@ -176,6 +180,7 @@ public class IntentRouterService {
                 shoppingListBuilderService.buildAndShow(user, "Поточний список треба змінити так: " + text, null);
             case CALENDAR_VIEW -> calendarViewService.showWeek(user);
             case CALENDAR_CONNECT -> calendarIntegrationService.offerConnection(user);
+            case PAST_ORDER_SEED -> pastOrderSeedService.offer(user);
             case HELP -> sendHelp(user);
             case UNKNOWN -> askClarifyingQuestion(user);
         }
@@ -240,6 +245,7 @@ public class IntentRouterService {
         LIST_MODIFY,
         CALENDAR_VIEW,
         CALENDAR_CONNECT,
+        PAST_ORDER_SEED,
         HELP,
         UNKNOWN
     }
