@@ -69,4 +69,15 @@ public class CustomerOrder {
 
     @Column(name = "confirmed_at")
     private Instant confirmedAt;
+
+    /** List lines Silpo matched no product for when this cart was built (task 37). Null for rows older than that. */
+    @Column(name = "unresolved_count")
+    private Integer unresolvedCount;
+
+    /**
+     * Whether the person changed the proposal before confirming — refused a substitute, in a reorder. Set only for
+     * reorders at confirmation time; null otherwise (task 37's "% confirmed with zero edits").
+     */
+    @Column(name = "edited_before_confirm")
+    private Boolean editedBeforeConfirm;
 }

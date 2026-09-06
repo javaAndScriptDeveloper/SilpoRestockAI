@@ -50,4 +50,9 @@ public class User {
     /** When the agent last opened a check-in. Null until the first prompt goes out. */
     @Column(name = "last_checkin_prompt_sent_at")
     private Instant lastCheckinPromptSentAt;
+
+    /** How many check-in prompts the agent has ever sent this chat — the denominator of the response rate (task 37). */
+    @Column(name = "checkin_prompts_sent", nullable = false)
+    @Builder.Default
+    private int checkinPromptsSent = 0;
 }

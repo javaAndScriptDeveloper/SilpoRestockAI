@@ -3,6 +3,7 @@ package com.silporestockai.client.mcp;
 import com.silporestockai.config.SilpoMcpProperties;
 import com.silporestockai.exception.SilpoMcpException;
 import com.silporestockai.exception.SilpoMcpRateLimitedException;
+import com.silporestockai.model.McpToolCalledEvent;
 import com.silporestockai.utils.SecretRedactor;
 import io.github.resilience4j.retry.annotation.Retry;
 import io.modelcontextprotocol.client.McpClient;
@@ -12,6 +13,7 @@ import io.modelcontextprotocol.client.transport.customizer.McpHttpClientTranspor
 import io.modelcontextprotocol.spec.McpSchema;
 import jakarta.annotation.PreDestroy;
 import java.net.URI;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -20,6 +22,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
 /**
@@ -57,6 +60,7 @@ public class SilpoMcpClientImpl implements SilpoMcpClient {
 
     private final SilpoMcpProperties properties;
     private final SilpoAccessTokenProvider tokenProvider;
+    private final ApplicationEventPublisher events;
 
     private final Map<UUID, McpSyncClient> sessions = new ConcurrentHashMap<>();
 
@@ -91,6 +95,9 @@ public class SilpoMcpClientImpl implements SilpoMcpClient {
             if (isError) {
                 log.warn("Silpo MCP tool {} reported an error for user {}", toolName, userId);
             }
+            // Evidence for "which of the 39 tools does this agent really use" (task 37). A listener in the service
+            // layer writes the row; this layer may not touch a repository.
+            events.publishEvent(new McpToolCalledEvent(toolName, userId, isError, Instant.now()));
             // The wire content, unfiltered by whatever key names utils.McpResponses happens to guess — this is
             // what actually answers "what did Silpo send", the question every shape mismatch this application has
             // hit so far came down to. No secrets to redact here: tool responses carry catalogue and order data,

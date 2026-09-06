@@ -123,6 +123,8 @@ public class CartConfirmationService {
                 .deliverySlot(summary.deliverySlot())
                 .status(OrderStatus.DRAFT)
                 .silpoCartId(summary.cartId())
+                .unresolvedCount(
+                        summary.unresolved() == null ? 0 : summary.unresolved().size())
                 .createdAt(Instant.now())
                 .build());
 

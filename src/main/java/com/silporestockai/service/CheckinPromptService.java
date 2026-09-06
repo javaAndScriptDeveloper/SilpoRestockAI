@@ -118,6 +118,7 @@ public class CheckinPromptService {
         conversationStateService.save(
                 user.getTelegramChatId(), ConversationFlow.CHECK_IN, STEP_AWAITING_REPORT, Map.of());
         user.setLastCheckinPromptSentAt(clock.instant());
+        user.setCheckinPromptsSent(user.getCheckinPromptsSent() + 1);
         userRepository.save(user);
         log.info("check-in prompt sent to user {}", user.getId());
     }

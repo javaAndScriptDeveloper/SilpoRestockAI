@@ -123,6 +123,10 @@ public class ReorderConfirmationService {
                 .deliverySlot(slot == null ? null : slot.id())
                 .status(OrderStatus.DRAFT)
                 .silpoCartId(order.cart().cartId())
+                .unresolvedCount(
+                        order.cart().unresolved() == null
+                                ? 0
+                                : order.cart().unresolved().size())
                 .createdAt(clock.instant())
                 .build());
 
@@ -253,14 +257,15 @@ public class ReorderConfirmationService {
         boolean slotFixed = slotId != null && bookSlot(user.getId(), context.cartId(), slotId);
         CartSummary cart = cartBuildingService.getVerifiedCart(user.getId(), context, slot, List.of());
 
+        // Refusing a substitute is an edit; accepting one is agreeing with the suggestion.
+        boolean edited = decisions.containsValue(false);
         order.setItems(cart.items());
         order.setDeliverySlot(slotId);
         order.setStatus(OrderStatus.CONFIRMED);
         order.setConfirmedAt(clock.instant());
+        order.setEditedBeforeConfirm(edited);
         customerOrderRepository.save(order);
 
-        // Refusing a substitute is an edit; accepting one is agreeing with the suggestion.
-        boolean edited = decisions.containsValue(false);
         if (edited) {
             supersedeBaseline(user.getId(), cart);
         }

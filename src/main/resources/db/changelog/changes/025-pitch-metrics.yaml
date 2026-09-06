@@ -1,0 +1,44 @@
+databaseChangeLog:
+  - changeSet:
+      id: 025-pitch-metrics
+      author: komora
+      comment: >-
+        Task 37: the pitch needs real numbers, and three of them had no column to come from. users gets a
+        count of check-in prompts sent (only the last timestamp existed, so a response rate could not be
+        computed); customer_order records how many list lines Silpo could not resolve when the cart was
+        built, and — for reorders — whether the person edited the proposal before confirming; and every
+        MCP tool call is logged by name so "how many of the 39 tools does this actually use" is a query,
+        not a claim.
+      changes:
+        - addColumn:
+            tableName: users
+            columns:
+              - column:
+                  name: checkin_prompts_sent
+                  type: INTEGER
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+        - addColumn:
+            tableName: customer_order
+            columns:
+              - column:
+                  name: unresolved_count
+                  type: INTEGER
+              - column:
+                  name: edited_before_confirm
+                  type: BOOLEAN
+        - createTable:
+            tableName: mcp_tool_call
+            columns:
+              - column: { name: id, type: UUID, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tool_name, type: VARCHAR(128), constraints: { nullable: false } }
+              - column: { name: user_id, type: UUID }
+              - column: { name: is_error, type: BOOLEAN, constraints: { nullable: false } }
+              - column: { name: called_at, type: TIMESTAMP WITH TIME ZONE, constraints: { nullable: false } }
+        - createIndex:
+            indexName: ix_mcp_tool_call_tool_name
+            tableName: mcp_tool_call
+            columns:
+              - column:
+                  name: tool_name
