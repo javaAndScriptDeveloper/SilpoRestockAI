@@ -600,7 +600,7 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
         assertThat(adds.get(1).path("products"))
                 .extracting(node -> node.path("productId").asText())
                 .containsExactly("b-bread", "b-milk", "b-chicken");
-        assertThat(summary.toppedUpLines()).hasSize(3).first().asString().isEqualTo("Хліб пшеничний — 1 шт, 28 грн");
+        assertThat(summary.toppedUpLines()).hasSize(3).first().asString().isEqualTo("Хліб пшеничний — 1 шт, 28.00 грн");
         assertThat(summary.validations()).isEmpty();
     }
 
