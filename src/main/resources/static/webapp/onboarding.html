@@ -125,6 +125,16 @@
 <body>
 <div id="progress-bar"></div>
 <form id="onboarding-form">
+  <!-- First on purpose (task 38): this one answer picks the whole planner path — recipes vs ready meals. -->
+  <fieldset>
+    <legend>Як у тебе з готуванням?</legend>
+    <div class="chip-group">
+      <label class="chip"><input class="chip-input" type="radio" name="cookingTime" value="COOKS_DAILY" checked> Готую потроху щодня</label>
+      <label class="chip"><input class="chip-input" type="radio" name="cookingTime" value="COOKS_BATCH"> Готую наперед, раз на кілька днів</label>
+      <label class="chip"><input class="chip-input" type="radio" name="cookingTime" value="READY_MEALS_ONLY"> Не готую — лише готова їжа</label>
+    </div>
+  </fieldset>
+
   <fieldset>
     <legend>Дорослі</legend>
     <label>Чоловіків: <input type="number" id="adultMale" min="0" value="1"></label>
@@ -157,15 +167,6 @@
       <label class="chip"><input class="chip-input" type="radio" name="dietType" value="GLUTEN_FREE"> Без глютену</label>
       <label class="chip"><input class="chip-input" type="radio" name="dietType" value="KETO"> Кето</label>
       <label class="chip"><input class="chip-input" type="radio" name="dietType" value="OTHER"> Інше</label>
-    </div>
-  </fieldset>
-
-  <fieldset>
-    <legend>Скільки часу на готування</legend>
-    <div class="chip-group">
-      <label class="chip"><input class="chip-input" type="radio" name="cookingTime" value="COOKS_DAILY" checked> Готую потроху щодня</label>
-      <label class="chip"><input class="chip-input" type="radio" name="cookingTime" value="COOKS_BATCH"> Готую раз на кілька днів, наперед</label>
-      <label class="chip"><input class="chip-input" type="radio" name="cookingTime" value="READY_MEALS_ONLY"> Часу немає, лише готова їжа</label>
     </div>
   </fieldset>
 
