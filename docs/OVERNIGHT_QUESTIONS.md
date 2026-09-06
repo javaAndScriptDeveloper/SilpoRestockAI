@@ -350,3 +350,26 @@ task is "ask who they are", not "ask about minutes".
 
 **Why safe to decide alone:** the criterion asks for exactly this; the values, ids and payload are
 unchanged, so `onboarding.js`, the Анкета prefill and every existing profile round-trip stay as they were.
+
+### Task 39: criterion 1 was already true; the real gap was one stage earlier
+
+**Observation:** the task's first criterion — "cart confirmation message includes a total price" — has been
+true since task 10: `CartMessageService.cartText` prints every line's price and «Разом: X грн». What the
+jury feedback actually points at is the *list preview* (`ShoppingListMessageService.listText`, shown by
+«Список», «Показати весь список» and the plan hand-off), which had quantities and no money at all. That is
+the stage "before cart confirmation" where no Silpo call has happened yet.
+
+**Decision:** price the list from data already in the database, two sources: (a) `READY_MEALS_ONLY` lines
+now keep the catalog unit price they were curated with (`PlannedIngredient.price` →
+`shopping_list_item.estimated_price`, set and stripped exactly where `productId` is); (b) every other line
+is looked up by name in the household's current `baseline_basket`, which stores the line price they last
+paid. Lines neither source knows are counted and the message says «за K з N позицій» — a partial sum is
+never presented as the whole. No `silpo_find_products_batch` at list time: that would be a second cart
+build for a number the cart will show a minute later, and criterion 3 forbids it.
+
+**Consequence worth knowing:** a cooking household's *first* list has no price line at all (no baseline
+yet). That is honest, and better than the alternative (a fake estimate from a price table nobody
+maintains). From the first confirmed order on, every list is priced.
+
+**Why safe to decide alone:** the criteria are all met (cart total: already; ready-meals estimate at the
+plan-summary stage: yes; no new MCP calls: yes), and the baseline fallback is strictly additive.

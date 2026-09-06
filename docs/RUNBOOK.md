@@ -251,7 +251,20 @@ added to.
 Needs `ANTHROPIC_API_KEY`. This happens automatically, seconds after step 4 — plan generation is a long
 call and runs off the webhook thread.
 
-**Expect:** «План на тиждень готовий, 7 днів. Понеділок: … Список покупок: N позицій.»
+**Expect:** «План на тиждень готовий, 7 днів. Понеділок: … Список покупок: N позицій.» — and then the list
+itself, grouped by category, ending in «Всього N позицій.» and, when anything could be priced, «Орієнтовно
+~X грн — точну суму покажу в кошику.» (task 39).
+
+### Task 39: verify the price estimate on the list
+
+- [ ] `READY_MEALS_ONLY` profile: both the plan summary and the list carry «Орієнтовно ~X грн» right away —
+      every line has a catalog price. `SELECT name, estimated_price FROM shopping_list_item WHERE status='ACTIVE'`
+      is non-null on every row. If it is null everywhere, Silpo's search response carried no `price` field for
+      this account — say so, the stub can't prove that either way.
+- [ ] Cooking profile, first week: **no** «Орієнтовно» line (nothing to price from yet — honest, not a bug).
+- [ ] Cooking profile after the first confirmed order: tap «Список» (or regenerate) — the line appears, with
+      «за K з N позицій» when the new list has items the baseline never had.
+- [ ] The number is in the same ballpark as the cart's «Разом» that follows «Замовити».
 
 **Verify:**
 
