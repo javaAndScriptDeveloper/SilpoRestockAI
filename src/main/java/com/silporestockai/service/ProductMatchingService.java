@@ -52,7 +52,7 @@ public class ProductMatchingService {
      * index 2, the plain milk at 0, the potato at 1); the one case that needed depth, «Яловичина», was answered
      * «none» regardless because the real beef was short on stock. Twelve keeps the decisions and halves the prompt.
      */
-    private static final int MAX_CANDIDATES_SHOWN = 12;
+    private static final int MAX_CANDIDATES_SHOWN = 15;
 
     /** The answer for a line nothing was chosen for. */
     public static final int NONE = -1;

@@ -92,6 +92,58 @@ public class CartBuildingService {
                 .toList();
     }
 
+    /**
+     * Name fragments that mark a catalog hit as not groceries for people at all: pet food, baby food, toys,
+     * kitchenware. A search for «Яловичина» returns cat food and dog treats, «Спагеті» a serving spoon, «Банан»
+     * an anti-stress toy, and «Вівсянка» a Gerber infant porridge — which the fast matcher picked once, at ₴388.
+     *
+     * <p>Not a substitute for the matcher's judgement (that list would never end) — a floor under it, for the
+     * classes where no judgement is needed. A line that itself asks for one of these («корм для кота») keeps
+     * them.
+     */
+    private static final List<String> NOT_GROCERIES_FOR_PEOPLE = List.of(
+            "корм для",
+            "для котів",
+            "для кішок",
+            "для собак",
+            "ласощі для",
+            "іграшк",
+            "антистрес",
+            "дитяче харчування",
+            "gerber",
+            "nutrilon",
+            "hipp",
+            "milupa",
+            "nestlé nan",
+            "nestle nan",
+            "nutricia",
+            "ложка",
+            "виделка",
+            "лопатка",
+            "терка",
+            "каструл",
+            "сковорід");
+
+    /** {@link #availableOnly}, minus the hits that are obviously not food for people — see the list above. */
+    private static List<JsonNode> plausibleFor(String requestedName, List<JsonNode> candidates) {
+        String asked = requestedName == null ? "" : requestedName.toLowerCase(Locale.ROOT);
+        List<String> markers = NOT_GROCERIES_FOR_PEOPLE.stream()
+                .filter(marker -> !asked.contains(marker))
+                .toList();
+        List<JsonNode> kept = new ArrayList<>();
+        for (JsonNode candidate : availableOnly(candidates)) {
+            String name = McpResponses.findString(candidate, McpResponses.NAME)
+                    .orElse("")
+                    .toLowerCase(Locale.ROOT);
+            if (markers.stream().anyMatch(name::contains)) {
+                log.debug("dropping «{}» as a candidate for «{}»: not groceries for people", name, requestedName);
+                continue;
+            }
+            kept.add(candidate);
+        }
+        return kept;
+    }
+
     /** The shelf tags of each line's candidates, in Silpo's own order, as the matcher wants them. */
     private static List<ProductMatchRequest> matchRequests(
             List<ShoppingListItem> items, List<List<JsonNode>> candidatesFor) {
@@ -531,8 +583,12 @@ public class CartBuildingService {
             // without an ordinary match behind it a placement that does not would leave the line unresolved.
             List<ShoppingListItem> toMatch = chunk;
             List<List<JsonNode>> candidatesFor = toMatch.stream()
-                    .map(item -> availableOnly(productsByQuery.getOrDefault(
-                            biasedSearchTerm(item.getName(), onlyUaProducer).toLowerCase(Locale.ROOT), List.of())))
+                    .map(item -> plausibleFor(
+                            item.getName(),
+                            productsByQuery.getOrDefault(
+                                    biasedSearchTerm(item.getName(), onlyUaProducer)
+                                            .toLowerCase(Locale.ROOT),
+                                    List.of())))
                     .toList();
             List<Integer> picked = productMatchingService.choose(matchRequests(toMatch, candidatesFor));
             Map<ShoppingListItem, JsonNode> matched = new IdentityHashMap<>();
@@ -673,8 +729,8 @@ public class CartBuildingService {
             ShoppingListItem item = stillMissing.get(entry.getKey());
             List<JsonNode> union = new ArrayList<>();
             for (String term : entry.getValue()) {
-                for (JsonNode product :
-                        availableOnly(productsByQuery.getOrDefault(term.toLowerCase(Locale.ROOT), List.of()))) {
+                for (JsonNode product : plausibleFor(
+                        item.getName(), productsByQuery.getOrDefault(term.toLowerCase(Locale.ROOT), List.of()))) {
                     String id = McpResponses.findString(product, McpResponses.PRODUCT_ID)
                             .orElse(null);
                     boolean seen = union.stream()
@@ -855,6 +911,18 @@ public class CartBuildingService {
         };
     }
 
+    /**
+     * Whether two unit kinds can be divided into each other. Grams and millilitres are the same number for every
+     * liquid a grocery sells — a «900г» milk pack is 900 ml, and a list that asks for «2 л» of it wants two packs,
+     * not the one pack the "different kinds of unit" refusal used to send.
+     */
+    private static boolean comparable(UnitKind packageKind, UnitKind wantedKind) {
+        if (packageKind == wantedKind) {
+            return true;
+        }
+        return packageKind != UnitKind.COUNT && wantedKind != UnitKind.COUNT;
+    }
+
     /** Never less than one step, and always a whole multiple of it — Silpo rejects anything else. */
     private static BigDecimal roundToStep(BigDecimal amount, BigDecimal step) {
         BigDecimal safeStep = step == null || step.signum() <= 0 ? BigDecimal.ONE : step;
@@ -932,7 +1000,7 @@ public class CartBuildingService {
         }
         if (packageAmount.isEmpty()
                 || wanted.isEmpty()
-                || packageAmount.get().kind() != wanted.get().kind()
+                || !comparable(packageAmount.get().kind(), wanted.get().kind())
                 || packageAmount.get().amount().signum() <= 0) {
             log.warn(
                     "could not relate \"{}\" {} to Silpo's displayRatio \"{}\" for product match — sending the "

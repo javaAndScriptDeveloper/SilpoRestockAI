@@ -185,7 +185,9 @@ public class ClaudeApiClientImpl implements ClaudeApiClient {
                 "Claude -> {} system=\"{}\" user=\"{}\"",
                 call,
                 SecretRedactor.truncate(systemPrompt, 200),
-                SecretRedactor.truncate(userPrompt, 2000));
+                // Long enough for a whole cart's candidate lists: when the matcher picks the wrong product, the
+                // question is what it was shown, and 2000 characters cut a 25-line cart off at line three.
+                SecretRedactor.truncate(userPrompt, 12000));
     }
 
     private void logCompletion(String call, String text) {

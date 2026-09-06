@@ -500,6 +500,45 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
                 .isEqualByComparingTo("0.4");
     }
 
+    /** «2 л» of milk sold in «900г» packs is two packs: grams and millilitres are the same number for a liquid. */
+    @Test
+    void relatesLitresToAGramLabelledPackForALiquid() {
+        UUID userId = connectedUser(8430L);
+        scriptCartTools();
+        MCP.respondToTool("silpo_find_products_batch", """
+                {"queries":[{"query":"молоко","products":[{"name":"Молоко «Премія» 2,5%","productId":"p-1",\
+                "companyId":"company-3","branchId":"branch-7","step":1,"displayRatio":"900г"}]}]}""");
+        MCP.respondToTool("silpo_add_or_update_cart_products", "{\"ok\":true}");
+
+        cartBuildingService.buildCart(userId, List.of(item("молоко", "2", "л")));
+
+        JsonNode added = MCP.callArguments("silpo_add_or_update_cart_products").getFirst();
+        assertThat(added.path("products").get(0).path("quantity").asInt()).isEqualTo(2);
+    }
+
+    /**
+     * Pet food, baby food, toys and kitchenware never reach the matcher as candidates. Without a model configured
+     * the first remaining candidate wins, so the Gerber porridge and the cat food being skipped is visible in what
+     * gets added.
+     */
+    @Test
+    void dropsCandidatesThatAreObviouslyNotGroceriesForPeopleBeforeMatching() {
+        UUID userId = connectedUser(8431L);
+        scriptCartTools();
+        MCP.respondToTool("silpo_find_products_batch", """
+                {"queries":[{"query":"вівсянка","products":[\
+                {"name":"Каша вівсяно-пшенична Gerber молочна суха","productId":"p-baby","companyId":"company-3","branchId":"branch-7"},\
+                {"name":"Корм для котів Whiskas з вівсянкою","productId":"p-cat","companyId":"company-3","branchId":"branch-7"},\
+                {"name":"Пластівці вівсяні Ситий двір","productId":"p-oats","companyId":"company-3","branchId":"branch-7",\
+                "step":1,"displayRatio":"500г"}]}]}""");
+        MCP.respondToTool("silpo_add_or_update_cart_products", "{\"ok\":true}");
+
+        cartBuildingService.buildCart(userId, List.of(item("вівсянка", "500", "г")));
+
+        JsonNode added = MCP.callArguments("silpo_add_or_update_cart_products").getFirst();
+        assertThat(added.path("products").get(0).path("productId").asText()).isEqualTo("p-oats");
+    }
+
     /** «1кг» is a displayRatio too — it used to fail to parse and drop the line to the minimum step. */
     @Test
     void readsAKilogramDisplayRatio() {
