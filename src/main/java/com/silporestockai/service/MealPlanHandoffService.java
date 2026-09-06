@@ -15,6 +15,7 @@ import com.silporestockai.model.WeeklyMealPlan;
 import com.silporestockai.repository.UserRepository;
 import com.silporestockai.service.telegram.ShoppingListMessageService;
 import com.silporestockai.service.telegram.TelegramOutboundService;
+import com.silporestockai.utils.DayLabels;
 import java.time.DayOfWeek;
 import java.util.List;
 import java.util.UUID;
@@ -107,7 +108,8 @@ public class MealPlanHandoffService {
     private static final int MINIMUM_DISTINCT_READY_MEALS = 7;
 
     /**
-     * One line: the week is ready, and here is Monday, which is the only part anyone reads immediately.
+     * The week is ready, and here it is, one line a day. It used to show Monday alone on the theory that nobody
+     * reads further; the first person to see it asked where the other six days were.
      *
      * <p>The price line (task 39) appears here, at the plan-summary stage, only when something could actually be
      * priced — for a ready-meals week that is every line, straight from the catalog; for a cooking week it is
@@ -115,16 +117,20 @@ public class MealPlanHandoffService {
      */
     private String summarise(MealPlan plan, int shoppingListSize, PriceEstimate estimate) {
         WeeklyMealPlan week = MAPPER.convertValue(plan.getPlan(), WeeklyMealPlan.class);
-        String monday = week.days().stream()
-                .filter(day -> day.day() == DayOfWeek.MONDAY)
-                .findFirst()
-                .map(PlannedDay::meals)
-                .orElse(List.of())
-                .stream()
-                .map(PlannedMeal::name)
-                .collect(Collectors.joining(" / "));
-        String message = "План на тиждень готовий, %d днів.\nПонеділок: %s\nСписок покупок: %d позицій."
-                .formatted(week.days().size(), monday, shoppingListSize);
+        StringBuilder text = new StringBuilder("План на тиждень готовий.");
+        for (DayOfWeek day : DayOfWeek.values()) {
+            week.days().stream()
+                    .filter(planned -> planned.day() == day)
+                    .findFirst()
+                    .map(PlannedDay::meals)
+                    .filter(meals -> meals != null && !meals.isEmpty())
+                    .ifPresent(meals -> text.append('\n')
+                            .append(DayLabels.shortLabel(day))
+                            .append(": ")
+                            .append(meals.stream().map(PlannedMeal::name).collect(Collectors.joining(" / "))));
+        }
+        String message = text.append("\nСписок покупок: %d позицій.".formatted(shoppingListSize))
+                .toString();
         if (estimate.hasPrices()) {
             message += "\n" + shoppingListMessageService.estimateLine(estimate);
         }

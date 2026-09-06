@@ -214,7 +214,7 @@ class MealPlanHandoffIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void generatesAPlanAndTellsTheUserWhatIsOnMonday() {
+    void generatesAPlanAndTellsTheUserWhatIsOnEveryDay() {
         UUID userId = profiledUser();
         CLAUDE.respondWithText(fullWeekJson());
 
@@ -225,8 +225,14 @@ class MealPlanHandoffIntegrationTest extends AbstractIntegrationTest {
         assertThat(shoppingListItemRepository.count()).isEqualTo(5);
         // The plan announcement is the first message, not the last: the hand-off goes straight on to show the
         // list for approval rather than building a cart on its own — nothing reaches Silpo until a person agrees.
+        // All seven days, one line each — a Monday-only summary read as «where is the rest of the week?».
         String message = TELEGRAM.sentMessages().getFirst().path("text").asText();
         assertThat(message).contains("Вівсянка").contains("Борщ").contains("5 позицій");
+        assertThat(message)
+                .contains("\nПн: ")
+                .contains("\nЧт: ")
+                .contains("\nНд: ")
+                .doesNotContain("Понеділок:");
         assertThat(TELEGRAM.sentMessages().getLast().path("text").asText())
                 .contains("Ось що пропоную взяти")
                 .contains("Всього 5 позицій");
