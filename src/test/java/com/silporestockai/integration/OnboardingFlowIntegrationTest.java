@@ -258,6 +258,41 @@ class OnboardingFlowIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void theFallbackAsksHowTheHouseholdCooksBeforeAnythingElse() throws Exception {
+        sendText(1, "привіт");
+        tapButton(2, "onb:skip");
+        sendText(3, "Заповнити вручну");
+
+        assertThat(conversationStateService.load(CHAT_ID).getCurrentStep())
+                .isEqualTo(OnboardingStep.ASK_COOKING_TIME.name());
+        var keyboard = TELEGRAM.sentMessages().getLast().path("reply_markup").path("inline_keyboard");
+        assertThat(keyboard.findValues("callback_data").stream().map(n -> n.asText()))
+                .containsExactly("onb:cook:COOKS_DAILY", "onb:cook:COOKS_BATCH", "onb:cook:READY_MEALS_ONLY");
+
+        // Text is not an answer here — the step stays, the buttons are pointed at again.
+        sendText(4, "готую щодня");
+        assertThat(conversationStateService.load(CHAT_ID).getCurrentStep())
+                .isEqualTo(OnboardingStep.ASK_COOKING_TIME.name());
+
+        tapButton(5, "onb:cook:READY_MEALS_ONLY");
+        assertThat(conversationStateService.load(CHAT_ID).getCurrentStep())
+                .isEqualTo(OnboardingStep.ASK_HOUSEHOLD.name());
+        assertThat(lastMessageText()).contains("Скільки вас удома?");
+
+        sendText(6, "2");
+        sendText(7, "нема");
+        sendText(8, "нема");
+        sendText(9, "1500");
+
+        UUID userId = userRepository.findByTelegramChatId(CHAT_ID).orElseThrow().getId();
+        UserProfile profile = userProfileRepository.findByUserId(userId).orElseThrow();
+        // The fallback used to skip this question entirely, so a no-cooking household got the recipe planner.
+        assertThat(profile.getCookingTimePreference())
+                .isEqualTo(com.silporestockai.model.CookingTimePreference.READY_MEALS_ONLY);
+        assertThat(profile.getHouseholdSize()).isEqualTo(2);
+    }
+
+    @Test
     void asksEverythingWhenTheUserSkipsConnecting() throws Exception {
         sendText(1, "привіт");
 
@@ -267,12 +302,13 @@ class OnboardingFlowIntegrationTest extends AbstractIntegrationTest {
 
         sendText(3, "Заповнити вручну");
         assertThat(conversationStateService.load(CHAT_ID).getCurrentStep())
-                .isEqualTo(OnboardingStep.ASK_HOUSEHOLD.name());
+                .isEqualTo(OnboardingStep.ASK_COOKING_TIME.name());
 
-        sendText(4, "нас четверо");
-        sendText(5, "алергія на горіхи");
-        sendText(6, "броколі");
-        sendText(7, "2000");
+        tapButton(4, "onb:cook:COOKS_DAILY");
+        sendText(5, "нас четверо");
+        sendText(6, "алергія на горіхи");
+        sendText(7, "броколі");
+        sendText(8, "2000");
 
         UUID userId = userRepository.findByTelegramChatId(CHAT_ID).orElseThrow().getId();
         UserProfile profile = userProfileRepository.findByUserId(userId).orElseThrow();
@@ -318,8 +354,9 @@ class OnboardingFlowIntegrationTest extends AbstractIntegrationTest {
         sendText(1, "привіт");
         tapButton(2, "onb:skip");
         sendText(3, "Заповнити вручну");
+        tapButton(4, "onb:cook:COOKS_DAILY");
 
-        sendText(4, "не знаю");
+        sendText(5, "не знаю");
 
         assertThat(conversationStateService.load(CHAT_ID).getCurrentStep())
                 .isEqualTo(OnboardingStep.ASK_HOUSEHOLD.name());
@@ -331,13 +368,14 @@ class OnboardingFlowIntegrationTest extends AbstractIntegrationTest {
         sendText(1, "привіт");
         tapButton(2, "onb:skip");
         sendText(3, "Заповнити вручну");
-        sendText(4, "нас четверо");
+        tapButton(4, "onb:cook:COOKS_DAILY");
+        sendText(5, "нас четверо");
 
         // Nothing in memory carries between webhook calls; only conversation_state does.
         assertThat(conversationStateService.load(CHAT_ID).getCurrentStep())
                 .isEqualTo(OnboardingStep.ASK_RESTRICTIONS.name());
 
-        sendText(5, "нема");
+        sendText(6, "нема");
 
         assertThat(conversationStateService.load(CHAT_ID).getCurrentStep())
                 .isEqualTo(OnboardingStep.ASK_DISLIKES.name());
@@ -354,10 +392,11 @@ class OnboardingFlowIntegrationTest extends AbstractIntegrationTest {
 
         tapButton(3, "onb:correct");
         sendText(4, "Заповнити вручну");
-        sendText(5, "нас двоє");
-        sendText(6, "нема");
+        tapButton(5, "onb:cook:COOKS_BATCH");
+        sendText(6, "нас двоє");
         sendText(7, "нема");
-        sendText(8, "1800");
+        sendText(8, "нема");
+        sendText(9, "1800");
 
         UUID userId = userRepository.findByTelegramChatId(CHAT_ID).orElseThrow().getId();
         UserProfile profile = userProfileRepository.findByUserId(userId).orElseThrow();
@@ -370,15 +409,16 @@ class OnboardingFlowIntegrationTest extends AbstractIntegrationTest {
         sendText(1, "привіт");
         tapButton(2, "onb:skip");
         sendText(3, "Заповнити вручну");
-        sendText(4, "2");
-        sendText(5, "нема");
+        tapButton(4, "onb:cook:COOKS_DAILY");
+        sendText(5, "2");
         sendText(6, "нема");
-        sendText(7, "1500");
+        sendText(7, "нема");
+        sendText(8, "1500");
         TELEGRAM.reset();
 
         // Onboarded users' free text goes through IntentRouterService (task 31); an un-stubbed Claude call
         // there fails classification and falls back to a clarifying question, not the old static message.
-        sendText(8, "а що далі?");
+        sendText(9, "а що далі?");
 
         assertThat(userProfileRepository.count()).isEqualTo(1);
         assertThat(lastMessageText()).contains("Не зовсім зрозумів");
@@ -398,7 +438,7 @@ class OnboardingFlowIntegrationTest extends AbstractIntegrationTest {
         sendText(3, "Заповнити вручну");
 
         assertThat(conversationStateService.load(CHAT_ID).getCurrentStep())
-                .isEqualTo(OnboardingStep.ASK_HOUSEHOLD.name());
+                .isEqualTo(OnboardingStep.ASK_COOKING_TIME.name());
         assertThat(userProfileRepository.count()).isZero();
     }
 
@@ -422,6 +462,9 @@ class OnboardingFlowIntegrationTest extends AbstractIntegrationTest {
 
         sendText(3, "Заповнити вручну");
 
+        assertThat(conversationStateService.load(CHAT_ID).getCurrentStep())
+                .isEqualTo(OnboardingStep.ASK_COOKING_TIME.name());
+        tapButton(4, "onb:cook:COOKS_DAILY");
         assertThat(lastMessageText()).contains("Скільки вас удома?");
         assertThat(conversationStateService.load(CHAT_ID).getCurrentStep())
                 .isEqualTo(OnboardingStep.ASK_HOUSEHOLD.name());

@@ -50,7 +50,8 @@ import org.springframework.stereotype.Service;
  *
  * <p>Questions the Silpo profile already answered are skipped. The budget is collected by the WebApp form itself
  * (MCP cannot know what someone intends to spend); the chat question only fires for the manual-fallback path, where
- * there is no form to put it in.
+ * there is no form to put it in. Both paths open with the one question nothing else can answer for a household — how
+ * it cooks — because that single answer picks the planner path (task 22's ready-meals fork).
  */
 @Slf4j
 @Service
@@ -61,6 +62,9 @@ public class OnboardingFlowService {
     public static final String CALLBACK_SKIP = "onb:skip";
     public static final String CALLBACK_CONFIRM = "onb:confirm";
     public static final String CALLBACK_CORRECT = "onb:correct";
+    /** Prefix of the manual-fallback cooking-time buttons; the suffix is a {@link CookingTimePreference} name. */
+    public static final String CALLBACK_COOKING_PREFIX = "onb:cook:";
+
     public static final String CALLBACK_REEDIT_CONFIRM = "reedit:confirm";
     public static final String CALLBACK_REEDIT_CANCEL = "reedit:cancel";
     public static final String CANCEL_LABEL = "Скасувати";
@@ -398,6 +402,12 @@ public class OnboardingFlowService {
             presentWebAppForm(chatId, context, user);
             return;
         }
+        if (step == OnboardingStep.ASK_COOKING_TIME && data.startsWith(CALLBACK_COOKING_PREFIX)) {
+            context.put(
+                    KEY_COOKING_TIME, CookingTimePreference.valueOf(data.substring(CALLBACK_COOKING_PREFIX.length())));
+            askNext(chatId, OnboardingStep.ASK_HOUSEHOLD, context, user);
+            return;
+        }
         log.debug("ignoring callback {} at step {}", data, step);
     }
 
@@ -410,7 +420,7 @@ public class OnboardingFlowService {
      */
     private void presentWebAppForm(long chatId, Map<String, Object> context, User user) {
         if (!telegramProperties.webAppConfigured()) {
-            askNext(chatId, OnboardingStep.ASK_HOUSEHOLD, context, user);
+            askNext(chatId, OnboardingStep.ASK_COOKING_TIME, context, user);
             return;
         }
         String formUrl = telegramProperties.webAppBaseUrl() + "/webapp/onboarding.html?prefill=" + prefillOf(context);
@@ -503,7 +513,7 @@ public class OnboardingFlowService {
     private void handleAnswer(User user, long chatId, OnboardingStep step, String answer, Map<String, Object> context) {
         if (step == OnboardingStep.AWAITING_WEBAPP_FORM) {
             if (FALLBACK_LABEL.equals(answer.trim())) {
-                askNext(chatId, OnboardingStep.ASK_HOUSEHOLD, context, user);
+                askNext(chatId, OnboardingStep.ASK_COOKING_TIME, context, user);
             } else {
                 telegramOutboundService.sendMessage(
                         chatId, "Натисни кнопку «Заповнити анкету» або «" + FALLBACK_LABEL + "».");
@@ -511,6 +521,8 @@ public class OnboardingFlowService {
             return;
         }
         switch (step) {
+            // A typed answer is not parsed here — the three options are buttons, and re-showing them is the nudge.
+            case ASK_COOKING_TIME -> askCookingTime(chatId);
             case ASK_HOUSEHOLD -> {
                 Optional<Integer> size = parseCount(answer);
                 if (size.isEmpty()) {
@@ -548,6 +560,7 @@ public class OnboardingFlowService {
             target = following(target);
         }
         switch (target) {
+            case ASK_COOKING_TIME -> askCookingTime(chatId);
             case ASK_HOUSEHOLD -> telegramOutboundService.sendMessage(chatId, "Скільки вас удома?");
             case ASK_RESTRICTIONS ->
                 telegramOutboundService.sendMessage(
@@ -563,8 +576,24 @@ public class OnboardingFlowService {
         save(chatId, target, context);
     }
 
+    private void askCookingTime(long chatId) {
+        telegramOutboundService.sendMessageWithButtons(
+                chatId,
+                "Спершу головне: як у тебе з готуванням?",
+                List.of(
+                        TelegramButton.callback(
+                                "Готую потроху щодня", CALLBACK_COOKING_PREFIX + CookingTimePreference.COOKS_DAILY),
+                        TelegramButton.callback(
+                                "Готую наперед, раз на кілька днів",
+                                CALLBACK_COOKING_PREFIX + CookingTimePreference.COOKS_BATCH),
+                        TelegramButton.callback(
+                                "Не готую — лише готова їжа",
+                                CALLBACK_COOKING_PREFIX + CookingTimePreference.READY_MEALS_ONLY)));
+    }
+
     private static OnboardingStep following(OnboardingStep step) {
         return switch (step) {
+            case ASK_COOKING_TIME -> OnboardingStep.ASK_HOUSEHOLD;
             case ASK_HOUSEHOLD -> OnboardingStep.ASK_RESTRICTIONS;
             case ASK_RESTRICTIONS -> OnboardingStep.ASK_DISLIKES;
             case ASK_BUDGET -> OnboardingStep.DONE;
@@ -574,6 +603,7 @@ public class OnboardingFlowService {
 
     private static boolean answered(Map<String, Object> context, OnboardingStep step) {
         return switch (step) {
+            case ASK_COOKING_TIME -> context.get(KEY_COOKING_TIME) != null;
             case ASK_HOUSEHOLD -> context.get(KEY_HOUSEHOLD) != null;
             case ASK_RESTRICTIONS -> context.get(KEY_RESTRICTIONS) != null;
             case ASK_DISLIKES -> context.get(KEY_DISLIKES) != null;
@@ -598,7 +628,6 @@ public class OnboardingFlowService {
             profile.setAdultFemaleCount(adultFemale);
             profile.setChildrenAgeBrackets(brackets);
             profile.setDietType(dietOf(context));
-            profile.setCookingTimePreference(cookingTimeOf(context));
             int adults = (adultMale == null ? 0 : adultMale) + (adultFemale == null ? 0 : adultFemale);
             profile.setHouseholdSize(adults + brackets.size());
             profile.setHasKids(!brackets.isEmpty());
@@ -609,6 +638,8 @@ public class OnboardingFlowService {
             profile.setHasKids(context.get(KEY_HAS_KIDS) instanceof Boolean flag ? flag : null);
             profile.setKidsAges(intListOf(context.get(KEY_KIDS_AGES)));
         }
+        // Both paths ask this one — the form as its first section, the fallback as its first question.
+        profile.setCookingTimePreference(cookingTimeOf(context));
         profile.setDietaryRestrictions(stringListOf(context.get(KEY_RESTRICTIONS)));
         profile.setDislikedFoods(stringListOf(context.get(KEY_DISLIKES)));
         profile.setWeeklyBudget(

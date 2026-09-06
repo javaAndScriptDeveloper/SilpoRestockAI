@@ -14,6 +14,11 @@ public enum OnboardingStep {
      * {@code web_app_data} or the fallback button's text.
      */
     AWAITING_WEBAPP_FORM,
+    /**
+     * Asking how the household cooks — first, because that one answer picks the whole planner path (task 22's
+     * ready-meals fork). Buttons only; a typed answer is re-asked.
+     */
+    ASK_COOKING_TIME,
     /** Asking how many people eat at home. */
     ASK_HOUSEHOLD,
     /** Asking about allergies and diet restrictions. */
