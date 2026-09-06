@@ -326,7 +326,10 @@ public class CartBuildingService {
                         line.catalogName(),
                         plain(line.quantity()),
                         unit,
-                        plain(line.unitPrice().multiply(line.quantity()).setScale(2, RoundingMode.HALF_UP)));
+                        line.unitPrice()
+                                .multiply(line.quantity())
+                                .setScale(2, RoundingMode.HALF_UP)
+                                .toPlainString());
     }
 
     /**

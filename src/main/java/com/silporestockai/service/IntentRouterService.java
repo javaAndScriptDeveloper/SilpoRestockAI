@@ -177,7 +177,7 @@ public class IntentRouterService {
     public boolean tryRoute(User user, String text) {
         ClassifiedIntent classified;
         try {
-            classified = claudeApiClient.completeStructured(systemPrompt, text, ClassifiedIntent.class);
+            classified = claudeApiClient.completeStructured(systemPrompt, withToday(text), ClassifiedIntent.class);
         } catch (RuntimeException e) {
             log.warn("could not classify intent for text", e);
             return false;
@@ -222,12 +222,44 @@ public class IntentRouterService {
             // said what to change; asking them to say it again is the failure mode task 31 was built to remove.
             case LIST_MODIFY ->
                 shoppingListBuilderService.buildAndShow(user, "Поточний список треба змінити так: " + text, null);
-            case CALENDAR_VIEW -> calendarViewService.showWeek(user);
+            // «Що їмо в середу?» opens Wednesday; a day-less «покажи календар» opens the picker.
+            case CALENDAR_VIEW ->
+                dayOf(classified.themeDescription())
+                        .ifPresentOrElse(
+                                day -> calendarViewService.showDay(user, day.name()),
+                                () -> calendarViewService.showWeek(user));
             case CALENDAR_CONNECT -> calendarIntegrationService.offerConnection(user);
             case PAST_ORDER_SEED -> pastOrderSeedService.offer(user);
             case DISH_INGREDIENTS_ORDER -> dishRequestService.start(user, classified.themeDescription());
             case HELP -> sendHelp(user);
             case UNKNOWN -> askClarifyingQuestion(user);
+        }
+    }
+
+    /**
+     * The message with today's date in front of it. «До п'ятниці», «завтра» and «що їмо в середу» all need to
+     * know what day it is, and the model does not.
+     */
+    private static String withToday(String text) {
+        java.time.LocalDate today = java.time.LocalDate.now(KYIV);
+        return "Сьогодні: %s, %s.\nПовідомлення: %s"
+                .formatted(
+                        today.getDayOfWeek().getDisplayName(java.time.format.TextStyle.FULL, UKRAINIAN), today, text);
+    }
+
+    private static final java.time.ZoneId KYIV = java.time.ZoneId.of("Europe/Kyiv");
+    private static final Locale UKRAINIAN = Locale.forLanguageTag("uk");
+
+    /** A day the classifier named for CALENDAR_VIEW, as the enum the calendar view is keyed by; empty otherwise. */
+    private static java.util.Optional<java.time.DayOfWeek> dayOf(String themeDescription) {
+        if (themeDescription == null || themeDescription.isBlank()) {
+            return java.util.Optional.empty();
+        }
+        try {
+            return java.util.Optional.of(
+                    java.time.DayOfWeek.valueOf(themeDescription.trim().toUpperCase(Locale.ROOT)));
+        } catch (IllegalArgumentException e) {
+            return java.util.Optional.empty();
         }
     }
 

@@ -7,6 +7,7 @@ import com.silporestockai.client.mcp.SilpoMcpClient;
 import com.silporestockai.entity.ConversationState;
 import com.silporestockai.entity.ShoppingListItem;
 import com.silporestockai.entity.User;
+import com.silporestockai.model.CartContext;
 import com.silporestockai.model.ConversationFlow;
 import com.silporestockai.model.PastOrderLine;
 import com.silporestockai.model.PastOrderSummary;
@@ -21,6 +22,7 @@ import java.math.RoundingMode;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -62,6 +64,7 @@ public class PastOrderSeedService {
     private static final DateTimeFormatter DATE_LABEL = DateTimeFormatter.ofPattern("d MMM", new Locale("uk"));
 
     private final SilpoMcpClient silpoMcpClient;
+    private final CartBuildingService cartBuildingService;
     private final SilpoAuthService silpoAuthService;
     private final ShoppingListService shoppingListService;
     private final ShoppingListBuilderService shoppingListBuilderService;
@@ -173,7 +176,7 @@ public class PastOrderSeedService {
         List<PastOrderSummary> orders = new ArrayList<>();
         for (String tool : ORDER_TOOLS) {
             try {
-                McpToolResponse response = silpoMcpClient.callTool(tool, Map.of(), userId);
+                McpToolResponse response = silpoMcpClient.callTool(tool, argumentsFor(tool, userId), userId);
                 if (response.isError()) {
                     log.info("Silpo tool {} reported an error for user {}; skipping it", tool, userId);
                     continue;
@@ -187,6 +190,24 @@ public class PastOrderSeedService {
         // Newest first when dates parse; otherwise Silpo's own order, which is newest-first in practice.
         orders.sort((a, b) -> parseDate(b.dateLabel()).compareTo(parseDate(a.dateLabel())));
         return orders.size() > MAX_OFFERED ? orders.subList(0, MAX_OFFERED) : orders;
+    }
+
+    /**
+     * The offline-orders tool wants the cart's branch, delivery type and time slot like the catalog tools do
+     * (its own schema says so); the online one takes nothing. Called with no arguments, the offline tool
+     * answered «Invalid arguments» on every live run and in-store history was never seen.
+     */
+    private Map<String, Object> argumentsFor(String tool, UUID userId) {
+        if (!tool.contains("offline")) {
+            return Map.of();
+        }
+        CartContext context = cartBuildingService.getOrCreateCartContext(userId);
+        Map<String, Object> arguments = new LinkedHashMap<>();
+        arguments.put("branchId", context.branchId() == null ? "" : context.branchId());
+        arguments.put("deliveryType", context.deliveryType() == null ? "" : context.deliveryType());
+        arguments.put("timeslotStart", context.timeslotStart() == null ? "" : context.timeslotStart());
+        arguments.put("timeslotEnd", context.timeslotEnd() == null ? "" : context.timeslotEnd());
+        return arguments;
     }
 
     static List<PastOrderSummary> parse(JsonNode root, String source) {

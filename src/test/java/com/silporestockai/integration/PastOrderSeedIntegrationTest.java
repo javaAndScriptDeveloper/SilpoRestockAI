@@ -102,8 +102,12 @@ class PastOrderSeedIntegrationTest extends AbstractIntegrationTest {
 
     private static StubMcpServer startMcp() {
         try {
-            return new StubMcpServer(
-                    List.of("silpo_get_my_online_orders", "silpo_get_my_offline_orders", "silpo_find_products_batch"));
+            return new StubMcpServer(List.of(
+                    "silpo_get_my_online_orders",
+                    "silpo_get_my_offline_orders",
+                    "silpo_find_products_batch",
+                    "silpo_get_my_shopping_cart",
+                    "silpo_get_shopping_cart_by_id"));
         } catch (IOException e) {
             throw new IllegalStateException("could not start the MCP stub", e);
         }
@@ -187,8 +191,18 @@ class PastOrderSeedIntegrationTest extends AbstractIntegrationTest {
         CLAUDE.respondWithText(CLASSIFIED);
         MCP.respondToTool("silpo_get_my_online_orders", ONLINE_ORDERS);
         MCP.respondToTool("silpo_get_my_offline_orders", OFFLINE_ORDERS);
+        // The in-store history tool wants the cart's branch, delivery type and slot, like the catalog tools do.
+        MCP.respondToTool("silpo_get_my_shopping_cart", "{\"cartId\":\"cart-p\"}");
+        MCP.respondToTool("silpo_get_shopping_cart_by_id", """
+                {"cartId":"cart-p","branchId":"branch-7","companyId":"company-3","deliveryType":"DeliveryHome",\
+                "timeslot":{"start":"2026-09-07T06:00:00+00:00","end":"2026-09-07T07:30:00+00:00"},"items":[]}""");
 
         sendText(1, "зроби список як минулого разу");
+
+        var offlineCall = MCP.callArguments("silpo_get_my_offline_orders").getFirst();
+        assertThat(offlineCall.path("branchId").asText()).isEqualTo("branch-7");
+        assertThat(offlineCall.path("deliveryType").asText()).isEqualTo("DeliveryHome");
+        assertThat(offlineCall.path("timeslotStart").asText()).isEqualTo("2026-09-07T06:00:00+00:00");
 
         var offer = TELEGRAM.sentMessages().getLast();
         assertThat(offer.path("text").asText()).contains("Яке взяти за основу?");

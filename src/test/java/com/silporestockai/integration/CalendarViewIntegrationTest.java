@@ -166,6 +166,36 @@ class CalendarViewIntegrationTest extends AbstractIntegrationTest {
         assertThat(text).doesNotContain("куряче стегно", "вівсяні пластівці");
     }
 
+    /**
+     * «Що їмо в середу?» names a day, so the answer is Wednesday, not a day picker. The classifier is told what
+     * day today is, because «завтра» means nothing without it.
+     */
+    @Test
+    void aSentenceThatNamesADayOpensThatDayNotThePicker() throws Exception {
+        CLAUDE.respondWithText(fullWeekJson());
+        mealPlanService.generateWeeklyPlan(user.getId());
+        CLAUDE.respondWithText(
+                "{\"intent\":\"CALENDAR_VIEW\",\"confidence\":0.9,\"themeDescription\":\"WEDNESDAY\",\"targetDateTimeIso\":null}");
+
+        mockMvc.perform(post("/telegram/webhook")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"update_id":7,"message":{"message_id":7,"date":1,"chat":{"id":%d,"type":"private"},\
+                                "from":{"id":5,"is_bot":false,"first_name":"Тест"},"text":"що їмо в середу?"}}""".formatted(CHAT_ID)))
+                .andExpect(status().isOk());
+
+        String text = TELEGRAM.sentMessages().getLast().path("text").asText();
+        assertThat(text).startsWith("Ср:").contains("Вівсянка");
+        assertThat(CLAUDE.requests()
+                        .getLast()
+                        .path("messages")
+                        .get(0)
+                        .path("content")
+                        .asText())
+                .startsWith("Сьогодні: ")
+                .contains("що їмо в середу?");
+    }
+
     @Test
     void tappingADayButtonInTelegramRendersThatDay() throws Exception {
         CLAUDE.respondWithText(fullWeekJson());
