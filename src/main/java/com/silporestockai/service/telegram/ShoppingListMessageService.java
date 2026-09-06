@@ -228,6 +228,17 @@ public class ShoppingListMessageService {
         return "Хвилинку, складаю список.";
     }
 
+    /**
+     * Said the moment «Замовити» is tapped, before any of the work starts.
+     *
+     * <p>Building a cart is a search of the whole catalogue, a product choice per line and several Silpo calls —
+     * up to a minute. Without this the tap looked like it had done nothing at all, and people tapped again, which
+     * started a second cart build over the top of the first. The honest "about a minute" is the point.
+     */
+    public String buildingCartText() {
+        return "Збираю кошик у «Сільпо» — шукаю кожну позицію в каталозі. Це займе до хвилини.";
+    }
+
     public String couldNotBuildText() {
         return "Не вдалось скласти список. Спробуй описати інакше або надішли фото.";
     }

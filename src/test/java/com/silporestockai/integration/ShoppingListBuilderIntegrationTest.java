@@ -326,6 +326,72 @@ class ShoppingListBuilderIntegrationTest extends AbstractIntegrationTest {
                 .containsExactly("Гречка");
     }
 
+    /**
+     * A live account tapped «Замовити» three times in twenty seconds, because nothing at all came back: building a
+     * cart is a whole-catalogue search plus a product choice per line, and it took the better part of a minute in
+     * silence. The tap says what it is doing, and how long, before any of the work starts.
+     */
+    @Test
+    void tappingOrderSaysWhatIsHappeningBeforeTheWorkStarts() throws Exception {
+        shoppingListItemRepository.save(ShoppingListItem.builder()
+                .id(UUID.randomUUID())
+                .userId(user.getId())
+                .name("Гречка")
+                .quantity(BigDecimal.ONE)
+                .unit("кг")
+                .status(com.silporestockai.model.ShoppingListStatus.ACTIVE)
+                .build());
+
+        tapButton(1, ShoppingListMessageService.CALLBACK_ORDER);
+
+        assertThat(TELEGRAM.sentMessages())
+                .anyMatch(message -> message.path("text").asText().contains("Збираю кошик"));
+    }
+
+    /**
+     * And a second tap must not start a second build. They share one Silpo cart, and the first thing a build does
+     * is empty it, so two racing clear each other's work. The guard is in {@code conversation_state}, not a field —
+     * two updates can land on different instances.
+     */
+    @Test
+    void aSecondOrderTapWhileACartIsBeingBuiltIsIgnored() throws Exception {
+        shoppingListItemRepository.save(ShoppingListItem.builder()
+                .id(UUID.randomUUID())
+                .userId(user.getId())
+                .name("Гречка")
+                .quantity(BigDecimal.ONE)
+                .unit("кг")
+                .status(com.silporestockai.model.ShoppingListStatus.ACTIVE)
+                .build());
+        conversationStateService.save(CHAT_ID, ConversationFlow.LIST_BUILDING, "BUILDING_CART", java.util.Map.of());
+
+        tapButton(1, ShoppingListMessageService.CALLBACK_ORDER);
+
+        assertThat(TELEGRAM.sentMessages())
+                .noneMatch(message -> message.path("text").asText().contains("Збираю кошик"));
+    }
+
+    /**
+     * A build that ends without a cart must not leave the guard on: the list goes back in front of the household
+     * so «Замовити» works again rather than being ignored for good. No Silpo credentials in this context, so the
+     * cart build fails — which is exactly the path being checked.
+     */
+    @Test
+    void aFailedBuildPutsTheListBackSoOrderCanBeTappedAgain() throws Exception {
+        shoppingListItemRepository.save(ShoppingListItem.builder()
+                .id(UUID.randomUUID())
+                .userId(user.getId())
+                .name("Гречка")
+                .quantity(BigDecimal.ONE)
+                .unit("кг")
+                .status(com.silporestockai.model.ShoppingListStatus.ACTIVE)
+                .build());
+
+        tapButton(1, ShoppingListMessageService.CALLBACK_ORDER);
+
+        assertThat(conversationStateService.load(CHAT_ID).getCurrentStep()).isEqualTo("AWAITING_APPROVAL");
+    }
+
     @Test
     void cancellingOrdersNothingAndLeavesTheFlow() throws Exception {
         sendText(1, "/list");

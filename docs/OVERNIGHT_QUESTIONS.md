@@ -724,3 +724,53 @@ contained no fresh banana: **the search term is wrong, not the ranking**. Fixing
 re-query with a differently phrased term when the first returns nothing usable — which is a round-trip and a
 design of its own. This change makes that case honest and *countable*; the log now says exactly which lines
 fall into it, which is what a fix should be measured against.
+
+## «Кнопка «Замовити» начебто не працює» — it worked, it just said nothing for 100 seconds
+
+Reported right after the product-matching change. The button was never broken; it went silent long enough
+to look broken, and the silence made it worse.
+
+**Measured on the live account:** tap at 18:27:32, cart presented at 18:29:26 — **114 seconds**, of which
+**100 seconds was a single Claude call** matching 30 lines against 25 candidates each. Before matching
+existed the whole build was about ten seconds. The person tapped three more times, and — because
+`list:order` is dispatched globally and nothing guarded it — each tap started *another* cart build against
+the same Silpo cart. A build's first act is to empty that cart, so concurrent builds clear each other's
+work and the household keeps whichever finished last.
+
+**Three fixes, in order of what actually mattered:**
+
+1. **The tap says what it is doing, before any work starts** — «Збираю кошик у «Сільпо» — шукаю кожну
+   позицію в каталозі. Це займе до хвилини.» A minute of silence reads as a dead button; a minute with an
+   honest estimate reads as work.
+2. **A second tap while a build is in flight is ignored**, guarded through `conversation_state`
+   (`LIST_BUILDING/BUILDING_CART`) rather than a field — two updates can land on different instances, which
+   is why nothing else in this application keeps memory in a field either. A build that ends without a cart
+   puts the list back so «Замовити» works again rather than being ignored for good.
+3. **25 candidates per line → 12.** Every choice that mattered in the live run came from the first handful
+   (the pasta at index 2, plain milk at 0, the potato at 1); the one case needing depth, «Яловичина», was
+   answered «none» regardless because the real beef was short on stock.
+
+## The Anthropic account ran out of credit mid-session
+
+While verifying the above, every Claude call started failing with
+`400 … Your credit balance is too low to access the Anthropic API`. It happened between 18:29 and 18:34,
+and this session's own live runs — several full weekly carts, each a ~30k-token matching prompt — are part
+of why. **Top the account up before the next live test.**
+
+Two things worth taking from it:
+
+- **The degradation behaved exactly as designed.** The matcher logged
+  `could not choose products for 30 shopping list lines; falling back to Silpo's own ranking` at ERROR with
+  the exception, the cart still built, and Silpo still issued a checkout link — in six seconds. A loud
+  degradation rather than a silent success is the whole point, and this is the first time it was exercised
+  for real.
+- **I could not re-measure the 12-candidate improvement live.** The 100-second figure is measured; the
+  improvement from halving the prompt is not. Treat it as untested until there is credit to measure with.
+
+**Worth your decision — matching runs on Sonnet, once per cart build.** A ~30k-token input plus a
+structured answer per line is the single most expensive call this application makes, and it now fires on
+every «Замовити». `ClaudeApiClient` already has a `fast-model` path (Haiku) for calls with no judgement
+call to make, but only for plain `complete`, not `completeStructured`. Whether "pick the ordinary product,
+not the jerky" is a judgement call Haiku can make is an empirical question I could not answer without
+credit. If cost matters, that is the first thing to try — a structured fast-model variant is a small change
+and would cut this call several-fold.

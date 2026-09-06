@@ -46,6 +46,9 @@ public class ShoppingListBuilderService {
      */
     public static final String STEP_AWAITING_APPROVAL = "AWAITING_APPROVAL";
 
+    /** A cart build is in flight for this chat. Not a question either — see {@link #awaitsAnAnswer}. */
+    private static final String STEP_BUILDING_CART = "BUILDING_CART";
+
     private static final String STEP_AWAITING_EDIT = "AWAITING_EDIT";
 
     /** Own mapper, as elsewhere in the app: Boot 4 carries both Jackson 2 and Jackson 3. */
@@ -338,11 +341,27 @@ public class ShoppingListBuilderService {
                 .toList();
     }
 
-    /** Approval. From here on it is task 10's confirmation, unchanged. */
+    /**
+     * Approval. From here on it is task 10's confirmation, unchanged.
+     *
+     * <p>Two things about the wait, both learned from a live account tapping «Замовити» three times in twenty
+     * seconds. Building a cart is a whole-catalogue search, a product choice per line and several Silpo calls —
+     * the better part of a minute — and until this said so, the tap looked like it had done nothing at all.
+     *
+     * <p>And a second tap must not start a second build: they share one Silpo cart, and the first thing a build
+     * does is empty it, so two of them racing clear each other's work and leave the household with whichever
+     * finished last. The guard lives in {@code conversation_state} rather than a field, because two updates can
+     * land on different instances — the same reason nothing else in this application keeps memory in a field.
+     */
     private void order(User user) {
+        long chatId = user.getTelegramChatId();
+        if (STEP_BUILDING_CART.equals(stepOf(chatId))) {
+            log.info("ignoring a second «Замовити» for chat {}: a cart is already being built", chatId);
+            return;
+        }
         List<ShoppingListItem> items = currentItems(user.getId());
         if (items.isEmpty()) {
-            telegramOutboundService.sendMessage(user.getTelegramChatId(), messages.couldNotBuildText());
+            telegramOutboundService.sendMessage(chatId, messages.couldNotBuildText());
             return;
         }
         // The first confirmed basket is what every later check-in is compared against; a later one is not.
@@ -351,7 +370,18 @@ public class ShoppingListBuilderService {
                         .isPresent()
                 ? OrderType.AD_HOC
                 : OrderType.INITIAL;
-        cartConfirmationService.present(user, items, type);
+        conversationStateService.save(chatId, ConversationFlow.LIST_BUILDING, STEP_BUILDING_CART, Map.of());
+        telegramOutboundService.sendMessage(chatId, messages.buildingCartText());
+        try {
+            cartConfirmationService.present(user, items, type);
+        } finally {
+            // present() takes the state over on success (CART_CONFIRMATION) and reports its own failures without
+            // throwing. Either way, a chat still sitting on the guard is one whose build ended without a cart —
+            // put the list back in front of them so «Замовити» works again rather than being ignored forever.
+            if (STEP_BUILDING_CART.equals(stepOf(chatId))) {
+                conversationStateService.save(chatId, ConversationFlow.LIST_BUILDING, STEP_AWAITING_APPROVAL, Map.of());
+            }
+        }
     }
 
     /**

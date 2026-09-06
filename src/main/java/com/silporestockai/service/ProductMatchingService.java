@@ -36,11 +36,14 @@ import org.springframework.stereotype.Service;
 public class ProductMatchingService {
 
     /**
-     * How many of Silpo's candidates the model is shown per line. Silpo returns at most 30; the live evidence has
-     * the right answer as deep as index 20 («Фарш домашній яловичина та свинина» for «Яловичина»), so this is
-     * generous on purpose — the whole cart is one call, and a truncated list is a wrong answer nobody can see.
+     * How many of Silpo's candidates the model is shown per line.
+     *
+     * <p>Started at 25 and cost a live account 100 seconds for one call on a 30-line list — a tap that looked like
+     * it had done nothing. Every choice that mattered in that same run came from the first handful (the pasta at
+     * index 2, the plain milk at 0, the potato at 1); the one case that needed depth, «Яловичина», was answered
+     * «none» regardless because the real beef was short on stock. Twelve keeps the decisions and halves the prompt.
      */
-    private static final int MAX_CANDIDATES_SHOWN = 25;
+    private static final int MAX_CANDIDATES_SHOWN = 12;
 
     /** The answer for a line nothing was chosen for. */
     public static final int NONE = -1;
