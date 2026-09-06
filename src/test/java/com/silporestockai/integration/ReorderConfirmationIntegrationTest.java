@@ -122,7 +122,8 @@ class ReorderConfirmationIntegrationTest extends AbstractIntegrationTest {
                     "silpo_find_products_batch",
                     "silpo_add_or_update_cart_products",
                     "silpo_update_shopping_cart",
-                    "silpo_get_promotions",
+                    "silpo_clear_shopping_cart",
+                    "silpo_get_time_slots",
                     "silpo_get_replacements"));
         } catch (IOException e) {
             throw new IllegalStateException("could not start the MCP stub", e);
@@ -191,7 +192,7 @@ class ReorderConfirmationIntegrationTest extends AbstractIntegrationTest {
                 "checkoutWebLink":"https://silpo.ua/checkout/cart-9","checkoutMobileLink":"silpo://checkout/cart-9"}""");
         MCP.respondToTool("silpo_add_or_update_cart_products", "{\"ok\":true}");
         MCP.respondToTool("silpo_update_shopping_cart", "{\"ok\":true}");
-        MCP.respondToTool("silpo_get_promotions", "{\"promotions\":[]}");
+        MCP.respondToTool("silpo_clear_shopping_cart", "{\"ok\":true}");
         MCP.respondToTool(
                 "silpo_find_products_batch",
                 "{\"queries\":[{\"query\":\"Молоко\",\"products\":[{\"name\":\"Молоко\",\"productId\":\"p-1\","
@@ -448,14 +449,18 @@ class ReorderConfirmationIntegrationTest extends AbstractIntegrationTest {
     @Test
     void theSavingsFigureFromTheDeltaOrderIsWhatTheUserSees() {
         needs(List.of("Молоко"));
-        MCP.respondToTool(
-                "silpo_get_promotions",
-                "{\"promotions\":[{\"name\":\"Молоко\",\"productId\":\"p-1\",\"price\":30,\"oldPrice\":38}]}");
+        MCP.respondToTool("silpo_get_shopping_cart_by_id", """
+                {"cartId":"cart-9","branchId":"branch-7","companyId":"company-3","deliveryType":"delivery",\
+                "items":[{"productId":"p-1","name":"Молоко 2.5%","unit":"л","quantity":2,"price":30}],\
+                "calculation":{"total":60,"productsTotal":60,"subDiscount":16},"validations":[],\
+                "checkoutWebLink":"https://silpo.ua/checkout/cart-9","checkoutMobileLink":"silpo://checkout/cart-9"}""");
 
         present();
 
-        // Two litres, eight hryvnia off each.
-        assertThat(lastMessageText()).contains("16.00");
+        // Silpo's own subDiscount for the cart, and the lines with what they cost.
+        assertThat(lastMessageText())
+                .contains("Економія за акціями: 16.00 грн")
+                .contains("Молоко 2.5% — 2 л — 60.00 грн");
     }
 
     @Test

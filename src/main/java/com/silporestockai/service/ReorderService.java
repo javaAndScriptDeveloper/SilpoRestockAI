@@ -9,11 +9,9 @@ import com.silporestockai.model.BasketItem;
 import com.silporestockai.model.CartContext;
 import com.silporestockai.model.CartSummary;
 import com.silporestockai.model.DeltaOrder;
-import com.silporestockai.model.OfferedSlot;
 import com.silporestockai.model.OrderType;
 import com.silporestockai.model.ReplacementOption;
 import com.silporestockai.model.ReplacementSuggestion;
-import com.silporestockai.model.ResolvedProduct;
 import com.silporestockai.repository.BaselineBasketRepository;
 import com.silporestockai.utils.McpResponses;
 import java.math.BigDecimal;
@@ -23,7 +21,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Objects;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -33,18 +30,20 @@ import org.springframework.stereotype.Service;
  * Builds the smallest cart that fixes the fridge.
  *
  * <p>The first order was a week of shopping. A reorder is a delta: what the last check-in said ran out, minus what
- * this household demonstrably never eats, with substitutes offered for whatever Silpo cannot supply and promotions
- * taken where they exist.
+ * this household demonstrably never eats, with substitutes offered for whatever Silpo cannot supply.
  *
- * <p>The MCP sequence is not reimplemented here. {@link CartBuildingService} owns it step by step, and this composes
- * those steps with two calls of its own in between.
+ * <p>The cart itself is {@link CartBuildingService#buildCart}, the same pipeline every other order takes — which
+ * clears the cart first, chooses products, holds back a line that looks wrong, tops a small cart up over Silpo's
+ * minimum, and reads the verified total back. A reorder used to compose those steps by hand and skipped the first
+ * of them: it added to whatever the Silpo cart already held, and on the live account a three-line reorder
+ * carried the eleven lines of a cancelled cheese-and-wine cart underneath it. Savings are Silpo's own figure for
+ * the cart; the promotions tool answers with campaign codes, not products, and is not consulted here.
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class ReorderService {
 
-    private static final String TOOL_PROMOTIONS = "silpo_get_promotions";
     private static final String TOOL_REPLACEMENTS = "silpo_get_replacements";
 
     /** A branch with nothing in stock must not turn one reorder into forty tool calls. */
@@ -85,46 +84,23 @@ public class ReorderService {
 
         List<ShoppingListItem> items = withBaselineQuantities(userId, needs);
         CartContext context = cartBuildingService.getOrCreateCartContext(userId);
-        Map<String, JsonNode> promotions = promotions(userId, context);
-
-        List<ResolvedProduct> resolved = cartBuildingService.resolveProducts(userId, context, items);
-        BigDecimal savings = BigDecimal.ZERO;
-        List<ResolvedProduct> toAdd = new ArrayList<>();
-        for (ResolvedProduct product : resolved) {
-            JsonNode promo = promotions.get(normalise(product.requestedName()));
-            toAdd.add(promo == null ? product : promoted(product, promo));
-            savings = savings.add(savingOn(product, promo));
-        }
-
-        cartBuildingService.addProductsToCart(userId, context, toAdd);
-        // No time slot: choosing one is task 15's job, and asking for one here would pick it twice.
-        OfferedSlot slotChosenLater = null;
-        CartSummary cart = cartBuildingService.getVerifiedCart(
-                userId, context, slotChosenLater, cartBuildingService.unresolvedNames(items, resolved));
-
-        // Matching on product id, not on name: the cart comes back with Silpo's own names, and "Молоко 2.5% 900мл"
-        // is the same line as the "молоко" that was asked for only if the id says so.
-        Map<String, String> addedIds = new LinkedHashMap<>();
-        toAdd.forEach(product -> addedIds.putIfAbsent(normalise(product.requestedName()), product.productId()));
-        List<String> cartProductIds = cart.items().stream()
-                .map(BasketItem::silpoProductId)
-                .filter(Objects::nonNull)
-                .toList();
+        CartSummary cart = cartBuildingService.buildCart(userId, items);
 
         List<String> reordered = new ArrayList<>();
         List<String> missing = new ArrayList<>();
         for (String need : needs) {
-            // A name can fail to arrive two ways — no search hit, or a hit the cart did not end up containing.
-            // Both are the same thing to the person reading the message, so both are asked about once.
-            String productId = addedIds.get(normalise(need));
-            if (productId != null && cartProductIds.contains(productId)) {
-                reordered.add(need);
-            } else {
+            boolean unresolved = cart.unresolved().stream().anyMatch(name -> name.equalsIgnoreCase(need));
+            boolean heldBack = cart.skippedLines().stream()
+                    .anyMatch(line -> line.toLowerCase(Locale.ROOT).startsWith(need.toLowerCase(Locale.ROOT) + " — "));
+            if (unresolved || heldBack) {
                 missing.add(need);
+            } else {
+                reordered.add(need);
             }
         }
 
-        List<ReplacementSuggestion> suggestions = replacementsFor(userId, context, missing, resolved);
+        List<ReplacementSuggestion> suggestions = replacementsFor(userId, context, missing);
+        BigDecimal savings = cart.savings() == null ? BigDecimal.ZERO : cart.savings();
         log.info(
                 "delta order for user {}: {} reordered, {} needing a decision, saving about {}",
                 userId,
@@ -165,67 +141,13 @@ public class ReorderService {
                 .toList();
     }
 
-    /** Active promotions at this branch, keyed by product name so a needed item can be looked up directly. */
-    private Map<String, JsonNode> promotions(UUID userId, CartContext context) {
-        Map<String, JsonNode> byName = new LinkedHashMap<>();
-        JsonNode response = call(userId, TOOL_PROMOTIONS, Map.of("branchId", nullSafe(context.branchId())));
-        if (response == null) {
-            return byName;
-        }
-        for (JsonNode promo : McpResponses.findArray(response, McpResponses.PROMOTIONS)) {
-            McpResponses.findString(promo, McpResponses.NAME)
-                    .ifPresent(name -> byName.putIfAbsent(normalise(name), promo));
-        }
-        log.info("MCP <- {} active promotions at branch {}", byName.size(), context.branchId());
-        return byName;
-    }
-
-    /** The promoted variant of a product: same line, Silpo's promo product id. */
-    private static ResolvedProduct promoted(ResolvedProduct product, JsonNode promo) {
-        return McpResponses.findString(promo, McpResponses.PRODUCT_ID)
-                .map(productId -> new ResolvedProduct(
-                        product.requestedName(),
-                        productId,
-                        product.companyId(),
-                        product.branchId(),
-                        product.quantity(),
-                        product.unit()))
-                .orElse(product);
-    }
-
-    /**
-     * Rough money saved on one line.
-     *
-     * <p>Deliberately rough: it is what Silpo says the item used to cost against what it costs now, times the amount
-     * being bought. A number to show someone, not an accounting figure.
-     */
-    private static BigDecimal savingOn(ResolvedProduct product, JsonNode promo) {
-        if (promo == null) {
-            return BigDecimal.ZERO;
-        }
-        BigDecimal now = McpResponses.findNumber(promo, McpResponses.PRICE).orElse(null);
-        BigDecimal before =
-                McpResponses.findNumber(promo, McpResponses.OLD_PRICE).orElse(null);
-        if (now == null || before == null || before.compareTo(now) <= 0) {
-            return BigDecimal.ZERO;
-        }
-        BigDecimal quantity = product.quantity() == null ? BigDecimal.ONE : product.quantity();
-        return before.subtract(now).multiply(quantity);
-    }
-
     /** Asks Silpo what it would offer instead, for each item that did not make it into the cart. */
-    private List<ReplacementSuggestion> replacementsFor(
-            UUID userId, CartContext context, List<String> missing, List<ResolvedProduct> resolved) {
+    private List<ReplacementSuggestion> replacementsFor(UUID userId, CartContext context, List<String> missing) {
         List<ReplacementSuggestion> suggestions = new ArrayList<>();
         for (String name : missing.stream().limit(MAX_REPLACEMENT_LOOKUPS).toList()) {
             Map<String, Object> arguments = new LinkedHashMap<>();
             arguments.put("branchId", nullSafe(context.branchId()));
             arguments.put("name", name);
-            // A product id when the search found one and the cart still refused it; the name alone otherwise.
-            resolved.stream()
-                    .filter(product -> product.requestedName().equalsIgnoreCase(name))
-                    .findFirst()
-                    .ifPresent(product -> arguments.put("productId", product.productId()));
 
             JsonNode response = call(userId, TOOL_REPLACEMENTS, arguments);
             List<ReplacementOption> options = response == null
@@ -253,10 +175,10 @@ public class ReorderService {
     }
 
     /**
-     * A failed promotion or replacement lookup is not a failed reorder.
+     * A failed replacement lookup is not a failed reorder.
      *
-     * <p>Both calls are enrichment: without them the cart is still correct, only less clever. The cart calls
-     * themselves stay in {@link CartBuildingService}, where a failure is fatal on purpose.
+     * <p>Enrichment: without it the cart is still correct, only less clever. The cart calls themselves stay in
+     * {@link CartBuildingService}, where a failure is fatal on purpose.
      */
     private JsonNode call(UUID userId, String tool, Map<String, Object> arguments) {
         log.info("MCP -> {} {}", tool, arguments);

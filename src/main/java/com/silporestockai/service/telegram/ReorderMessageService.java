@@ -1,5 +1,6 @@
 package com.silporestockai.service.telegram;
 
+import com.silporestockai.model.BasketItem;
 import com.silporestockai.model.CartSummary;
 import com.silporestockai.model.DeltaOrder;
 import com.silporestockai.model.OfferedSlot;
@@ -37,8 +38,37 @@ public class ReorderMessageService {
     /** The order as it currently stands, decisions included. */
     public String orderText(DeltaOrder order, OfferedSlot slot, Map<Integer, Boolean> decisions) {
         StringBuilder text = new StringBuilder("Час докупити. Ось що зібрав:\n");
-        for (String name : order.reordered()) {
-            text.append("\n— ").append(name);
+        if (order.cart() != null && !order.cart().items().isEmpty()) {
+            // The cart's own lines, with quantity and what each costs — a reorder used to list bare names, and
+            // the person tapping «Підтвердити» had no idea what they were agreeing to pay.
+            for (BasketItem item : order.cart().items()) {
+                text.append("\n— ").append(item.name());
+                if (item.quantity() != null) {
+                    text.append(" — ").append(amount(item.quantity()));
+                    if (item.unit() != null) {
+                        text.append(' ').append(item.unit());
+                    }
+                }
+                if (item.price() != null) {
+                    BigDecimal lineCost = item.quantity() == null
+                            ? item.price()
+                            : item.price().multiply(item.quantity());
+                    text.append(" — ").append(money(lineCost)).append(" грн");
+                }
+            }
+            if (!order.cart().toppedUpLines().isEmpty()) {
+                text.append(
+                        "\n\nЗамовлення було менше за мінімум доставки «Сільпо», тож додав із твого звичайного набору:");
+                order.cart().toppedUpLines().forEach(line -> text.append("\n+ ").append(line));
+            }
+            if (!order.cart().skippedLines().isEmpty()) {
+                text.append("\n\nНе поклав, бо виглядає неправильно:");
+                order.cart().skippedLines().forEach(line -> text.append("\n— ").append(line));
+            }
+        } else {
+            for (String name : order.reordered()) {
+                text.append("\n— ").append(name);
+            }
         }
         if (!order.excluded().isEmpty()) {
             text.append("\n\nНе беру, бо їх стабільно не їдять: ")
@@ -63,13 +93,23 @@ public class ReorderMessageService {
                 text.append(decision ? " — беру." : " — не беру.");
             }
         }
+        if (order.cart() != null && order.cart().total() != null) {
+            text.append("\n\nРазом: ").append(money(order.cart().total())).append(" грн");
+        }
         if (order.estimatedSavings() != null && order.estimatedSavings().signum() > 0) {
-            text.append("\n\nНа акціях економимо приблизно ")
+            text.append("\nЕкономія за акціями: ")
                     .append(money(order.estimatedSavings()))
-                    .append(" грн.");
+                    .append(" грн");
         }
         text.append("\n\nДоставка: ").append(DeliverySlots.describe(slot));
         return text.toString();
+    }
+
+    /** Quantities read better without trailing zeros: {@code 1} rather than {@code 1.00}. */
+    private static String amount(BigDecimal value) {
+        BigDecimal stripped = value.stripTrailingZeros();
+        return (stripped.scale() < 0 ? stripped.setScale(0, java.math.RoundingMode.UNNECESSARY) : stripped)
+                .toPlainString();
     }
 
     /**
@@ -115,9 +155,7 @@ public class ReorderMessageService {
                 .append(money(cart.total()))
                 .append(" грн.");
         if (savings != null && savings.signum() > 0) {
-            text.append("\nЗаощадили на акціях приблизно ")
-                    .append(money(savings))
-                    .append(" грн.");
+            text.append("\nЗаощадили на акціях ").append(money(savings)).append(" грн.");
         }
         if (!slotFixed) {
             text.append("\nЧас доставки зафіксувати не вдалось — обери його на сторінці оформлення.");

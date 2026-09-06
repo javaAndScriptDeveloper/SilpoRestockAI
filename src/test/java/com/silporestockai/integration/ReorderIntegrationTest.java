@@ -74,7 +74,8 @@ class ReorderIntegrationTest extends AbstractIntegrationTest {
                     "silpo_get_shopping_cart_by_id",
                     "silpo_find_products_batch",
                     "silpo_add_or_update_cart_products",
-                    "silpo_get_promotions",
+                    "silpo_clear_shopping_cart",
+                    "silpo_get_time_slots",
                     "silpo_get_replacements"));
         } catch (IOException e) {
             throw new IllegalStateException("could not start the MCP stub", e);
@@ -132,7 +133,8 @@ class ReorderIntegrationTest extends AbstractIntegrationTest {
                 "checkoutWebLink":"https://silpo.ua/checkout/cart-9",\
                 "checkoutMobileLink":"silpo://checkout/cart-9"}""");
         MCP.respondToTool("silpo_add_or_update_cart_products", "{\"ok\":true}");
-        MCP.respondToTool("silpo_get_promotions", "{\"promotions\":[]}");
+        MCP.respondToTool("silpo_clear_shopping_cart", "{\"ok\":true}");
+        MCP.respondToTool("silpo_get_time_slots", "{\"timeSlots\":[{\"id\":\"slot-1\",\"from\":\"18:00\"}]}");
         MCP.respondToTool(
                 "silpo_find_products_batch",
                 "{\"queries\":[{\"query\":\"Молоко\",\"products\":[{\"name\":\"Молоко\",\"productId\":\"p-1\","
@@ -218,37 +220,40 @@ class ReorderIntegrationTest extends AbstractIntegrationTest {
                 .containsExactly("Хліб житній");
     }
 
+    /**
+     * Silpo prices its promotions into the cart itself; the saving shown is its own figure for the cart. The
+     * promotions tool answers with campaign codes rather than products and is not consulted any more.
+     */
     @Test
-    void prefersThePromotedVariantAndSaysWhatThatSaved() {
+    void reportsSilposOwnSavingForTheCart() {
         needs(List.of(), List.of("Молоко"));
-        MCP.respondToTool(
-                "silpo_get_promotions",
-                "{\"promotions\":[{\"name\":\"Молоко\",\"productId\":\"promo-1\",\"price\":30,\"oldPrice\":38}]}");
         MCP.respondToTool("silpo_get_shopping_cart_by_id", """
                 {"cartId":"cart-9","branchId":"branch-7","companyId":"company-3","deliveryType":"delivery",\
-                "items":[{"productId":"promo-1","name":"Молоко 2.5%","unit":"л","quantity":2,"price":30}],\
-                "total":60,"validations":[],\
+                "items":[{"productId":"p-1","name":"Молоко 2.5%","unit":"л","quantity":2,"price":30}],\
+                "calculation":{"total":60,"productsTotal":60,"subDiscount":16},"validations":[],\
                 "checkoutWebLink":"https://silpo.ua/checkout/cart-9",\
                 "checkoutMobileLink":"silpo://checkout/cart-9"}""");
 
         DeltaOrder order = reorderService.buildScheduledDeltaOrder(userId);
 
-        JsonNode added = MCP.callArguments("silpo_add_or_update_cart_products").getFirst();
-        assertThat(added.path("products").get(0).path("productId").asText()).isEqualTo("promo-1");
-        // Two litres, eight hryvnia off each.
         assertThat(order.estimatedSavings()).isEqualByComparingTo("16");
         assertThat(order.reordered()).containsExactly("Молоко");
+        assertThat(MCP.calledTools()).doesNotContain("silpo_get_promotions");
     }
 
+    /**
+     * A reorder goes through the same cart pipeline as every other order, which starts by emptying the cart. It
+     * used to add to whatever the cart held, and a live three-line reorder carried an eleven-line cancelled cart
+     * underneath it.
+     */
     @Test
-    void aBrokenPromotionsCallStillProducesAnOrder() {
+    void clearsTheCartBeforeAddingTheDelta() {
         needs(List.of(), List.of("Молоко"));
-        MCP.failTool("silpo_get_promotions");
 
-        DeltaOrder order = reorderService.buildScheduledDeltaOrder(userId);
+        reorderService.buildScheduledDeltaOrder(userId);
 
-        assertThat(order.reordered()).containsExactly("Молоко");
-        assertThat(order.estimatedSavings()).isEqualByComparingTo("0");
+        assertThat(MCP.calledTools())
+                .containsSubsequence("silpo_clear_shopping_cart", "silpo_add_or_update_cart_products");
     }
 
     @Test
