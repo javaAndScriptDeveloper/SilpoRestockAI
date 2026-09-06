@@ -358,7 +358,7 @@ public class CartConfirmationService {
             // Silpo's rule, not ours, and nothing here could lift the cart over it (no baseline to top up from).
             // The cart itself is real and sitting in the Silpo app, which is the one place the person can add
             // to it right now.
-            return ("Зібрав кошик на %s грн, але «Сільпо» не доставляє замовлення менше %s грн. "
+            return ("Зібрав кошик на %s грн (без доставки), але «Сільпо» не доставляє замовлення менше %s грн. "
                             + "Кошик уже в застосунку «Сільпо» — докинь щось там, або зроби спочатку тижневе "
                             + "замовлення: тоді наступного разу я сам доповню маленький кошик твоїми звичайними "
                             + "продуктами.")

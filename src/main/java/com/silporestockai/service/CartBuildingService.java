@@ -263,9 +263,12 @@ public class CartBuildingService {
             return List.of();
         }
         BigDecimal running = total == null ? BigDecimal.ZERO : total;
+        // Baseline prices are what the household paid last time; today's may be a little lower after a discount,
+        // and landing a few hryvnia short means another refused cart. Aim a little past the line.
+        BigDecimal target = minimum.multiply(new BigDecimal("1.05"));
         List<ResolvedProduct> topUp = new ArrayList<>();
         for (BasketItem item : baseline) {
-            if (running.compareTo(minimum) >= 0) {
+            if (running.compareTo(target) >= 0) {
                 break;
             }
             BigDecimal quantity =
@@ -1268,6 +1271,9 @@ public class CartBuildingService {
                 .findFirst()
                 .orElse(null);
         BigDecimal total = McpResponses.findNumber(cart, McpResponses.TOTAL).orElse(BigDecimal.ZERO);
+        // The minimum is measured against the goods, not the goods plus delivery.
+        BigDecimal goodsTotal =
+                McpResponses.findNumber(cart, McpResponses.PRODUCTS_TOTAL).orElse(total);
 
         JsonNode loyalty = McpResponses.findNode(cart, McpResponses.LOYALTY).orElse(null);
         BigDecimal bonusAvailable = loyalty == null
@@ -1296,7 +1302,7 @@ public class CartBuildingService {
                     validations,
                     cart);
             throw new CartBuildException(
-                    "Silpo gave no checkout link for cart " + context.cartId(), validations, total, minimumOrder);
+                    "Silpo gave no checkout link for cart " + context.cartId(), validations, goodsTotal, minimumOrder);
         }
 
         CartSummary summary = new CartSummary(

@@ -58,6 +58,13 @@ public final class McpResponses {
     public static final String[] REPLACEMENTS = {"replacements", "substitutes", "alternatives", "products"};
     public static final String[] PROMOTIONS = {"promotions", "promos", "offers", "products"};
     public static final String[] TOTAL = {"total", "totalSum", "sum"};
+
+    /**
+     * The goods alone, after discounts and before delivery — what Silpo measures its minimum order against. Its
+     * {@code total} is the goods plus delivery, and topping a cart up to that number left it ₴95 short.
+     */
+    public static final String[] PRODUCTS_TOTAL = {"productsTotal", "goodsTotal", "itemsTotal"};
+
     public static final String[] VALIDATIONS = {"validations", "errors", "warnings"};
     public static final String[] LOYALTY = {"loyalty"};
     public static final String[] BONUS_AVAILABLE = {"bonusAvailable"};
