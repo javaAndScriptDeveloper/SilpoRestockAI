@@ -65,6 +65,9 @@ public final class McpResponses {
      */
     public static final String[] PRODUCTS_TOTAL = {"productsTotal", "goodsTotal", "itemsTotal"};
 
+    /** What promotions took off the whole cart — Silpo applies promo prices itself, this is the sum of them. */
+    public static final String[] CART_DISCOUNT = {"subDiscount", "totalDiscount", "discount"};
+
     public static final String[] VALIDATIONS = {"validations", "errors", "warnings"};
     public static final String[] LOYALTY = {"loyalty"};
     public static final String[] BONUS_AVAILABLE = {"bonusAvailable"};

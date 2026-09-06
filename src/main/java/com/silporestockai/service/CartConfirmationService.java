@@ -91,10 +91,15 @@ public class CartConfirmationService {
      *     so a caller that has a way to offer another go (the list's «Замовити») can add it
      */
     public boolean present(User user, List<ShoppingListItem> items, OrderType type) {
+        return present(user, items, type, false);
+    }
+
+    /** Same, for a request made «по знижці» — see {@code CartBuildingService.buildCart}. */
+    public boolean present(User user, List<ShoppingListItem> items, OrderType type, boolean preferDiscounted) {
         long chatId = user.getTelegramChatId();
         CartSummary summary;
         try {
-            summary = cartBuildingService.buildCart(user.getId(), items);
+            summary = cartBuildingService.buildCart(user.getId(), items, preferDiscounted);
         } catch (NoSilpoDeliveryAddressException e) {
             log.error("could not build a cart for user {}", user.getId(), e);
             telegramOutboundService.sendMessage(

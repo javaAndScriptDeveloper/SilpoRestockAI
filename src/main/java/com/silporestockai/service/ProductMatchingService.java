@@ -225,6 +225,10 @@ public class ProductMatchingService {
                                     : request.quantity().toPlainString())
                     .append(' ')
                     .append(request.unit() == null ? "" : request.unit())
+                    .append(
+                            request.preferDiscounted()
+                                    ? " — людина просила ПО ЗНИЖЦІ: бери товар з поміткою АКЦІЯ"
+                                    : "")
                     .append('\n');
             List<ProductCandidate> candidates = request.candidates();
             if (candidates.isEmpty()) {
@@ -243,6 +247,11 @@ public class ProductMatchingService {
                                         ? "ціна невідома"
                                         : candidate.price().toPlainString() + " грн")
                         .append(candidate.weighted() ? " за кг" : "")
+                        .append(
+                                candidate.discounted()
+                                        ? " (АКЦІЯ, було "
+                                                + candidate.oldPrice().toPlainString() + ")"
+                                        : "")
                         .append(", пакування ")
                         .append(candidate.displayRatio() == null ? "невідоме" : candidate.displayRatio())
                         .append(", на складі ")

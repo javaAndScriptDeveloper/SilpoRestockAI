@@ -210,6 +210,33 @@ class ProductMatchingIntegrationTest extends AbstractIntegrationTest {
                 .isEmpty();
     }
 
+    /** «По знижці» reaches the model as a note on the line, and a promoted candidate is marked with its old price. */
+    @Test
+    void marksPromotedCandidatesAndTheDiscountPreference() {
+        CLAUDE.respondWithText("{\"choices\":[{\"lineIndex\":0,\"candidateIndex\":1,\"reason\":\"акція\"}]}");
+        ProductMatchRequest cheese = new ProductMatchRequest(
+                "Сир твердий",
+                new BigDecimal("300"),
+                "г",
+                List.of(
+                        packaged("Сир Плай Бердо", "149", "150г", "12"),
+                        new ProductCandidate(
+                                "Сир Пирятин",
+                                new BigDecimal("88.9"),
+                                "150г",
+                                false,
+                                new BigDecimal("40"),
+                                new BigDecimal("108.9"))),
+                true);
+
+        List<Integer> chosen = productMatchingService.choose(List.of(cheese));
+
+        assertThat(chosen).containsExactly(1);
+        String prompt = CLAUDE.requests().getFirst().toString();
+        assertThat(prompt).contains("ПО ЗНИЖЦІ").contains("АКЦІЯ, було 108.9");
+        assertThat(prompt).doesNotContain("Плай Бердо — 149 грн (АКЦІЯ");
+    }
+
     /** A line Silpo returned nothing for needs no opinion from anyone. */
     @Test
     void aLineWithNoCandidatesIsUnresolvedWithoutAsking() {

@@ -12,6 +12,7 @@ import com.silporestockai.repository.UserProfileRepository;
 import com.silporestockai.repository.UserRepository;
 import com.silporestockai.service.AdHocScheduleService;
 import com.silporestockai.service.UserAccountService;
+import com.silporestockai.support.StubAnthropicServer;
 import com.silporestockai.support.StubMcpServer;
 import com.silporestockai.support.StubTelegramServer;
 import com.silporestockai.utils.TokenCipher;
@@ -35,6 +36,7 @@ class AdHocScheduleIntegrationTest extends AbstractIntegrationTest {
     private static final long CHAT_ID = 14801L;
     private static final StubTelegramServer TELEGRAM = startTelegram();
     private static final StubMcpServer MCP = startMcp();
+    private static final StubAnthropicServer CLAUDE = startClaude();
 
     @Autowired
     private AdHocScheduleService adHocScheduleService;
@@ -80,17 +82,28 @@ class AdHocScheduleIntegrationTest extends AbstractIntegrationTest {
         }
     }
 
+    private static StubAnthropicServer startClaude() {
+        try {
+            return new StubAnthropicServer();
+        } catch (IOException e) {
+            throw new IllegalStateException("could not start the Anthropic stub", e);
+        }
+    }
+
     @DynamicPropertySource
     static void stubs(DynamicPropertyRegistry registry) {
         registry.add("telegram.bot-token", () -> BOT_TOKEN);
         registry.add("telegram.api-url", TELEGRAM::baseUrl);
         registry.add("silpo.mcp.endpoint", MCP::endpoint);
+        registry.add("claude.api-key", () -> "sk-ant-stub-key");
+        registry.add("claude.base-url", CLAUDE::baseUrl);
     }
 
     @AfterAll
     static void stopStubs() {
         TELEGRAM.close();
         MCP.close();
+        CLAUDE.close();
     }
 
     @BeforeEach
@@ -122,8 +135,14 @@ class AdHocScheduleIntegrationTest extends AbstractIntegrationTest {
                 "items":[],"total":0,"validations":[],\
                 "checkoutWebLink":"https://silpo.ua/checkout/cart-s",\
                 "checkoutMobileLink":"silpo://checkout/cart-s"}""");
-        MCP.respondToTool("silpo_get_promotions", """
-                {"promotions":[{"name":"Чіпси Lays","productId":"p-1","price":40,"oldPrice":60}]}""");
+        MCP.respondToTool("silpo_find_products_batch", """
+                {"queries":[{"query":"чіпси","products":[{"name":"Чіпси Lays","productId":"p-1",\
+                "step":1,"displayRatio":"120г","price":40,"oldPrice":60}]}]}""");
+        CLAUDE.reset();
+        // The theme as shop lines, then the matcher's choice — one answer for every sweep this test runs.
+        CLAUDE.respondWithTexts(
+                "{\"items\":[{\"name\":\"Чіпси\",\"quantity\":1,\"unit\":\"шт\",\"category\":\"Інше\"}]}",
+                "{\"choices\":[{\"lineIndex\":0,\"candidateIndex\":0,\"reason\":\"чіпси\"}]}");
     }
 
     @Test

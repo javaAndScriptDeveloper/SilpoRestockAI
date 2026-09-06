@@ -15,6 +15,8 @@ import java.util.List;
  * @param toppedUp lines added from the household's own baseline to lift a too-small cart over Silpo's minimum
  *     delivery order, named so the person can take them out — see {@code CartBuildingService.topUpFromBaseline}.
  *     Null for carts built before this field existed.
+ * @param savings what Silpo's own promotions took off this cart ({@code calculation.subDiscount}); null when
+ *     unknown, zero when nothing was on offer
  */
 public record CartSummary(
         String cartId,
@@ -30,7 +32,42 @@ public record CartSummary(
         List<String> unresolved,
         List<String> promotedProductIds,
         List<String> skipped,
-        List<String> toppedUp) {
+        List<String> toppedUp,
+        BigDecimal savings) {
+
+    /** The pre-savings shape: nothing known about discounts. */
+    public CartSummary(
+            String cartId,
+            String deliverySlot,
+            Instant deliverySlotStartsAt,
+            List<BasketItem> items,
+            BigDecimal total,
+            List<String> validations,
+            BigDecimal bonusAvailable,
+            boolean bonusDecisionPending,
+            String checkoutWebLink,
+            String checkoutMobileLink,
+            List<String> unresolved,
+            List<String> promotedProductIds,
+            List<String> skipped,
+            List<String> toppedUp) {
+        this(
+                cartId,
+                deliverySlot,
+                deliverySlotStartsAt,
+                items,
+                total,
+                validations,
+                bonusAvailable,
+                bonusDecisionPending,
+                checkoutWebLink,
+                checkoutMobileLink,
+                unresolved,
+                promotedProductIds,
+                skipped,
+                toppedUp,
+                null);
+    }
 
     /** The pre-top-up shape: nothing was added beyond what the list asked for. */
     public CartSummary(
@@ -135,5 +172,10 @@ public record CartSummary(
     /** Never null, whatever version of this record the stored JSON came from. */
     public List<String> toppedUpLines() {
         return toppedUp == null ? List.of() : toppedUp;
+    }
+
+    /** Whether any promotion actually took money off this cart. */
+    public boolean hasSavings() {
+        return savings != null && savings.signum() > 0;
     }
 }

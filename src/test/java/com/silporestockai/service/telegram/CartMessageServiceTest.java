@@ -97,6 +97,30 @@ class CartMessageServiceTest {
         assertThat(service.slotButtons(List.of(SLOT)).getFirst().label()).isEqualTo("чт, 3 вер · 18:00–19:30");
     }
 
+    /** Silpo's own promotion total shows as a saving; a cart with none says nothing about it. */
+    @Test
+    void namesSilposOwnSavingsWhenThereAreAny() {
+        CartSummary withSavings = new CartSummary(
+                "cart-1",
+                "slot-1",
+                Instant.parse("2026-09-03T15:00:00Z"),
+                twoItems().items(),
+                new BigDecimal("73.5"),
+                List.of(),
+                BigDecimal.ZERO,
+                false,
+                "https://silpo.ua/checkout/cart-1",
+                "silpo://checkout/cart-1",
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                new BigDecimal("34.5"));
+
+        assertThat(service.cartText(withSavings, SLOT, OrderType.AD_HOC)).contains("Економія за акціями: 34.50 грн");
+        assertThat(service.cartText(twoItems(), SLOT, OrderType.AD_HOC)).doesNotContain("Економія");
+    }
+
     @Test
     void flagsWhatSilpoCouldNotMatchInsteadOfHidingIt() {
         CartSummary cart = summary(

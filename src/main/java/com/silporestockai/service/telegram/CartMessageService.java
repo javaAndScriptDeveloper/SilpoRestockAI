@@ -91,6 +91,12 @@ public class CartMessageService {
             text.append("\n⚠ ").append(validation);
         }
         text.append("\n\nРазом: ").append(money(summary.total())).append(" грн");
+        if (summary.hasSavings()) {
+            // Silpo's own number: the sum its promotions took off these lines, not an estimate of ours.
+            text.append("\nЕкономія за акціями: ")
+                    .append(money(summary.savings()))
+                    .append(" грн");
+        }
         text.append("\n\nДоставка: ").append(DeliverySlots.describe(slot));
         if (summary.bonusDecisionPending()) {
             text.append("\nНа рахунку ")

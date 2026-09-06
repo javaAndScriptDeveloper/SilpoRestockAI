@@ -149,7 +149,7 @@ public class CartBuildingService {
 
     /** The shelf tags of each line's candidates, in Silpo's own order, as the matcher wants them. */
     private static List<ProductMatchRequest> matchRequests(
-            List<ShoppingListItem> items, List<List<JsonNode>> candidatesFor) {
+            List<ShoppingListItem> items, List<List<JsonNode>> candidatesFor, boolean preferDiscounted) {
         List<ProductMatchRequest> requests = new ArrayList<>();
         for (int i = 0; i < items.size(); i++) {
             ShoppingListItem item = items.get(i);
@@ -162,15 +162,26 @@ public class CartBuildingService {
                             McpResponses.findNode(node, McpResponses.WEIGHTED)
                                     .map(weighted -> weighted.asBoolean(false))
                                     .orElse(false),
-                            McpResponses.findNumber(node, McpResponses.STOCK).orElse(null)))
+                            McpResponses.findNumber(node, McpResponses.STOCK).orElse(null),
+                            McpResponses.findNumber(node, McpResponses.OLD_PRICE)
+                                    .orElse(null)))
                     .toList();
-            requests.add(new ProductMatchRequest(item.getName(), quantityOf(item), item.getUnit(), candidates));
+            requests.add(new ProductMatchRequest(
+                    item.getName(), quantityOf(item), item.getUnit(), candidates, preferDiscounted));
         }
         return requests;
     }
 
     /** Steps 1 to 6, in the documented order. Unresolved items are reported, not fatal. */
     public CartSummary buildCart(UUID userId, List<ShoppingListItem> items) {
+        return buildCart(userId, items, false);
+    }
+
+    /**
+     * Same, for a request made «по знижці»: a discounted candidate wins a tie in the product choice. Silpo prices
+     * its promotions into the cart itself, so the saving reported afterwards is its own number.
+     */
+    public CartSummary buildCart(UUID userId, List<ShoppingListItem> items, boolean preferDiscounted) {
         CartContext context = getOrCreateCartContext(userId);
         clearCart(userId, context);
         OfferedSlot deliverySlot = firstDeliverableSlot(userId, context);
@@ -184,7 +195,7 @@ public class CartBuildingService {
                 context.deliveryType(),
                 deliverySlot.label(),
                 deliverySlot.end());
-        ProductResolution resolution = resolve(userId, context, items);
+        ProductResolution resolution = resolve(userId, context, items, preferDiscounted);
         List<ResolvedProduct> resolved = resolution.resolved();
         List<String> skippedNames = resolution.skipped().stream()
                 .map(line -> line.substring(0, line.indexOf(" — ")))
@@ -605,7 +616,7 @@ public class CartBuildingService {
      * flat product list. The best match for a term is whichever product its own query entry lists first.
      */
     public List<ResolvedProduct> resolveProducts(UUID userId, CartContext context, List<ShoppingListItem> items) {
-        return resolve(userId, context, items).resolved();
+        return resolve(userId, context, items, false).resolved();
     }
 
     /**
@@ -616,7 +627,8 @@ public class CartBuildingService {
      * product might carry on a shelf («Вівсянка» → «Вівсяні пластівці», «Яйця курячі» → «Яйця»): Silpo's search
      * is a plain text match, and on a live account it returned nothing for eggs and only sauerkraut for cabbage.
      */
-    public ProductResolution resolve(UUID userId, CartContext context, List<ShoppingListItem> items) {
+    public ProductResolution resolve(
+            UUID userId, CartContext context, List<ShoppingListItem> items, boolean preferDiscounted) {
         List<String> skipped = new ArrayList<>();
         List<ResolvedProduct> resolved = new ArrayList<>();
         List<ShoppingListItem> preResolved = items.stream()
@@ -702,7 +714,8 @@ public class CartBuildingService {
                                             .toLowerCase(Locale.ROOT),
                                     List.of())))
                     .toList();
-            List<Integer> picked = productMatchingService.choose(matchRequests(toMatch, candidatesFor));
+            List<Integer> picked =
+                    productMatchingService.choose(matchRequests(toMatch, candidatesFor, preferDiscounted));
             Map<ShoppingListItem, JsonNode> matched = new IdentityHashMap<>();
             for (int i = 0; i < toMatch.size(); i++) {
                 int index = picked.get(i);
@@ -750,7 +763,7 @@ public class CartBuildingService {
             }
         }
 
-        secondPass(userId, context, needsSearch, resolved, skipped);
+        secondPass(userId, context, needsSearch, resolved, skipped, preferDiscounted);
 
         log.info(
                 "MCP <- resolved {} of {} shopping list lines ({} pre-resolved, {} searched, {} partner placements,"
@@ -791,7 +804,8 @@ public class CartBuildingService {
             CartContext context,
             List<ShoppingListItem> searched,
             List<ResolvedProduct> resolved,
-            List<String> skipped) {
+            List<String> skipped,
+            boolean preferDiscounted) {
         List<ShoppingListItem> stillMissing = searched.stream()
                 .filter(item ->
                         resolved.stream().noneMatch(p -> p.requestedName().equals(item.getName())))
@@ -865,7 +879,7 @@ public class CartBuildingService {
         }
         List<Integer> picked;
         try {
-            picked = productMatchingService.choose(matchRequests(toMatch, candidatesFor));
+            picked = productMatchingService.choose(matchRequests(toMatch, candidatesFor, preferDiscounted));
         } catch (RuntimeException e) {
             log.warn("second search pass could not match: {}", e.getMessage());
             return;
@@ -1285,6 +1299,8 @@ public class CartBuildingService {
         // The minimum is measured against the goods, not the goods plus delivery.
         BigDecimal goodsTotal =
                 McpResponses.findNumber(cart, McpResponses.PRODUCTS_TOTAL).orElse(total);
+        BigDecimal savings =
+                McpResponses.findNumber(cart, McpResponses.CART_DISCOUNT).orElse(null);
 
         JsonNode loyalty = McpResponses.findNode(cart, McpResponses.LOYALTY).orElse(null);
         BigDecimal bonusAvailable = loyalty == null
@@ -1330,7 +1346,8 @@ public class CartBuildingService {
                 unresolved,
                 promotedProductIds == null ? List.of() : promotedProductIds,
                 skipped == null ? List.of() : skipped,
-                toppedUp == null ? List.of() : toppedUp);
+                toppedUp == null ? List.of() : toppedUp,
+                savings);
         log.info(
                 "MCP <- cart {} verified: {} items, total {}, bonuses available {}, unresolved {}",
                 summary.cartId(),

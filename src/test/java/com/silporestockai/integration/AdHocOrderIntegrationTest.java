@@ -21,6 +21,7 @@ import com.silporestockai.repository.UserRepository;
 import com.silporestockai.service.AdHocOrderService;
 import com.silporestockai.service.UserAccountService;
 import com.silporestockai.service.telegram.CartMessageService;
+import com.silporestockai.support.StubAnthropicServer;
 import com.silporestockai.support.StubMcpServer;
 import com.silporestockai.support.StubTelegramServer;
 import com.silporestockai.utils.TokenCipher;
@@ -47,6 +48,7 @@ class AdHocOrderIntegrationTest extends AbstractIntegrationTest {
     private static final long CHAT_ID = 13701L;
     private static final StubTelegramServer TELEGRAM = startTelegram();
     private static final StubMcpServer MCP = startMcp();
+    private static final StubAnthropicServer CLAUDE = startClaude();
 
     @Autowired
     private MockMvc mockMvc;
@@ -102,6 +104,26 @@ class AdHocOrderIntegrationTest extends AbstractIntegrationTest {
         }
     }
 
+    private static StubAnthropicServer startClaude() {
+        try {
+            return new StubAnthropicServer();
+        } catch (IOException e) {
+            throw new IllegalStateException("could not start the Anthropic stub", e);
+        }
+    }
+
+    /** The theme as the model turns it into shop lines, then the matcher's choice for each line that had a hit. */
+    private static final String CHEESE_AND_WINE = """
+            {"items":[{"name":"Сир твердий","quantity":300,"unit":"г","category":"Молочні продукти"},\
+            {"name":"Вино червоне сухе","quantity":1,"unit":"шт","category":"Напої"}]}""";
+
+    private static final String MATCH_BOTH = """
+            {"choices":[{"lineIndex":0,"candidateIndex":1,"reason":"акційний твердий сир"},\
+            {"lineIndex":1,"candidateIndex":0,"reason":"сухе червоне"}]}""";
+
+    private static final String MATCH_WATER_AND_ISOTONIC = """
+            {"choices":[{"lineIndex":0,"candidateIndex":0,"reason":"вода"},{"lineIndex":1,"candidateIndex":0,"reason":"ізотонік"}]}""";
+
     private static List<String> searchedTerms() {
         List<String> terms = new ArrayList<>();
         MCP.callArguments("silpo_find_products_batch")
@@ -116,17 +138,21 @@ class AdHocOrderIntegrationTest extends AbstractIntegrationTest {
         registry.add("telegram.bot-token", () -> BOT_TOKEN);
         registry.add("telegram.api-url", TELEGRAM::baseUrl);
         registry.add("silpo.mcp.endpoint", MCP::endpoint);
+        registry.add("claude.api-key", () -> "sk-ant-stub-key");
+        registry.add("claude.base-url", CLAUDE::baseUrl);
     }
 
     @AfterAll
     static void stopStubs() {
         TELEGRAM.close();
         MCP.close();
+        CLAUDE.close();
     }
 
     @BeforeEach
     void clean() {
         TELEGRAM.reset();
+        CLAUDE.reset();
         MCP.reset();
         baselineBasketRepository.deleteAll();
         customerOrderRepository.deleteAll();
@@ -169,21 +195,20 @@ class AdHocOrderIntegrationTest extends AbstractIntegrationTest {
         MCP.respondToTool("silpo_add_or_update_cart_products", "{\"ok\":true}");
         MCP.respondToTool("silpo_get_shopping_cart_by_id", """
                 {"cartId":"cart-a","branchId":"branch-7","companyId":"company-3","deliveryType":"delivery",\
-                "items":[{"productId":"00000000-0000-4000-8000-00000000005a","name":"Чіпси Lays","unit":"шт","quantity":1,"price":45}],\
-                "total":45,"validations":[],\
+                "items":[{"productId":"00000000-0000-4000-8000-00000000005a","name":"Сир Пирятин","quantity":2,"price":88.9,"weighted":false},\
+                {"productId":"00000000-0000-4000-8000-00000000005b","name":"Вино Los Cardos","quantity":1,"price":329,"weighted":false}],\
+                "calculation":{"total":506.8,"productsTotal":506.8,"subDiscount":40},\
+                "validations":[],\
                 "checkoutWebLink":"https://silpo.ua/checkout/cart-a",\
                 "checkoutMobileLink":"silpo://checkout/cart-a"}""");
-        // Mixed bag: two snacks on promo, one non-snack promo (should be ignored), one snack-named item with
-        // no old price (not actually a discount, should be ignored).
-        MCP.respondToTool("silpo_get_promotions", """
-                {"promotions":[\
-                {"name":"Чіпси Lays соло","productId":"00000000-0000-4000-8000-00000000005a","price":45,"oldPrice":65},\
-                {"name":"Шоколад Milka","productId":"00000000-0000-4000-8000-00000000005b","price":30,"oldPrice":50},\
-                {"name":"Пральний порошок Persil","productId":"00000000-0000-4000-8000-00000000005c","price":100,"oldPrice":140},\
-                {"name":"Печиво Oreo","productId":"00000000-0000-4000-8000-00000000005d","price":25}]}""");
-        // Only some hangover-relief search terms find anything — the rest stays honestly unresolved.
+        // Two cheeses, the second on promotion; one wine. The hangover terms find water and an isotonic drink.
         MCP.respondToTool("silpo_find_products_batch", """
                 {"queries":[\
+                {"query":"сир твердий","products":[\
+                {"name":"Сир Плай Бердо","productId":"00000000-0000-4000-8000-000000000059","step":1,"displayRatio":"150г","price":149},\
+                {"name":"Сир Пирятин","productId":"00000000-0000-4000-8000-00000000005a","step":1,"displayRatio":"150г","price":88.9,"oldPrice":108.9}]},\
+                {"query":"вино червоне сухе","products":[\
+                {"name":"Вино Los Cardos","productId":"00000000-0000-4000-8000-00000000005b","step":1,"displayRatio":"750мл","price":329}]},\
                 {"query":"вода мінеральна","products":[{"name":"Моршинська","productId":"00000000-0000-4000-8000-000000000046",\
                 "step":1,"displayRatio":"1.5л"}]},\
                 {"query":"ізотонік","products":[{"name":"Oshee ізотонік","productId":"00000000-0000-4000-8000-000000000047",\
@@ -201,35 +226,80 @@ class AdHocOrderIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk());
     }
 
+    /**
+     * The theme drives what is searched: «сир та вино» becomes a cheese and a wine, each resolved through the
+     * ordinary pipeline. The first version searched Silpo's promotions for snack keywords whatever the theme said,
+     * and would have answered this request with chips.
+     */
     @Test
-    void onlyActuallyDiscountedSnacksMakeTheCart() {
-        adHocOrderService.buildAdHocOrder(user, "вечір п'ятниці", Instant.now());
+    void theThemeBecomesShopLinesAndTheOrdinaryCartPipelineResolvesThem() {
+        CLAUDE.respondWithTexts(CHEESE_AND_WINE, MATCH_BOTH);
 
-        CustomerOrder draft = customerOrderRepository
-                .findByUserIdAndStatus(user.getId(), OrderStatus.DRAFT)
-                .getFirst();
-        assertThat(draft.getType()).isEqualTo(OrderType.AD_HOC);
+        adHocOrderService.buildAdHocOrder(user, "сир та вино по знижці до п'ятниці", Instant.now());
 
+        assertThat(searchedTerms()).containsExactly("Сир твердий", "Вино червоне сухе");
         List<String> addedProductIds = new ArrayList<>();
         MCP.callArguments("silpo_add_or_update_cart_products")
                 .getFirst()
                 .path("products")
                 .forEach(p -> addedProductIds.add(p.path("productId").asText()));
         assertThat(addedProductIds)
-                .containsExactlyInAnyOrder(
-                        "00000000-0000-4000-8000-00000000005a", "00000000-0000-4000-8000-00000000005b");
-        // p-92 (Persil) is not a snack; p-93 (Oreo) has no oldPrice, so it is not actually discounted.
-        assertThat(addedProductIds)
-                .doesNotContain("00000000-0000-4000-8000-00000000005c", "00000000-0000-4000-8000-00000000005d");
+                .containsExactly("00000000-0000-4000-8000-00000000005a", "00000000-0000-4000-8000-00000000005b");
+        CustomerOrder draft = customerOrderRepository
+                .findByUserIdAndStatus(user.getId(), OrderStatus.DRAFT)
+                .getFirst();
+        assertThat(draft.getType()).isEqualTo(OrderType.AD_HOC);
+        // 300 г of a 150 г cheese is two packs.
+        assertThat(MCP.callArguments("silpo_add_or_update_cart_products")
+                        .getFirst()
+                        .path("products")
+                        .get(0)
+                        .path("quantity")
+                        .asInt())
+                .isEqualTo(2);
+    }
+
+    /** «По знижці» reaches the matcher as a preference, with the promoted candidate marked as such. */
+    @Test
+    void askingForADiscountTellsTheMatcherToPreferPromotedCandidates() {
+        CLAUDE.respondWithTexts(CHEESE_AND_WINE, MATCH_BOTH);
+
+        adHocOrderService.buildAdHocOrder(user, "сир та вино по знижці до п'ятниці", Instant.now());
+
+        String matcherLines =
+                CLAUDE.requests().get(1).path("messages").get(0).path("content").asText();
+        assertThat(matcherLines).contains("ПО ЗНИЖЦІ").contains("АКЦІЯ, було 108.9");
     }
 
     @Test
-    void aPrefaceMessageNamesTheSavings() {
-        adHocOrderService.buildAdHocOrder(user, "вечір п'ятниці", Instant.now());
+    void aThemeWithoutADiscountWordDoesNotAskForOne() {
+        CLAUDE.respondWithTexts(CHEESE_AND_WINE, MATCH_BOTH);
+
+        adHocOrderService.buildAdHocOrder(user, "сир та вино на вечір", Instant.now());
+
+        // The rule lives in the system prompt either way; the line itself carries the note only when asked.
+        assertThat(CLAUDE.requests()
+                        .get(1)
+                        .path("messages")
+                        .get(0)
+                        .path("content")
+                        .asText())
+                .doesNotContain("ПО ЗНИЖЦІ");
+    }
+
+    /** The preface names the theme and the lines; the cart names Silpo's own saving. */
+    @Test
+    void thePrefaceNamesTheLinesAndTheCartNamesTheSavings() {
+        CLAUDE.respondWithTexts(CHEESE_AND_WINE, MATCH_BOTH);
+
+        adHocOrderService.buildAdHocOrder(user, "сир та вино по знижці", Instant.now());
 
         assertThat(TELEGRAM.sentMessages())
-                .anySatisfy(message ->
-                        assertThat(message.path("text").asText()).contains("40").contains("вечір п'ятниці"));
+                .anySatisfy(message -> assertThat(message.path("text").asText())
+                        .contains("На «сир та вино по знижці» беру")
+                        .contains("сир твердий 300 г")
+                        .contains("акційне"));
+        assertThat(TELEGRAM.sentMessages().getLast().path("text").asText()).contains("Економія за акціями: 40.00 грн");
     }
 
     @Test
@@ -238,8 +308,9 @@ class AdHocOrderIntegrationTest extends AbstractIntegrationTest {
                 .findByUserIdAndIsCurrentTrue(user.getId())
                 .orElseThrow()
                 .getId();
+        CLAUDE.respondWithTexts(CHEESE_AND_WINE, MATCH_BOTH);
 
-        adHocOrderService.buildAdHocOrder(user, "вечір п'ятниці", Instant.now());
+        adHocOrderService.buildAdHocOrder(user, "сир та вино", Instant.now());
         tapButton(1, CartMessageService.CALLBACK_CONFIRM);
 
         assertThat(customerOrderRepository.findByUserIdAndStatus(user.getId(), OrderStatus.CONFIRMED))
@@ -255,15 +326,16 @@ class AdHocOrderIntegrationTest extends AbstractIntegrationTest {
         assertThat(TELEGRAM.sentMessages().getLast().toString()).contains("https://silpo.ua/checkout/cart-a");
     }
 
+    /** A theme the model cannot turn into lines is said so, not answered with a cart of something else. */
     @Test
-    void noActivePromotionsMeansNoOrderAndAClearMessageInstead() {
-        MCP.respondToTool("silpo_get_promotions", "{\"promotions\":[]}");
+    void aThemeThatYieldsNoLinesGetsAClearMessageAndNoOrder() {
+        CLAUDE.respondWithText("{\"items\":[]}");
 
-        adHocOrderService.buildAdHocOrder(user, "вечір п'ятниці", Instant.now());
+        adHocOrderService.buildAdHocOrder(user, "щось", Instant.now());
 
         assertThat(customerOrderRepository.findByUserIdAndStatus(user.getId(), OrderStatus.DRAFT))
                 .isEmpty();
-        assertThat(TELEGRAM.sentMessages()).isNotEmpty();
+        assertThat(TELEGRAM.sentMessages().getLast().path("text").asText()).contains("Не зрозумів, що саме купити");
     }
 
     /**
@@ -272,6 +344,7 @@ class AdHocOrderIntegrationTest extends AbstractIntegrationTest {
      */
     @Test
     void hangoverReliefSearchesOneTermPerNeedWithSensibleQuantities() {
+        CLAUDE.respondWithText(MATCH_WATER_AND_ISOTONIC);
         adHocOrderService.buildHangoverReliefOrder(user);
 
         assertThat(searchedTerms()).containsExactly("вода мінеральна", "ізотонік", "сорбент");
@@ -285,6 +358,7 @@ class AdHocOrderIntegrationTest extends AbstractIntegrationTest {
 
     @Test
     void hangoverReliefIsHonestAboutWhatWasNotFoundRatherThanFailingSilently() {
+        CLAUDE.respondWithText(MATCH_WATER_AND_ISOTONIC);
         adHocOrderService.buildHangoverReliefOrder(user);
 
         CustomerOrder draft = customerOrderRepository

@@ -4,13 +4,24 @@ import java.math.BigDecimal;
 import java.util.List;
 
 /**
- * One shopping list line and the products Silpo offered for it — the unit of work
- * {@code ProductMatchingService} decides on.
+ * One shopping list line and everything Silpo offered for it, for the matcher to choose from.
  *
- * @param requestedName the line as the household's list has it, e.g. {@code Яловичина}
- * @param quantity how much of it the list asks for
- * @param unit the unit that quantity is in, e.g. {@code г}, {@code шт}
- * @param candidates what Silpo's search returned for it, in Silpo's own order
+ * @param requestedName the line as the household wrote it
+ * @param quantity how much the line asks for
+ * @param unit the line's unit
+ * @param candidates what the catalog search returned, in Silpo's own order
+ * @param preferDiscounted whether the person asked for this «по знижці» — a discounted candidate wins a tie
  */
 public record ProductMatchRequest(
-        String requestedName, BigDecimal quantity, String unit, List<ProductCandidate> candidates) {}
+        String requestedName,
+        BigDecimal quantity,
+        String unit,
+        List<ProductCandidate> candidates,
+        boolean preferDiscounted) {
+
+    /** The ordinary shape: no discount preference. */
+    public ProductMatchRequest(
+            String requestedName, BigDecimal quantity, String unit, List<ProductCandidate> candidates) {
+        this(requestedName, quantity, unit, candidates, false);
+    }
+}
