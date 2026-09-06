@@ -46,6 +46,7 @@ public class IntentRouterService {
             — «Що треба докупити?» — зберу дозамовлення того, що закінчується.
             — «Прибери молоко зі списку, додай яйця» — правка поточного списку.
             — «Зроби список як минулого разу» — покажу твої останні замовлення в «Сільпо», візьму обране за основу.
+            — «Замов усе для карбонари» (або фото готової страви з таким підписом) — зберу інгредієнти на одну страву.
             — «Я захворів, гастрит» — тимчасово щадне харчування, потім сам поверну звичайне.
             — «Зроби менш калорійним» — той самий раціон, менше калорій.
             — «Хочу набрати масу» — план під набір маси.
@@ -70,6 +71,7 @@ public class IntentRouterService {
     private final ReorderConfirmationService reorderConfirmationService;
     private final TelegramOutboundService telegramOutboundService;
     private final PastOrderSeedService pastOrderSeedService;
+    private final DishRequestService dishRequestService;
     private final String systemPrompt;
 
     public IntentRouterService(
@@ -87,6 +89,7 @@ public class IntentRouterService {
             ReorderConfirmationService reorderConfirmationService,
             TelegramOutboundService telegramOutboundService,
             PastOrderSeedService pastOrderSeedService,
+            DishRequestService dishRequestService,
             @Value("classpath:prompts/intent-router-system.txt") Resource systemPromptResource) {
         this.claudeApiClient = claudeApiClient;
         this.speechToTextClient = speechToTextClient;
@@ -102,6 +105,7 @@ public class IntentRouterService {
         this.reorderConfirmationService = reorderConfirmationService;
         this.telegramOutboundService = telegramOutboundService;
         this.pastOrderSeedService = pastOrderSeedService;
+        this.dishRequestService = dishRequestService;
         this.systemPrompt = read(systemPromptResource);
     }
 
@@ -131,6 +135,29 @@ public class IntentRouterService {
         }
         log.info("voice note from user {} transcribed, routing as text", user.getId());
         route(user, transcript);
+    }
+
+    /**
+     * A photo with a caption (task 36): the caption says what the picture is for. «Замов усе для цього» under a
+     * plated dish goes to dish identification; any other caption — «ось мій холодильник» — keeps the photo on the
+     * list builder, which is what a bare photo has always meant.
+     */
+    public void routePhoto(User user, String caption, byte[] image, String mediaType) {
+        ClassifiedIntent classified;
+        try {
+            classified = claudeApiClient.completeStructured(systemPrompt, caption, ClassifiedIntent.class);
+        } catch (RuntimeException e) {
+            log.warn("could not classify a photo caption; treating the photo as a list input", e);
+            classified = null;
+        }
+        if (classified != null
+                && parse(classified.intent()) == IntentType.DISH_INGREDIENTS_ORDER
+                && classified.confidence() >= CONFIDENCE_THRESHOLD) {
+            log.info("user {} sent a dish photo (caption classified as DISH_INGREDIENTS_ORDER)", user.getId());
+            dishRequestService.startFromPhoto(user, image, mediaType);
+            return;
+        }
+        shoppingListBuilderService.buildAndShow(user, caption, image);
     }
 
     public void route(User user, String text) {
@@ -181,6 +208,7 @@ public class IntentRouterService {
             case CALENDAR_VIEW -> calendarViewService.showWeek(user);
             case CALENDAR_CONNECT -> calendarIntegrationService.offerConnection(user);
             case PAST_ORDER_SEED -> pastOrderSeedService.offer(user);
+            case DISH_INGREDIENTS_ORDER -> dishRequestService.start(user, classified.themeDescription());
             case HELP -> sendHelp(user);
             case UNKNOWN -> askClarifyingQuestion(user);
         }
@@ -246,6 +274,7 @@ public class IntentRouterService {
         CALENDAR_VIEW,
         CALENDAR_CONNECT,
         PAST_ORDER_SEED,
+        DISH_INGREDIENTS_ORDER,
         HELP,
         UNKNOWN
     }

@@ -10,6 +10,7 @@ import com.silporestockai.service.CalendarViewService;
 import com.silporestockai.service.CartConfirmationService;
 import com.silporestockai.service.CheckinFlowService;
 import com.silporestockai.service.ConversationStateService;
+import com.silporestockai.service.DishRequestService;
 import com.silporestockai.service.FeedbackService;
 import com.silporestockai.service.IntentRouterService;
 import com.silporestockai.service.PastOrderSeedService;
@@ -63,6 +64,7 @@ public class TelegramRoutingService {
     private final ScheduledTaskManagementService scheduledTaskManagementService;
     private final FeedbackService feedbackService;
     private final PastOrderSeedService pastOrderSeedService;
+    private final DishRequestService dishRequestService;
 
     /**
      * Off the webhook thread on purpose. A fridge photo means a vision call — the slowest and most expensive kind
@@ -121,7 +123,8 @@ public class TelegramRoutingService {
             if (message.hasPhoto()) {
                 // Telegram sends the same picture in several sizes, smallest first. The model wants the pixels.
                 var largest = message.getPhoto().getLast();
-                return Optional.of(new TelegramIncomingUpdate.Photo(chatId, userId, largest.getFileId(), "image/jpeg"));
+                return Optional.of(new TelegramIncomingUpdate.Photo(
+                        chatId, userId, largest.getFileId(), "image/jpeg", message.getCaption()));
             }
             if (message.hasVoice()) {
                 var voice = message.getVoice();
@@ -251,6 +254,13 @@ public class TelegramRoutingService {
             pastOrderSeedService.handle(user, incoming);
             return;
         }
+        if (flow == ConversationFlow.DISH_CONFIRM) {
+            byte[] photo = incoming instanceof TelegramIncomingUpdate.Photo p
+                    ? telegramOutboundService.downloadFile(p.fileId())
+                    : null;
+            dishRequestService.handle(user, incoming, photo);
+            return;
+        }
         if (incoming instanceof TelegramIncomingUpdate.Text voice && matches(voice.text(), "/voice", "")) {
             toggleVoice(user, incoming.chatId());
             return;
@@ -304,6 +314,13 @@ public class TelegramRoutingService {
                 return;
             }
             intentRouterService.routeVoice(user, telegramOutboundService.downloadFile(voice.fileId()));
+            return;
+        }
+        if (incoming instanceof TelegramIncomingUpdate.Photo photo && photo.hasCaption()) {
+            // The caption says what the picture is for (task 36): «замов усе для цього» under a plated dish is
+            // a dish-ingredients order; anything else keeps the photo on the list builder, as below.
+            intentRouterService.routePhoto(
+                    user, photo.caption(), telegramOutboundService.downloadFile(photo.fileId()), photo.mediaType());
             return;
         }
         if (incoming instanceof TelegramIncomingUpdate.Photo) {

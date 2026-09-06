@@ -29,5 +29,7 @@ public enum ConversationFlow {
      */
     FEEDBACK,
     /** Choosing which past Silpo order to seed the list from (task 35); the candidates live in the context. */
-    PAST_ORDER_PICK
+    PAST_ORDER_PICK,
+    /** Waiting for a dish name, or for a yes/no on the dish a photo was identified as (task 36). */
+    DISH_CONFIRM
 }

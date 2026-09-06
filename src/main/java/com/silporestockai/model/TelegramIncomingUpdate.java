@@ -21,7 +21,18 @@ public sealed interface TelegramIncomingUpdate {
      * A photo. Telegram sends several sizes of the same picture; the router keeps the largest, because a model
      * reading a fridge needs the pixels.
      */
-    record Photo(long chatId, long telegramUserId, String fileId, String mediaType) implements TelegramIncomingUpdate {}
+    record Photo(long chatId, long telegramUserId, String fileId, String mediaType, String caption)
+            implements TelegramIncomingUpdate {
+
+        /** The pre-task-36 shape: a photo with nothing written under it. */
+        public Photo(long chatId, long telegramUserId, String fileId, String mediaType) {
+            this(chatId, telegramUserId, fileId, mediaType, null);
+        }
+
+        public boolean hasCaption() {
+            return caption != null && !caption.isBlank();
+        }
+    }
 
     /** An inline keyboard button tap. {@code data} is the {@code callbackData} the button was built with. */
     record ButtonTap(long chatId, long telegramUserId, String callbackQueryId, String data)
