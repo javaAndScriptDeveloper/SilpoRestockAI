@@ -68,6 +68,14 @@ public class CartMessageService {
                     .append(String.join(", ", summary.unresolved()))
                     .append(" — можеш додати вручну пізніше.");
         }
+        if (!summary.toppedUpLines().isEmpty()) {
+            // Added on the household's behalf, so named line by line: the right to take one out is the whole
+            // difference between a helpful top-up and an upsell.
+            text.append(
+                    "\n\nЗамовлення було менше за мінімум доставки «Сільпо», тож додав із твого звичайного набору:");
+            summary.toppedUpLines().forEach(line -> text.append("\n+ ").append(line));
+            text.append("\nНе треба — скажи, що прибрати.");
+        }
         if (!summary.skippedLines().isEmpty()) {
             // Held back on purpose, and said so with the number: a line that would have cost a small fortune is
             // worse in the cart than out of it, but hiding that it was dropped would be worse still.

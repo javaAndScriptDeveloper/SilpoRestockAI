@@ -58,6 +58,9 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
     @Autowired
     private com.silporestockai.repository.UserProfileRepository userProfileRepository;
 
+    @Autowired
+    private com.silporestockai.repository.BaselineBasketRepository baselineBasketRepository;
+
     private static StubMcpServer startMcp() {
         try {
             return new StubMcpServer(List.of(
@@ -537,6 +540,96 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
 
         JsonNode added = MCP.callArguments("silpo_add_or_update_cart_products").getFirst();
         assertThat(added.path("products").get(0).path("productId").asText()).isEqualTo("p-oats");
+    }
+
+    /**
+     * Silpo's home delivery starts at ₴799 (its own {@code order.cost.min}), and a dish's ingredients come to a
+     * few hundred. The shortfall is filled from the household's confirmed baseline — real product ids and prices
+     * from a real past order, cheapest lines first — and every added line is named. The «info»-level note Silpo
+     * sends alongside (a payment type unavailable for the total) is not a reason and is not shown.
+     */
+    @Test
+    void topsASmallCartUpFromTheBaselineToClearSilposMinimumOrder() {
+        UUID userId = connectedUser(8432L);
+        baselineBasketRepository.deleteAll();
+        baselineBasketRepository.save(com.silporestockai.entity.BaselineBasket.builder()
+                .id(UUID.randomUUID())
+                .userId(userId)
+                .items(List.of(
+                        new com.silporestockai.model.BasketItem(
+                                "b-chicken", "Філе курчати", "кг", BigDecimal.ONE, new BigDecimal("270")),
+                        new com.silporestockai.model.BasketItem(
+                                "b-milk", "Молоко «Премія» 2,5%", "шт", new BigDecimal("2"), new BigDecimal("46")),
+                        new com.silporestockai.model.BasketItem(
+                                "b-bread", "Хліб пшеничний", "шт", BigDecimal.ONE, new BigDecimal("28")),
+                        new com.silporestockai.model.BasketItem(
+                                "p-1", "Спагеті", "шт", BigDecimal.ONE, new BigDecimal("43"))))
+                .confirmedAt(Instant.now())
+                .isCurrent(true)
+                .build());
+        scriptCartTools();
+        MCP.respondToTool("silpo_find_products_batch", """
+                {"queries":[{"query":"спагеті","products":[{"name":"Спагеті La Pasta","productId":"p-1",\
+                "companyId":"company-3","branchId":"branch-7","step":1,"displayRatio":"400г","price":43}]}]}""");
+        MCP.respondToTool("silpo_add_or_update_cart_products", "{\"ok\":true}");
+        // The cart-context read first; then the read-back refused for the amount, with an info note alongside;
+        // then the read-back after the top-up, over the minimum.
+        MCP.respondToToolInOrder("silpo_get_shopping_cart_by_id", """
+                {"cartId":"cart-1","branchId":"branch-7","companyId":"company-3","deliveryType":"delivery",\
+                "items":[],"checkoutWebLink":"https://silpo.ua/checkout/cart-1","checkoutMobileLink":"silpo://checkout/cart-1"}""", """
+                {"cartId":"cart-1","branchId":"branch-7","companyId":"company-3","deliveryType":"delivery",\
+                "items":[{"productId":"p-1","name":"Спагеті La Pasta","unit":"шт","quantity":1,"price":43}],\
+                "total":43,"validations":[\
+                {"level":"error","type":"order","message":"order.cost.min","context":{"orderCostMin":799}},\
+                {"level":"info","type":"order","message":"order.payment_types.disabled","context":{"paymentTypes":["BNPL"]}}],\
+                "checkoutWebLink":null,"checkoutMobileLink":null}""", """
+                {"cartId":"cart-1","branchId":"branch-7","companyId":"company-3","deliveryType":"delivery",\
+                "items":[{"productId":"p-1","name":"Спагеті La Pasta","unit":"шт","quantity":1,"price":43},\
+                {"productId":"b-bread","name":"Хліб пшеничний","unit":"шт","quantity":1,"price":28},\
+                {"productId":"b-milk","name":"Молоко «Премія» 2,5%","unit":"шт","quantity":2,"price":46},\
+                {"productId":"b-chicken","name":"Філе курчати","unit":"кг","quantity":1,"price":270}],\
+                "total":433,"validations":[],\
+                "checkoutWebLink":"https://silpo.ua/checkout/cart-1","checkoutMobileLink":"silpo://checkout/cart-1"}""");
+
+        CartSummary summary = cartBuildingService.buildCart(userId, List.of(item("спагеті", "400", "г")));
+
+        // The spaghetti is already in the cart, so it is not a top-up candidate; the rest go cheapest line first
+        // until the running total clears the minimum: bread (28), milk (92), chicken (270).
+        List<JsonNode> adds = MCP.callArguments("silpo_add_or_update_cart_products");
+        assertThat(adds).hasSize(2);
+        assertThat(adds.get(1).path("products"))
+                .extracting(node -> node.path("productId").asText())
+                .containsExactly("b-bread", "b-milk", "b-chicken");
+        assertThat(summary.toppedUpLines()).hasSize(3).first().asString().isEqualTo("Хліб пшеничний — 1 шт, 28 грн");
+        assertThat(summary.validations()).isEmpty();
+    }
+
+    /** With no baseline to draw on, the refusal says the amount and the minimum, and carries both for the message. */
+    @Test
+    void aSmallCartWithNoBaselineFailsNamingTheMinimum() {
+        UUID userId = connectedUser(8433L);
+        baselineBasketRepository.deleteAll();
+        scriptCartTools();
+        MCP.respondToTool("silpo_find_products_batch", """
+                {"queries":[{"query":"спагеті","products":[{"name":"Спагеті La Pasta","productId":"p-1",\
+                "companyId":"company-3","branchId":"branch-7","step":1,"displayRatio":"400г","price":43}]}]}""");
+        MCP.respondToTool("silpo_add_or_update_cart_products", "{\"ok\":true}");
+        MCP.respondToTool("silpo_get_shopping_cart_by_id", """
+                {"cartId":"cart-1","branchId":"branch-7","companyId":"company-3","deliveryType":"delivery",\
+                "items":[{"productId":"p-1","name":"Спагеті La Pasta","unit":"шт","quantity":1,"price":43}],\
+                "total":43,"validations":[\
+                {"level":"error","type":"order","message":"order.cost.min","context":{"orderCostMin":799}},\
+                {"level":"info","type":"order","message":"order.payment_types.disabled","context":{}}],\
+                "checkoutWebLink":null,"checkoutMobileLink":null}""");
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> cartBuildingService.buildCart(userId, List.of(item("спагеті", "400", "г"))))
+                .isInstanceOfSatisfying(com.silporestockai.exception.CartBuildException.class, e -> {
+                    assertThat(e.belowMinimumOrder()).isTrue();
+                    assertThat(e.getMinimumOrder()).isEqualByComparingTo("799");
+                    assertThat(e.getTotal()).isEqualByComparingTo("43");
+                    assertThat(e.getValidations()).hasSize(1).first().asString().contains("799");
+                });
     }
 
     /** «1кг» is a displayRatio too — it used to fail to parse and drop the line to the minimum step. */

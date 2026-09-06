@@ -22,6 +22,7 @@ import com.silporestockai.repository.BaselineBasketRepository;
 import com.silporestockai.repository.CustomerOrderRepository;
 import com.silporestockai.service.telegram.CartMessageService;
 import com.silporestockai.service.telegram.TelegramOutboundService;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -353,6 +354,24 @@ public class CartConfirmationService {
      * stock — so when we know why, the person hears why instead of a generic "спробую пізніше".
      */
     private static String cartBuildFailureMessage(CartBuildException e) {
+        if (e.belowMinimumOrder()) {
+            // Silpo's rule, not ours, and nothing here could lift the cart over it (no baseline to top up from).
+            // The cart itself is real and sitting in the Silpo app, which is the one place the person can add
+            // to it right now.
+            return ("Зібрав кошик на %s грн, але «Сільпо» не доставляє замовлення менше %s грн. "
+                            + "Кошик уже в застосунку «Сільпо» — докинь щось там, або зроби спочатку тижневе "
+                            + "замовлення: тоді наступного разу я сам доповню маленький кошик твоїми звичайними "
+                            + "продуктами.")
+                    .formatted(
+                            e.getTotal() == null
+                                    ? "?"
+                                    : e.getTotal()
+                                            .setScale(0, RoundingMode.HALF_UP)
+                                            .toPlainString(),
+                            e.getMinimumOrder()
+                                    .setScale(0, RoundingMode.HALF_UP)
+                                    .toPlainString());
+        }
         if (e.getValidations().isEmpty()) {
             return CART_BUILD_FAILED_TEXT;
         }

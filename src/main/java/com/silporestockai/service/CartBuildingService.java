@@ -3,6 +3,7 @@ package com.silporestockai.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.silporestockai.client.mcp.McpToolResponse;
 import com.silporestockai.client.mcp.SilpoMcpClient;
+import com.silporestockai.entity.BaselineBasket;
 import com.silporestockai.entity.PartnerPromotion;
 import com.silporestockai.entity.ShoppingListItem;
 import com.silporestockai.entity.UserProfile;
@@ -17,6 +18,7 @@ import com.silporestockai.model.ProductCandidate;
 import com.silporestockai.model.ProductMatchRequest;
 import com.silporestockai.model.ProductResolution;
 import com.silporestockai.model.ResolvedProduct;
+import com.silporestockai.repository.BaselineBasketRepository;
 import com.silporestockai.repository.UserProfileRepository;
 import com.silporestockai.utils.McpResponses;
 import java.math.BigDecimal;
@@ -78,6 +80,7 @@ public class CartBuildingService {
     private final UserProfileRepository userProfileRepository;
     private final PartnerPromotionService partnerPromotionService;
     private final ProductMatchingService productMatchingService;
+    private final BaselineBasketRepository baselineBasketRepository;
 
     /**
      * Candidates Silpo says it can actually sell right now. {@code available: false} is not a judgement call, so it
@@ -193,17 +196,119 @@ public class CartBuildingService {
             log.info("Silpo matched no product for {} of {} items: {}", unresolved.size(), items.size(), unresolved);
         }
         addProductsToCart(userId, context, resolved);
-        return getVerifiedCart(
-                userId,
-                context,
-                deliverySlot,
-                unresolved,
-                resolved.stream()
-                        .filter(ResolvedProduct::promoted)
-                        .map(ResolvedProduct::productId)
-                        .distinct()
-                        .toList(),
-                resolution.skipped());
+        List<String> promoted = resolved.stream()
+                .filter(ResolvedProduct::promoted)
+                .map(ResolvedProduct::productId)
+                .distinct()
+                .toList();
+        try {
+            return getVerifiedCart(userId, context, deliverySlot, unresolved, promoted, resolution.skipped());
+        } catch (CartBuildException refused) {
+            if (!refused.belowMinimumOrder()) {
+                throw refused;
+            }
+            List<ResolvedProduct> topUp =
+                    topUpFromBaseline(userId, context, resolved, refused.getTotal(), refused.getMinimumOrder());
+            if (topUp.isEmpty()) {
+                throw refused;
+            }
+            addProductsToCart(userId, context, topUp);
+            return getVerifiedCart(
+                    userId,
+                    context,
+                    deliverySlot,
+                    unresolved,
+                    promoted,
+                    resolution.skipped(),
+                    topUp.stream().map(CartBuildingService::describeTopUp).toList());
+        }
+    }
+
+    /**
+     * Lines a small cart is short of Silpo's minimum delivery order, taken from the household's own baseline.
+     *
+     * <p>A dish's ingredients, a blackout lunch or a Friday-night snack cart comes to a few hundred hryvnia, and
+     * Silpo's home delivery starts at ₴799 (its own {@code order.cost.min}). Rather than a dead end, the shortfall
+     * is filled with what this household buys every week anyway — their confirmed baseline, cheapest lines first,
+     * each carrying the product id and price of a real past order — and every added line is named in the cart
+     * message with the right to take it out. Nothing is added for a household with no baseline yet; that case is
+     * explained instead.
+     */
+    private List<ResolvedProduct> topUpFromBaseline(
+            UUID userId,
+            CartContext context,
+            List<ResolvedProduct> alreadyInCart,
+            BigDecimal total,
+            BigDecimal minimum) {
+        List<BasketItem> baseline =
+                baselineBasketRepository
+                        .findByUserIdAndIsCurrentTrue(userId)
+                        .map(BaselineBasket::getItems)
+                        .orElseGet(List::of)
+                        .stream()
+                        .filter(item -> item.silpoProductId() != null
+                                && item.price() != null
+                                && item.price().signum() > 0)
+                        .filter(item -> alreadyInCart.stream()
+                                .noneMatch(p -> p.productId().equals(item.silpoProductId())))
+                        .sorted(java.util.Comparator.comparing(item ->
+                                item.price().multiply(item.quantity() == null ? BigDecimal.ONE : item.quantity())))
+                        .toList();
+        if (baseline.isEmpty()) {
+            log.info(
+                    "cart {} is {} short of the {} minimum and there is no baseline to top it up from",
+                    context.cartId(),
+                    minimum.subtract(total == null ? BigDecimal.ZERO : total),
+                    minimum);
+            return List.of();
+        }
+        BigDecimal running = total == null ? BigDecimal.ZERO : total;
+        List<ResolvedProduct> topUp = new ArrayList<>();
+        for (BasketItem item : baseline) {
+            if (running.compareTo(minimum) >= 0) {
+                break;
+            }
+            BigDecimal quantity =
+                    item.quantity() == null || item.quantity().signum() <= 0 ? BigDecimal.ONE : item.quantity();
+            topUp.add(new ResolvedProduct(
+                    item.name(),
+                    item.silpoProductId(),
+                    context.companyId(),
+                    context.branchId(),
+                    quantity,
+                    item.unit(),
+                    null,
+                    item.name(),
+                    item.price(),
+                    false));
+            running = running.add(item.price().multiply(quantity));
+        }
+        if (running.compareTo(minimum) < 0) {
+            log.info(
+                    "the whole baseline ({} lines) still leaves cart {} at {} against a {} minimum",
+                    baseline.size(),
+                    context.cartId(),
+                    running,
+                    minimum);
+        }
+        log.info(
+                "topping cart {} up from {} to about {} with {} baseline lines to clear the {} minimum",
+                context.cartId(),
+                total,
+                running,
+                topUp.size(),
+                minimum);
+        return topUp;
+    }
+
+    /** «Молоко «Премія» 2,5% — 1 шт, 45.99 грн», for the cart message. */
+    private static String describeTopUp(ResolvedProduct line) {
+        return "%s — %s %s, %s грн"
+                .formatted(
+                        line.catalogName(),
+                        plain(line.quantity()),
+                        line.unit() == null ? "шт" : line.unit(),
+                        plain(line.unitPrice().multiply(line.quantity()).setScale(2, RoundingMode.HALF_UP)));
     }
 
     /**
@@ -1117,6 +1222,18 @@ public class CartBuildingService {
             List<String> unresolved,
             List<String> promotedProductIds,
             List<String> skipped) {
+        return getVerifiedCart(userId, context, deliverySlot, unresolved, promotedProductIds, skipped, List.of());
+    }
+
+    /** Same, with the baseline lines a too-small cart was topped up with, so the message can name them. */
+    public CartSummary getVerifiedCart(
+            UUID userId,
+            CartContext context,
+            OfferedSlot deliverySlot,
+            List<String> unresolved,
+            List<String> promotedProductIds,
+            List<String> skipped,
+            List<String> toppedUp) {
         JsonNode cart = call(userId, TOOL_CART_BY_ID, Map.of("shoppingCartId", context.cartId()));
 
         List<BasketItem> items = McpResponses.findArray(cart, McpResponses.ITEMS).stream()
@@ -1134,9 +1251,23 @@ public class CartBuildingService {
                 nameByProductId.put(item.silpoProductId(), item.name());
             }
         });
-        List<String> validations = McpResponses.findArray(cart, McpResponses.VALIDATIONS).stream()
+        // Only what blocks checkout. Silpo also sends level "info" notes — «BNPL is not available for this total»
+        // — which reached the household as a raw machine code next to the real reason.
+        List<JsonNode> blocking = McpResponses.findArray(cart, McpResponses.VALIDATIONS).stream()
+                .filter(node -> !"info".equalsIgnoreCase(node.path("level").asText("error"))
+                        && !"warning".equalsIgnoreCase(node.path("level").asText("error")))
+                .toList();
+        List<String> validations = blocking.stream()
                 .map(node -> describeValidation(node, nameByProductId))
                 .toList();
+        BigDecimal minimumOrder = blocking.stream()
+                .filter(node -> "order.cost.min".equals(node.path("message").asText()))
+                .map(node -> McpResponses.findNumber(node.path("context"), "orderCostMin")
+                        .orElse(null))
+                .filter(java.util.Objects::nonNull)
+                .findFirst()
+                .orElse(null);
+        BigDecimal total = McpResponses.findNumber(cart, McpResponses.TOTAL).orElse(BigDecimal.ZERO);
 
         JsonNode loyalty = McpResponses.findNode(cart, McpResponses.LOYALTY).orElse(null);
         BigDecimal bonusAvailable = loyalty == null
@@ -1164,7 +1295,8 @@ public class CartBuildingService {
                     checkoutMobileLink,
                     validations,
                     cart);
-            throw new CartBuildException("Silpo gave no checkout link for cart " + context.cartId(), validations);
+            throw new CartBuildException(
+                    "Silpo gave no checkout link for cart " + context.cartId(), validations, total, minimumOrder);
         }
 
         CartSummary summary = new CartSummary(
@@ -1172,7 +1304,7 @@ public class CartBuildingService {
                 deliverySlot == null ? null : deliverySlot.id(),
                 deliverySlot == null ? null : deliverySlot.startsAt(),
                 items,
-                McpResponses.findNumber(cart, McpResponses.TOTAL).orElse(BigDecimal.ZERO),
+                total,
                 validations,
                 bonusAvailable,
                 bonusDecisionPending,
@@ -1180,7 +1312,8 @@ public class CartBuildingService {
                 checkoutMobileLink,
                 unresolved,
                 promotedProductIds == null ? List.of() : promotedProductIds,
-                skipped == null ? List.of() : skipped);
+                skipped == null ? List.of() : skipped,
+                toppedUp == null ? List.of() : toppedUp);
         log.info(
                 "MCP <- cart {} verified: {} items, total {}, bonuses available {}, unresolved {}",
                 summary.cartId(),

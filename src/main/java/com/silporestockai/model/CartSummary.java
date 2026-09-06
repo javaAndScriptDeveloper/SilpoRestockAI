@@ -11,7 +11,10 @@ import java.util.List;
  * @param promotedProductIds product ids a partner placement put in the cart (task 46)
  * @param skipped requested lines whose resolved product was found but deliberately not added, each with the reason
  *     in plain words — a line that would have cost a small fortune or come as a crate. See
- *     {@code CartBuildingService.sanityCheck}. Null for carts built before this field existed.
+ *     {@code CartBuildingService.sanityProblem}. Null for carts built before this field existed.
+ * @param toppedUp lines added from the household's own baseline to lift a too-small cart over Silpo's minimum
+ *     delivery order, named so the person can take them out — see {@code CartBuildingService.topUpFromBaseline}.
+ *     Null for carts built before this field existed.
  */
 public record CartSummary(
         String cartId,
@@ -26,7 +29,40 @@ public record CartSummary(
         String checkoutMobileLink,
         List<String> unresolved,
         List<String> promotedProductIds,
-        List<String> skipped) {
+        List<String> skipped,
+        List<String> toppedUp) {
+
+    /** The pre-top-up shape: nothing was added beyond what the list asked for. */
+    public CartSummary(
+            String cartId,
+            String deliverySlot,
+            Instant deliverySlotStartsAt,
+            List<BasketItem> items,
+            BigDecimal total,
+            List<String> validations,
+            BigDecimal bonusAvailable,
+            boolean bonusDecisionPending,
+            String checkoutWebLink,
+            String checkoutMobileLink,
+            List<String> unresolved,
+            List<String> promotedProductIds,
+            List<String> skipped) {
+        this(
+                cartId,
+                deliverySlot,
+                deliverySlotStartsAt,
+                items,
+                total,
+                validations,
+                bonusAvailable,
+                bonusDecisionPending,
+                checkoutWebLink,
+                checkoutMobileLink,
+                unresolved,
+                promotedProductIds,
+                skipped,
+                List.of());
+    }
 
     /** The pre-sanity-check shape: nothing was held back. */
     public CartSummary(
@@ -94,5 +130,10 @@ public record CartSummary(
     /** Never null, whatever version of this record the stored JSON came from. */
     public List<String> skippedLines() {
         return skipped == null ? List.of() : skipped;
+    }
+
+    /** Never null, whatever version of this record the stored JSON came from. */
+    public List<String> toppedUpLines() {
+        return toppedUp == null ? List.of() : toppedUp;
     }
 }
