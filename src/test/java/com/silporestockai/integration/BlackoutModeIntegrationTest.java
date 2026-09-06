@@ -188,7 +188,7 @@ class BlackoutModeIntegrationTest extends AbstractIntegrationTest {
         JsonNode search = MCP.callArguments("silpo_find_products_batch").getFirst();
         List<String> searched = new ArrayList<>();
         search.path("products").forEach(term -> searched.add(term.asText()));
-        assertThat(searched).contains("консерви рибні", "вода питна негазована", "готова страва");
+        assertThat(searched).contains("консерви рибні", "вода питна негазована", "хліб", "сир нарізаний");
         // Nothing that has to be cooked or kept cold.
         assertThat(searched).doesNotContain("пельмені", "молоко", "м'ясо");
     }

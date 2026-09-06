@@ -65,13 +65,20 @@ public class AdHocOrderService {
             "цукерки");
 
     /**
-     * Task 32: rehydration and sorbent/detox-category search terms. Not a single hardcoded brand — Silpo is a
-     * grocery retailer, not a pharmacy, and which of these a branch actually stocks varies; the shared
-     * search-then-report-what's-missing pipeline ({@link CartBuildingService#buildCart}) already handles telling
-     * the user honestly what wasn't found, the same way it does for every other search-first flow.
+     * Task 32: one line per thing a hangover kit needs, not one per word for it.
+     *
+     * <p>The first version searched seven overlapping terms — «електроліти», «регідрон» and «ізотонік» for the same
+     * need, «сорбент», «активоване вугілля» and «ентеросгель» for the other — and on a live account that came back
+     * as the same ₴329 electrolyte drink twice (two lines merged into one quantity), two Atoxil gels and a ₴464
+     * imported charcoal: ₴1514 for a hangover. Water, one rehydration drink, one sorbent. Silpo is a grocery, not a
+     * pharmacy, and whichever of these a branch does not stock is reported as unfound like any other line.
      */
-    private static final List<String> HANGOVER_RELIEF_TERMS = List.of(
-            "вода мінеральна", "електроліти", "регідрон", "ізотонік", "сорбент", "активоване вугілля", "ентеросгель");
+    private static final List<HangoverLine> HANGOVER_RELIEF_LINES = List.of(
+            new HangoverLine("вода мінеральна", new BigDecimal("2")),
+            new HangoverLine("ізотонік", new BigDecimal("2")),
+            new HangoverLine("сорбент", BigDecimal.ONE));
+
+    private record HangoverLine(String name, BigDecimal quantity) {}
 
     private final CartBuildingService cartBuildingService;
     private final CartConfirmationService cartConfirmationService;
@@ -120,12 +127,12 @@ public class AdHocOrderService {
      * ReorderService} does).
      */
     public void buildHangoverReliefOrder(User user) {
-        List<ShoppingListItem> items = HANGOVER_RELIEF_TERMS.stream()
-                .map(name -> ShoppingListItem.builder()
+        List<ShoppingListItem> items = HANGOVER_RELIEF_LINES.stream()
+                .map(line -> ShoppingListItem.builder()
                         .id(UUID.randomUUID())
                         .userId(user.getId())
-                        .name(name)
-                        .quantity(BigDecimal.ONE)
+                        .name(line.name())
+                        .quantity(line.quantity())
                         .unit("шт")
                         .build())
                 .toList();

@@ -184,13 +184,11 @@ class AdHocOrderIntegrationTest extends AbstractIntegrationTest {
         // Only some hangover-relief search terms find anything — the rest stays honestly unresolved.
         MCP.respondToTool("silpo_find_products_batch", """
                 {"queries":[\
-                {"query":"вода мінеральна","products":[{"name":"Моршинська","productId":"00000000-0000-4000-8000-000000000046"}]},\
-                {"query":"електроліти","products":[{"name":"Regidron Bio","productId":"00000000-0000-4000-8000-000000000047"}]},\
-                {"query":"регідрон","products":[]},\
-                {"query":"ізотонік","products":[]},\
-                {"query":"сорбент","products":[]},\
-                {"query":"активоване вугілля","products":[]},\
-                {"query":"ентеросгель","products":[]}]}""");
+                {"query":"вода мінеральна","products":[{"name":"Моршинська","productId":"00000000-0000-4000-8000-000000000046",\
+                "step":1,"displayRatio":"1.5л"}]},\
+                {"query":"ізотонік","products":[{"name":"Oshee ізотонік","productId":"00000000-0000-4000-8000-000000000047",\
+                "step":1,"displayRatio":"750мл"}]},\
+                {"query":"сорбент","products":[]}]}""");
     }
 
     private void tapButton(int updateId, String data) throws Exception {
@@ -268,11 +266,21 @@ class AdHocOrderIntegrationTest extends AbstractIntegrationTest {
         assertThat(TELEGRAM.sentMessages()).isNotEmpty();
     }
 
+    /**
+     * One line per thing a hangover needs, not one per word for it: seven overlapping terms once put the same ₴329
+     * electrolyte drink in a live cart twice and two sorbent gels beside a ₴464 charcoal — ₴1514 for a hangover.
+     */
     @Test
-    void hangoverReliefSearchesRehydrationAndSorbentTerms() {
+    void hangoverReliefSearchesOneTermPerNeedWithSensibleQuantities() {
         adHocOrderService.buildHangoverReliefOrder(user);
 
-        assertThat(searchedTerms()).contains("вода мінеральна", "електроліти", "регідрон", "сорбент", "ентеросгель");
+        assertThat(searchedTerms()).containsExactly("вода мінеральна", "ізотонік", "сорбент");
+        var added = MCP.callArguments("silpo_add_or_update_cart_products")
+                .getFirst()
+                .path("products");
+        assertThat(added).hasSize(2);
+        assertThat(added.get(0).path("quantity").asInt()).isEqualTo(2);
+        assertThat(added.get(1).path("quantity").asInt()).isEqualTo(2);
     }
 
     @Test
@@ -283,9 +291,8 @@ class AdHocOrderIntegrationTest extends AbstractIntegrationTest {
                 .findByUserIdAndStatus(user.getId(), OrderStatus.DRAFT)
                 .getFirst();
         assertThat(draft.getType()).isEqualTo(OrderType.AD_HOC);
-        // Only "вода мінеральна" and "електроліти" resolved to a real product in the stub above; the rest
-        // (регідрон, ізотонік, сорбент, активоване вугілля, ентеросгель) come back empty, and the shared
-        // cart-building pipeline reports them honestly rather than silently dropping them.
+        // Only water and the isotonic drink resolved to a real product in the stub above; the sorbent comes back
+        // empty, and the shared cart-building pipeline reports it honestly rather than silently dropping it.
         assertThat(TELEGRAM.sentMessages().getLast().path("text").asText())
                 .contains("Не знайшов")
                 .contains("сорбент");
