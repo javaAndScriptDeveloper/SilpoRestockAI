@@ -210,6 +210,26 @@ class ProductMatchingIntegrationTest extends AbstractIntegrationTest {
                 .isEmpty();
     }
 
+    /** The UA-only preference reaches the model as a note on the line; the search term itself stays plain. */
+    @Test
+    void marksTheUkrainianProducerPreference() {
+        CLAUDE.respondWithText("{\"choices\":[{\"lineIndex\":0,\"candidateIndex\":1,\"reason\":\"український\"}]}");
+        ProductMatchRequest milk = new ProductMatchRequest(
+                "Молоко",
+                new BigDecimal("1"),
+                "л",
+                List.of(
+                        packaged("Молоко Parmalat 3.5%", "89", "1л", "20"),
+                        packaged("Молоко Ферма 2.5%", "46", "900г", "30")),
+                false,
+                true);
+
+        List<Integer> chosen = productMatchingService.choose(List.of(milk));
+
+        assertThat(chosen).containsExactly(1);
+        assertThat(CLAUDE.requests().getFirst().toString()).contains("УКРАЇНСЬКОГО ВИРОБНИКА");
+    }
+
     /** «По знижці» reaches the model as a note on the line, and a promoted candidate is marked with its old price. */
     @Test
     void marksPromotedCandidatesAndTheDiscountPreference() {

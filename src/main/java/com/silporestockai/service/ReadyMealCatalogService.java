@@ -7,7 +7,6 @@ import com.silporestockai.exception.CartBuildException;
 import com.silporestockai.model.CartContext;
 import com.silporestockai.model.CatalogCandidate;
 import com.silporestockai.model.OfferedSlot;
-import com.silporestockai.repository.UserProfileRepository;
 import com.silporestockai.utils.McpResponses;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -53,7 +52,6 @@ public class ReadyMealCatalogService {
 
     private final SilpoMcpClient silpoMcpClient;
     private final CartBuildingService cartBuildingService;
-    private final UserProfileRepository userProfileRepository;
 
     /**
      * Every real ready-to-eat product Silpo currently offers this household's branch, deduplicated by
@@ -74,13 +72,10 @@ public class ReadyMealCatalogService {
                 deliverySlot.label(),
                 deliverySlot.end());
 
-        boolean onlyUaProducer = userProfileRepository
-                .findByUserId(userId)
-                .map(profile -> Boolean.TRUE.equals(profile.getOnlyUaProducer()))
-                .orElse(false);
-        List<String> searchTerms = CATEGORY_SEARCH_TERMS.stream()
-                .map(term -> CartBuildingService.biasedSearchTerm(term, onlyUaProducer))
-                .toList();
+        // Plain category names: «готові страви українського виробництва» as a term made Silpo's plain-text search
+        // answer nothing at all. The UA-only preference is applied where a product is chosen, not where it is
+        // searched for.
+        List<String> searchTerms = List.copyOf(CATEGORY_SEARCH_TERMS);
 
         JsonNode found = call(
                 userId,

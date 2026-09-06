@@ -322,8 +322,13 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
         assertThat(MCP.calledTools()).contains("silpo_add_or_update_cart_products");
     }
 
+    /**
+     * The UA-only flag used to append «українського виробництва» to every search term, and Silpo's plain-text
+     * search answered nothing for all 24 lines of a live list. The search stays plain; the preference is the
+     * matcher's (see ProductMatchingIntegrationTest).
+     */
     @Test
-    void biasesSearchTermsTowardUkrainianProducersWhenTheFlagIsSet() {
+    void searchesPlainNamesEvenWhenUkrainianProducersArePreferred() {
         UUID userId = connectedUser(9201L);
         userProfileRepository.save(com.silporestockai.entity.UserProfile.builder()
                 .id(UUID.randomUUID())
@@ -338,7 +343,7 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
         JsonNode search = MCP.callArguments("silpo_find_products_batch").getFirst();
         List<String> searched = new ArrayList<>();
         search.path("products").forEach(term -> searched.add(term.asText()));
-        assertThat(searched).anyMatch(term -> term.contains("молоко") && term.contains("українського виробництва"));
+        assertThat(searched).containsExactly("молоко");
     }
 
     /**

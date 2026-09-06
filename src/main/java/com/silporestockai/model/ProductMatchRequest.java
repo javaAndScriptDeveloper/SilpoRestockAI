@@ -11,17 +11,30 @@ import java.util.List;
  * @param unit the line's unit
  * @param candidates what the catalog search returned, in Silpo's own order
  * @param preferDiscounted whether the person asked for this «по знижці» — a discounted candidate wins a tie
+ * @param preferUaProducer whether the household asked for Ukrainian producers — a Ukrainian brand wins a tie,
+ *     judged by the matcher from the candidate's name, since the catalog carries no producer field
  */
 public record ProductMatchRequest(
         String requestedName,
         BigDecimal quantity,
         String unit,
         List<ProductCandidate> candidates,
-        boolean preferDiscounted) {
+        boolean preferDiscounted,
+        boolean preferUaProducer) {
 
-    /** The ordinary shape: no discount preference. */
+    /** The ordinary shape: no preferences. */
     public ProductMatchRequest(
             String requestedName, BigDecimal quantity, String unit, List<ProductCandidate> candidates) {
-        this(requestedName, quantity, unit, candidates, false);
+        this(requestedName, quantity, unit, candidates, false, false);
+    }
+
+    /** The pre-producer-preference shape. */
+    public ProductMatchRequest(
+            String requestedName,
+            BigDecimal quantity,
+            String unit,
+            List<ProductCandidate> candidates,
+            boolean preferDiscounted) {
+        this(requestedName, quantity, unit, candidates, preferDiscounted, false);
     }
 }

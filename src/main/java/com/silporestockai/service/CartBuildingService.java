@@ -150,7 +150,10 @@ public class CartBuildingService {
 
     /** The shelf tags of each line's candidates, in Silpo's own order, as the matcher wants them. */
     private static List<ProductMatchRequest> matchRequests(
-            List<ShoppingListItem> items, List<List<JsonNode>> candidatesFor, boolean preferDiscounted) {
+            List<ShoppingListItem> items,
+            List<List<JsonNode>> candidatesFor,
+            boolean preferDiscounted,
+            boolean preferUaProducer) {
         List<ProductMatchRequest> requests = new ArrayList<>();
         for (int i = 0; i < items.size(); i++) {
             ShoppingListItem item = items.get(i);
@@ -168,7 +171,7 @@ public class CartBuildingService {
                                     .orElse(null)))
                     .toList();
             requests.add(new ProductMatchRequest(
-                    item.getName(), quantityOf(item), item.getUnit(), candidates, preferDiscounted));
+                    item.getName(), quantityOf(item), item.getUnit(), candidates, preferDiscounted, preferUaProducer));
         }
         return requests;
     }
@@ -704,7 +707,10 @@ public class CartBuildingService {
             List<ShoppingListItem> chunk = needsSearch.subList(start, Math.min(needsSearch.size(), start + chunkSize));
             List<String> terms = new ArrayList<>();
             for (ShoppingListItem item : chunk) {
-                addTerm(terms, biasedSearchTerm(item.getName(), onlyUaProducer));
+                // The plain name. «Молоко українського виробництва» used to be the term when the UA-only flag
+                // was set, and Silpo's plain-text search answered nothing for every line of a 24-line list;
+                // the preference is the matcher's job, over candidates a plain search actually returns.
+                addTerm(terms, item.getName());
                 PartnerPromotion promotion = promotionFor.get(item);
                 if (promotion != null) {
                     addTerm(terms, promotion.getProductName());
@@ -733,13 +739,10 @@ public class CartBuildingService {
             List<List<JsonNode>> candidatesFor = toMatch.stream()
                     .map(item -> plausibleFor(
                             item.getName(),
-                            productsByQuery.getOrDefault(
-                                    biasedSearchTerm(item.getName(), onlyUaProducer)
-                                            .toLowerCase(Locale.ROOT),
-                                    List.of())))
+                            productsByQuery.getOrDefault(item.getName().toLowerCase(Locale.ROOT), List.of())))
                     .toList();
-            List<Integer> picked =
-                    productMatchingService.choose(matchRequests(toMatch, candidatesFor, preferDiscounted));
+            List<Integer> picked = productMatchingService.choose(
+                    matchRequests(toMatch, candidatesFor, preferDiscounted, onlyUaProducer));
             Map<ShoppingListItem, JsonNode> matched = new IdentityHashMap<>();
             for (int i = 0; i < toMatch.size(); i++) {
                 int index = picked.get(i);
@@ -787,7 +790,7 @@ public class CartBuildingService {
             }
         }
 
-        secondPass(userId, context, needsSearch, resolved, skipped, preferDiscounted);
+        secondPass(userId, context, needsSearch, resolved, skipped, preferDiscounted, onlyUaProducer);
 
         log.info(
                 "MCP <- resolved {} of {} shopping list lines ({} pre-resolved, {} searched, {} partner placements,"
@@ -829,7 +832,8 @@ public class CartBuildingService {
             List<ShoppingListItem> searched,
             List<ResolvedProduct> resolved,
             List<String> skipped,
-            boolean preferDiscounted) {
+            boolean preferDiscounted,
+            boolean preferUaProducer) {
         List<ShoppingListItem> stillMissing = searched.stream()
                 .filter(item ->
                         resolved.stream().noneMatch(p -> p.requestedName().equals(item.getName())))
@@ -852,26 +856,31 @@ public class CartBuildingService {
         }
         List<String> terms = new ArrayList<>();
         alternatives.values().forEach(list -> list.forEach(term -> addTerm(terms, term)));
-        JsonNode found;
-        try {
-            found = call(
-                    userId,
-                    TOOL_FIND_PRODUCTS,
-                    Map.of(
-                            "branchId", nullSafe(context.branchId()),
-                            "deliveryType", nullSafe(context.deliveryType()),
-                            "timeslotStart", nullSafe(context.timeslotStart()),
-                            "timeslotEnd", nullSafe(context.timeslotEnd()),
-                            "products", terms));
-        } catch (RuntimeException e) {
-            log.warn("second search pass failed: {}", e.getMessage());
-            return;
-        }
+        // Silpo takes at most thirty terms per search. A 24-line list with two alternatives each is 48, and the
+        // whole second pass was refused for it live — thirty at a time, like the first pass.
         Map<String, List<JsonNode>> productsByQuery = new LinkedHashMap<>();
-        for (JsonNode query : McpResponses.findArray(found, McpResponses.QUERIES)) {
-            McpResponses.findString(query, McpResponses.NAME)
-                    .ifPresent(text -> productsByQuery.putIfAbsent(
-                            text.toLowerCase(Locale.ROOT), McpResponses.findArray(query, McpResponses.PRODUCTS)));
+        for (int start = 0; start < terms.size(); start += SEARCH_BATCH_SIZE) {
+            List<String> batch = terms.subList(start, Math.min(terms.size(), start + SEARCH_BATCH_SIZE));
+            JsonNode found;
+            try {
+                found = call(
+                        userId,
+                        TOOL_FIND_PRODUCTS,
+                        Map.of(
+                                "branchId", nullSafe(context.branchId()),
+                                "deliveryType", nullSafe(context.deliveryType()),
+                                "timeslotStart", nullSafe(context.timeslotStart()),
+                                "timeslotEnd", nullSafe(context.timeslotEnd()),
+                                "products", batch));
+            } catch (RuntimeException e) {
+                log.warn("second search pass failed: {}", e.getMessage());
+                return;
+            }
+            for (JsonNode query : McpResponses.findArray(found, McpResponses.QUERIES)) {
+                McpResponses.findString(query, McpResponses.NAME)
+                        .ifPresent(text -> productsByQuery.putIfAbsent(
+                                text.toLowerCase(Locale.ROOT), McpResponses.findArray(query, McpResponses.PRODUCTS)));
+            }
         }
         List<ShoppingListItem> toMatch = new ArrayList<>();
         List<List<JsonNode>> candidatesFor = new ArrayList<>();
@@ -903,7 +912,8 @@ public class CartBuildingService {
         }
         List<Integer> picked;
         try {
-            picked = productMatchingService.choose(matchRequests(toMatch, candidatesFor, preferDiscounted));
+            picked = productMatchingService.choose(
+                    matchRequests(toMatch, candidatesFor, preferDiscounted, preferUaProducer));
         } catch (RuntimeException e) {
             log.warn("second search pass could not match: {}", e.getMessage());
             return;
@@ -1513,15 +1523,6 @@ public class CartBuildingService {
 
     private static String nullSafe(String value) {
         return value == null ? "" : value;
-    }
-
-    /**
-     * Best-effort UA-producer preference: no producer/country field exists anywhere in this app's observed MCP
-     * product data (never exercised against a live server — see task 25's design doc), so this biases Silpo's own
-     * search ranking via the query text instead of filtering results client-side. Not a guaranteed filter.
-     */
-    static String biasedSearchTerm(String itemName, boolean onlyUaProducer) {
-        return onlyUaProducer ? itemName + " українського виробництва" : itemName;
     }
 
     private static BigDecimal quantityOf(ShoppingListItem item) {

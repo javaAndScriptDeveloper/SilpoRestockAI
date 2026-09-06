@@ -229,6 +229,11 @@ public class ProductMatchingService {
                             request.preferDiscounted()
                                     ? " — людина просила ПО ЗНИЖЦІ: бери товар з поміткою АКЦІЯ"
                                     : "")
+                    .append(
+                            request.preferUaProducer()
+                                    ? " — людина просила УКРАЇНСЬКОГО ВИРОБНИКА: серед придатних бери товар"
+                                            + " українського бренду чи виробника"
+                                    : "")
                     .append('\n');
             List<ProductCandidate> candidates = request.candidates();
             if (candidates.isEmpty()) {

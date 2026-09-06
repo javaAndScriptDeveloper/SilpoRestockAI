@@ -152,6 +152,47 @@ class CartSecondPassIntegrationTest extends AbstractIntegrationTest {
         assertThat(summary.unresolved()).isEmpty();
     }
 
+    /**
+     * Silpo takes thirty terms per search. Two alternatives for each of sixteen unresolved lines is thirty-two,
+     * and the whole second pass was refused for that live — so the pass searches thirty at a time.
+     */
+    @Test
+    void searchesAlternativeTermsThirtyAtATime() {
+        UUID userId = connectedUser(8503L);
+        List<ShoppingListItem> items = new java.util.ArrayList<>();
+        StringBuilder firstPass = new StringBuilder("{\"queries\":[");
+        StringBuilder suggestions = new StringBuilder("{\"suggestions\":[");
+        for (int i = 0; i < 16; i++) {
+            items.add(item("товар" + i, "1", "шт"));
+            firstPass
+                    .append(i == 0 ? "" : ",")
+                    .append("{\"query\":\"товар")
+                    .append(i)
+                    .append("\",\"products\":[]}");
+            suggestions
+                    .append(i == 0 ? "" : ",")
+                    .append("{\"lineIndex\":")
+                    .append(i)
+                    .append(",\"terms\":[\"інше")
+                    .append(i)
+                    .append("\",\"ще")
+                    .append(i)
+                    .append("\"]}");
+        }
+        firstPass.append("]}");
+        suggestions.append("]}");
+        MCP.respondToToolInOrder(
+                "silpo_find_products_batch", firstPass.toString(), "{\"queries\":[]}", "{\"queries\":[]}");
+        CLAUDE.respondWithText(suggestions.toString());
+
+        cartBuildingService.buildCart(userId, items);
+
+        List<JsonNode> searches = MCP.callArguments("silpo_find_products_batch");
+        assertThat(searches).hasSize(3);
+        assertThat(searches.get(1).path("products")).hasSize(30);
+        assertThat(searches.get(2).path("products")).hasSize(2);
+    }
+
     @Test
     void aLineTheSecondPassCannotHelpStaysHonestlyUnresolved() {
         UUID userId = connectedUser(8502L);
