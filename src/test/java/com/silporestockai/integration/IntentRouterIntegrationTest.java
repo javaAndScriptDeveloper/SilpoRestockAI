@@ -208,17 +208,31 @@ class IntentRouterIntegrationTest extends AbstractIntegrationTest {
         assertThat(TELEGRAM.sentMessages().getLast().path("text").asText()).contains("Список");
     }
 
+    /**
+     * The sentence sets the flag; it does not flip it. Asked twice, the same request used to switch the
+     * preference off and answer «Прибрав обмеження» to a person who had just asked for one.
+     */
     @Test
-    void uaOnlyIntentTogglesTheFlag() throws Exception {
-        CLAUDE.respondWithText("""
+    void uaOnlyIntentSetsTheFlagAndAskingTwiceKeepsIt() throws Exception {
+        String classified = """
                 {"intent":"FILTER_UA_PRODUCER_ONLY","confidence":0.9,"themeDescription":null,\
-                "targetDateTimeIso":null}""");
+                "targetDateTimeIso":null}""";
+        CLAUDE.respondWithTexts(classified, classified, classified);
+        UUID userId = userRepository.findByTelegramChatId(CHAT_ID).orElseThrow().getId();
 
         sendText(1, "шукай тільки український виробник");
-
-        UUID userId = userRepository.findByTelegramChatId(CHAT_ID).orElseThrow().getId();
         assertThat(userProfileRepository.findByUserId(userId).orElseThrow().getOnlyUaProducer())
                 .isTrue();
+
+        sendText(2, "шукай тільки українського виробника");
+        assertThat(userProfileRepository.findByUserId(userId).orElseThrow().getOnlyUaProducer())
+                .isTrue();
+        assertThat(TELEGRAM.sentMessages().getLast().path("text").asText()).contains("Уже шукаю");
+
+        sendText(3, "прибери обмеження на українського виробника");
+        assertThat(userProfileRepository.findByUserId(userId).orElseThrow().getOnlyUaProducer())
+                .isFalse();
+        assertThat(TELEGRAM.sentMessages().getLast().path("text").asText()).contains("Прибрав");
     }
 
     @Test

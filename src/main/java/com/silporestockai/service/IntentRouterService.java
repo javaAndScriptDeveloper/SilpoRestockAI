@@ -190,6 +190,15 @@ public class IntentRouterService {
         return true;
     }
 
+    /** The ways a person says «stop preferring Ukrainian producers»; anything else under the intent turns it on. */
+    private static final java.util.regex.Pattern DROP_UA_ONLY = java.util.regex.Pattern.compile(
+            "не (тільки|лише|обов'язково)|будь-як|прибери|зніми|скасуй|вимкни|без обмеж|не важлив|неважлив|байдуже",
+            java.util.regex.Pattern.CASE_INSENSITIVE);
+
+    private static boolean asksToDropUaOnly(String text) {
+        return text != null && DROP_UA_ONLY.matcher(text).find();
+    }
+
     private void dispatch(User user, String text, ClassifiedIntent classified, IntentType intent) {
         log.info("user {} classified as {} (confidence {})", user.getId(), intent, classified.confidence());
         switch (intent) {
@@ -210,7 +219,9 @@ public class IntentRouterService {
                                 + "«додай протеїн» — додам.");
                 specialModeService.startMassGainSetup(user);
             }
-            case FILTER_UA_PRODUCER_ONLY -> specialModeService.toggleUaOnly(user);
+            // One intent for both directions; the sentence says which. Setting rather than toggling: the same
+            // request twice must not undo itself.
+            case FILTER_UA_PRODUCER_ONLY -> specialModeService.setUaOnly(user, !asksToDropUaOnly(text));
             case HANGOVER_RELIEF -> adHocOrderService.buildHangoverReliefOrder(user);
             case BLACKOUT -> {
                 telegramOutboundService.sendMessage(

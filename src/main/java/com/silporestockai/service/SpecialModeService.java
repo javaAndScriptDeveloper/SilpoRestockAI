@@ -153,14 +153,31 @@ public class SpecialModeService {
     @Transactional
     public void toggleUaOnly(User user) {
         UserProfile profile = requireProfile(user);
-        boolean next = !Boolean.TRUE.equals(profile.getOnlyUaProducer());
-        profile.setOnlyUaProducer(next);
+        setUaOnly(user, !Boolean.TRUE.equals(profile.getOnlyUaProducer()));
+    }
+
+    /**
+     * Sets the preference to what the sentence asked for, rather than flipping it: «шукай тільки українського
+     * виробника» said twice used to switch the flag off and then on again, and the first answer was «Прибрав
+     * обмеження» to a person who had just asked for one.
+     */
+    @Transactional
+    public void setUaOnly(User user, boolean on) {
+        UserProfile profile = requireProfile(user);
+        boolean already = on == Boolean.TRUE.equals(profile.getOnlyUaProducer());
+        profile.setOnlyUaProducer(on);
         userProfileRepository.save(profile);
-        telegramOutboundService.sendMessage(
-                user.getTelegramChatId(),
-                next
-                        ? "Тепер шукатиму переважно товари українського виробництва."
-                        : "Прибрав обмеження на українського виробника.");
+        String text;
+        if (on) {
+            text = already
+                    ? "Уже шукаю переважно товари українського виробництва."
+                    : "Тепер шукатиму переважно товари українського виробництва.";
+        } else {
+            text = already
+                    ? "Обмеження на українського виробника й так немає."
+                    : "Прибрав обмеження на українського виробника.";
+        }
+        telegramOutboundService.sendMessage(user.getTelegramChatId(), text);
     }
 
     /**
