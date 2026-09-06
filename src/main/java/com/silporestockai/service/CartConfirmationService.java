@@ -8,6 +8,7 @@ import com.silporestockai.entity.ConversationState;
 import com.silporestockai.entity.CustomerOrder;
 import com.silporestockai.entity.ShoppingListItem;
 import com.silporestockai.entity.User;
+import com.silporestockai.exception.CartBuildException;
 import com.silporestockai.exception.NoSilpoDeliveryAddressException;
 import com.silporestockai.model.CartContext;
 import com.silporestockai.model.CartSummary;
@@ -96,6 +97,10 @@ public class CartConfirmationService {
                     chatId,
                     "У «Сільпо» немає збереженої адреси доставки, тому я не можу створити кошик. Додай адресу "
                             + "в застосунку «Сільпо» (Профіль → Мої адреси доставки) і напиши мені ще раз.");
+            return;
+        } catch (CartBuildException e) {
+            log.error("could not build a cart for user {}", user.getId(), e);
+            telegramOutboundService.sendMessage(chatId, cartBuildFailureMessage(e));
             return;
         } catch (RuntimeException e) {
             log.error("could not build a cart for user {}", user.getId(), e);
@@ -335,6 +340,18 @@ public class CartConfirmationService {
         return customerOrderRepository
                 .findById(UUID.fromString(orderId.toString()))
                 .filter(order -> order.getStatus() == OrderStatus.DRAFT);
+    }
+
+    /**
+     * Silpo can refuse a cart for reasons a retry won't fix on its own — an expired timeslot, a quantity above
+     * stock — so when we know why, the person hears why instead of a generic "спробую пізніше".
+     */
+    private static String cartBuildFailureMessage(CartBuildException e) {
+        if (e.getValidations().isEmpty()) {
+            return "Кошик зібрати не вдалось. Спробую ще раз трохи пізніше.";
+        }
+        return "Кошик зібрати не вдалось:\n- " + String.join("\n- ", e.getValidations())
+                + "\nСпробую ще раз трохи пізніше.";
     }
 
     private static CartSummary summaryOf(ConversationState state) {

@@ -694,6 +694,16 @@ public class CartBuildingService {
                         McpResponses.findNumber(node, McpResponses.PRICE).orElse(null)))
                 .toList();
 
+        Map<String, String> nameByProductId = new LinkedHashMap<>();
+        items.forEach(item -> {
+            if (item.silpoProductId() != null && item.name() != null) {
+                nameByProductId.put(item.silpoProductId(), item.name());
+            }
+        });
+        List<String> validations = McpResponses.findArray(cart, McpResponses.VALIDATIONS).stream()
+                .map(node -> describeValidation(node, nameByProductId))
+                .toList();
+
         JsonNode loyalty = McpResponses.findNode(cart, McpResponses.LOYALTY).orElse(null);
         BigDecimal bonusAvailable = loyalty == null
                 ? BigDecimal.ZERO
@@ -713,13 +723,14 @@ public class CartBuildingService {
                 McpResponses.findString(cart, McpResponses.CHECKOUT_MOBILE).orElse(null);
         if (isBlank(checkoutWebLink) || isBlank(checkoutMobileLink)) {
             log.error(
-                    "verified cart {} has no usable checkout link — checkoutWebLink={}, checkoutMobileLink={}. "
-                            + "Raw response: {}",
+                    "verified cart {} has no usable checkout link — checkoutWebLink={}, checkoutMobileLink={}, "
+                            + "validations={}. Raw response: {}",
                     context.cartId(),
                     checkoutWebLink,
                     checkoutMobileLink,
+                    validations,
                     cart);
-            throw new CartBuildException("Silpo gave no checkout link for cart " + context.cartId());
+            throw new CartBuildException("Silpo gave no checkout link for cart " + context.cartId(), validations);
         }
 
         CartSummary summary = new CartSummary(
@@ -728,9 +739,7 @@ public class CartBuildingService {
                 deliverySlot == null ? null : deliverySlot.startsAt(),
                 items,
                 McpResponses.findNumber(cart, McpResponses.TOTAL).orElse(BigDecimal.ZERO),
-                McpResponses.findArray(cart, McpResponses.VALIDATIONS).stream()
-                        .map(JsonNode::asText)
-                        .toList(),
+                validations,
                 bonusAvailable,
                 bonusDecisionPending,
                 checkoutWebLink,
@@ -754,6 +763,32 @@ public class CartBuildingService {
             throw new CartBuildException("Silpo tool %s reported an error".formatted(tool));
         }
         return McpResponses.tree(response);
+    }
+
+    /**
+     * A cart-level validation is an object ({@code level}, {@code type}, {@code message}, {@code context}), not the
+     * plain string {@link CartSummary#validations()} used to hold — so this turns the known codes into the sentence
+     * a person reads, and falls back to the raw {@code message} for one this app has never seen.
+     */
+    private static String describeValidation(JsonNode validation, Map<String, String> nameByProductId) {
+        String message = McpResponses.findString(validation, "message").orElse("");
+        JsonNode context = validation.get("context");
+        return switch (message) {
+            case "timeslot.not_available" -> "обраний час доставки більше недоступний";
+            case "product.offer.stock.max" -> {
+                String productId = context == null
+                        ? null
+                        : McpResponses.findString(context, "productId").orElse(null);
+                String name = productId == null ? null : nameByProductId.get(productId);
+                String stock = context == null
+                        ? ""
+                        : McpResponses.findString(context, "stock").orElse("");
+                yield (name == null ? "товар" : name) + ": на складі лишилось " + stock
+                        + ", а в кошику замовлено більше";
+            }
+            case "" -> "невідома причина";
+            default -> message;
+        };
     }
 
     private static boolean isBlank(String value) {
