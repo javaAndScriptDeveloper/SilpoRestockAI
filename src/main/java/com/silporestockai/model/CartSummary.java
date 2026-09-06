@@ -22,6 +22,8 @@ import java.util.List;
  * @param checkoutWebLink where a person finishes the order in a browser
  * @param checkoutMobileLink the same in the Silpo app
  * @param unresolved names from the shopping list Silpo could not match to any product
+ * @param promotedProductIds product ids that are in the cart because a partner promotion made them the match
+ *     (task 46) — what the message marks with ★; empty when none
  */
 public record CartSummary(
         String cartId,
@@ -34,4 +36,38 @@ public record CartSummary(
         boolean bonusDecisionPending,
         String checkoutWebLink,
         String checkoutMobileLink,
-        List<String> unresolved) {}
+        List<String> unresolved,
+        List<String> promotedProductIds) {
+
+    /** The pre-task-46 shape: no partner placements in this cart. */
+    public CartSummary(
+            String cartId,
+            String deliverySlot,
+            Instant deliverySlotStartsAt,
+            List<BasketItem> items,
+            BigDecimal total,
+            List<String> validations,
+            BigDecimal bonusAvailable,
+            boolean bonusDecisionPending,
+            String checkoutWebLink,
+            String checkoutMobileLink,
+            List<String> unresolved) {
+        this(
+                cartId,
+                deliverySlot,
+                deliverySlotStartsAt,
+                items,
+                total,
+                validations,
+                bonusAvailable,
+                bonusDecisionPending,
+                checkoutWebLink,
+                checkoutMobileLink,
+                unresolved,
+                List.of());
+    }
+
+    public boolean isPromoted(String productId) {
+        return productId != null && promotedProductIds != null && promotedProductIds.contains(productId);
+    }
+}

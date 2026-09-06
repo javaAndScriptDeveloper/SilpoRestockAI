@@ -1,0 +1,52 @@
+databaseChangeLog:
+  - changeSet:
+      id: 027-partner-promotion
+      author: komora
+      comment: >-
+        Task 46: paid featured placement. A partner's real, MCP-verified product is preferred as the match
+        whenever a flow resolves a category the household already asked for — never a product nobody
+        asked for. Kept apart from the core domain tables: different lifecycle (a campaign, not a
+        household), different reader (a partner report, not the bot). Every surfacing and every cart-add
+        is an event row, because «featured N times, added M times» is the thing being sold.
+      changes:
+        - createTable:
+            tableName: partner_promotion
+            columns:
+              - column: { name: id, type: UUID, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: partner_name, type: VARCHAR(128), constraints: { nullable: false } }
+              - column: { name: category_or_query, type: VARCHAR(128), constraints: { nullable: false } }
+              - column: { name: silpo_product_id, type: VARCHAR(64), constraints: { nullable: false } }
+              - column: { name: product_name, type: VARCHAR(256), constraints: { nullable: false } }
+              - column: { name: priority_weight, type: INTEGER, defaultValueNumeric: 100, constraints: { nullable: false } }
+              - column: { name: active_from, type: TIMESTAMP WITH TIME ZONE }
+              - column: { name: active_to, type: TIMESTAMP WITH TIME ZONE }
+              - column: { name: status, type: VARCHAR(16), constraints: { nullable: false } }
+              - column: { name: created_at, type: TIMESTAMP WITH TIME ZONE, constraints: { nullable: false } }
+        - createIndex:
+            indexName: ix_partner_promotion_status
+            tableName: partner_promotion
+            columns:
+              - column:
+                  name: status
+        - createTable:
+            tableName: partner_promotion_event
+            columns:
+              - column: { name: id, type: UUID, constraints: { primaryKey: true, nullable: false } }
+              - column:
+                  name: promotion_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_partner_promotion_event_promotion
+                    references: partner_promotion(id)
+                    deleteCascade: true
+              - column: { name: user_id, type: UUID }
+              - column: { name: order_id, type: UUID }
+              - column: { name: event_type, type: VARCHAR(16), constraints: { nullable: false } }
+              - column: { name: occurred_at, type: TIMESTAMP WITH TIME ZONE, constraints: { nullable: false } }
+        - createIndex:
+            indexName: ix_partner_promotion_event_promotion
+            tableName: partner_promotion_event
+            columns:
+              - column:
+                  name: promotion_id

@@ -40,8 +40,13 @@ public class CartMessageService {
     public String cartText(CartSummary summary, OfferedSlot slot, OrderType type) {
         StringBuilder text =
                 new StringBuilder(type == OrderType.AD_HOC ? "Зібрав кошик:\n" : "Зібрав кошик на тиждень:\n");
+        boolean anyPromoted = false;
         for (BasketItem item : summary.items()) {
             text.append("\n— ").append(item.name());
+            if (summary.isPromoted(item.silpoProductId())) {
+                text.append(" ★");
+                anyPromoted = true;
+            }
             if (item.quantity() != null) {
                 text.append(" — ").append(amount(item.quantity()));
                 if (item.unit() != null) {
@@ -51,6 +56,12 @@ public class CartMessageService {
             if (item.price() != null) {
                 text.append(" — ").append(money(item.price())).append(" грн");
             }
+        }
+        if (anyPromoted) {
+            // Task 46, said plainly: a partner chose the brand, the household chose the category. Editing is the
+            // same right as for any other line.
+            text.append("\n\n★ — партнерська пропозиція: бренд від партнера «Сільпо» в категорії, яку ти й так")
+                    .append(" замовляєш. Не подобається — скажи, заміню.");
         }
         if (!summary.unresolved().isEmpty()) {
             text.append("\n\nНе знайшов: ")

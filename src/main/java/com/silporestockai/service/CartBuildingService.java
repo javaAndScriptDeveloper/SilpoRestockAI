@@ -3,7 +3,9 @@ package com.silporestockai.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.silporestockai.client.mcp.McpToolResponse;
 import com.silporestockai.client.mcp.SilpoMcpClient;
+import com.silporestockai.entity.PartnerPromotion;
 import com.silporestockai.entity.ShoppingListItem;
+import com.silporestockai.entity.UserProfile;
 import com.silporestockai.exception.CartBuildException;
 import com.silporestockai.exception.NoSilpoDeliveryAddressException;
 import com.silporestockai.model.BasketItem;
@@ -21,6 +23,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -69,6 +72,7 @@ public class CartBuildingService {
 
     private final SilpoMcpClient silpoMcpClient;
     private final UserProfileRepository userProfileRepository;
+    private final PartnerPromotionService partnerPromotionService;
 
     /** Steps 1 to 6, in the documented order. Unresolved items are reported, not fatal. */
     public CartSummary buildCart(UUID userId, List<ShoppingListItem> items) {
@@ -91,7 +95,16 @@ public class CartBuildingService {
             log.info("Silpo matched no product for {} of {} items: {}", unresolved.size(), items.size(), unresolved);
         }
         addProductsToCart(userId, context, resolved);
-        return getVerifiedCart(userId, context, deliverySlot, unresolved);
+        return getVerifiedCart(
+                userId,
+                context,
+                deliverySlot,
+                unresolved,
+                resolved.stream()
+                        .filter(ResolvedProduct::promoted)
+                        .map(ResolvedProduct::productId)
+                        .distinct()
+                        .toList());
     }
 
     /**
@@ -374,13 +387,32 @@ public class CartBuildingService {
                 .filter(item -> item.getSilpoProductId() == null
                         || item.getSilpoProductId().isBlank())
                 .toList();
-        boolean onlyUaProducer = userProfileRepository
-                .findByUserId(userId)
-                .map(profile -> Boolean.TRUE.equals(profile.getOnlyUaProducer()))
-                .orElse(false);
-        for (int start = 0; start < needsSearch.size(); start += SEARCH_BATCH_SIZE) {
-            List<ShoppingListItem> chunk =
-                    needsSearch.subList(start, Math.min(needsSearch.size(), start + SEARCH_BATCH_SIZE));
+        UserProfile profile = userProfileRepository.findByUserId(userId).orElse(null);
+        boolean onlyUaProducer = profile != null && Boolean.TRUE.equals(profile.getOnlyUaProducer());
+
+        // Task 46: a partner placement may answer a line the household already asked for. Decided per line
+        // before any search — restrictions are checked inside match(), so a conflicting promotion never gets
+        // this far — and verified live below by searching the promoted product's own catalog name in the same
+        // batch: the placement is used only if Silpo returns that exact product id for this branch and slot.
+        List<PartnerPromotion> promotions = partnerPromotionService.activePromotions();
+        Map<ShoppingListItem, PartnerPromotion> promotionFor = new IdentityHashMap<>();
+        for (ShoppingListItem item : needsSearch) {
+            partnerPromotionService
+                    .match(promotions, item.getName(), profile)
+                    .ifPresent(promotion -> promotionFor.put(item, promotion));
+        }
+        int chunkSize = promotionFor.isEmpty() ? SEARCH_BATCH_SIZE : SEARCH_BATCH_SIZE / 2;
+
+        for (int start = 0; start < needsSearch.size(); start += chunkSize) {
+            List<ShoppingListItem> chunk = needsSearch.subList(start, Math.min(needsSearch.size(), start + chunkSize));
+            List<String> terms = new ArrayList<>();
+            for (ShoppingListItem item : chunk) {
+                addTerm(terms, biasedSearchTerm(item.getName(), onlyUaProducer));
+                PartnerPromotion promotion = promotionFor.get(item);
+                if (promotion != null) {
+                    addTerm(terms, promotion.getProductName());
+                }
+            }
             JsonNode found = call(
                     userId,
                     TOOL_FIND_PRODUCTS,
@@ -389,50 +421,89 @@ public class CartBuildingService {
                             "deliveryType", nullSafe(context.deliveryType()),
                             "timeslotStart", nullSafe(context.timeslotStart()),
                             "timeslotEnd", nullSafe(context.timeslotEnd()),
-                            "products",
-                                    chunk.stream()
-                                            .map(item -> biasedSearchTerm(item.getName(), onlyUaProducer))
-                                            .toList()));
+                            "products", terms));
+            Map<String, List<JsonNode>> productsByQuery = new LinkedHashMap<>();
             for (JsonNode query : McpResponses.findArray(found, McpResponses.QUERIES)) {
-                String queryText =
-                        McpResponses.findString(query, McpResponses.NAME).orElse(null);
-                ShoppingListItem item = queryText == null
-                        ? null
-                        : chunk.stream()
-                                .filter(candidate -> biasedSearchTerm(candidate.getName(), onlyUaProducer)
-                                        .equalsIgnoreCase(queryText))
-                                .findFirst()
-                                .orElse(null);
-                if (item == null) {
-                    continue;
-                }
-                McpResponses.findArray(query, McpResponses.PRODUCTS).stream()
-                        .findFirst()
-                        .ifPresent(product -> {
-                            String productId = McpResponses.findString(product, McpResponses.PRODUCT_ID)
+                McpResponses.findString(query, McpResponses.NAME)
+                        .ifPresent(text -> productsByQuery.putIfAbsent(
+                                text.toLowerCase(Locale.ROOT), McpResponses.findArray(query, McpResponses.PRODUCTS)));
+            }
+            for (ShoppingListItem item : chunk) {
+                ResolvedProduct chosen = null;
+                PartnerPromotion promotion = promotionFor.get(item);
+                if (promotion != null) {
+                    JsonNode live =
+                            productsByQuery
+                                    .getOrDefault(promotion.getProductName().toLowerCase(Locale.ROOT), List.of())
+                                    .stream()
+                                    .filter(product -> promotion
+                                            .getSilpoProductId()
+                                            .equals(McpResponses.findString(product, McpResponses.PRODUCT_ID)
+                                                    .orElse(null)))
+                                    .findFirst()
                                     .orElse(null);
-                            if (productId == null) {
-                                return;
-                            }
-                            resolved.add(new ResolvedProduct(
-                                    item.getName(),
-                                    productId,
-                                    McpResponses.findString(product, McpResponses.COMPANY_ID)
-                                            .orElse(context.companyId()),
-                                    McpResponses.findString(product, McpResponses.BRANCH_ID)
-                                            .orElse(context.branchId()),
-                                    cartQuantity(item, product),
-                                    item.getUnit()));
-                        });
+                    if (live != null) {
+                        chosen = resolvedFrom(item, live, context, promotion.getId());
+                        partnerPromotionService.recordImpression(promotion, userId);
+                        log.info(
+                                "partner placement {} answered «{}» with product {}",
+                                promotion.getId(),
+                                item.getName(),
+                                promotion.getSilpoProductId());
+                    } else {
+                        log.info(
+                                "partner placement {} not returned live for «{}»; using the ordinary match",
+                                promotion.getId(),
+                                item.getName());
+                    }
+                }
+                if (chosen == null) {
+                    String term =
+                            biasedSearchTerm(item.getName(), onlyUaProducer).toLowerCase(Locale.ROOT);
+                    JsonNode first = productsByQuery.getOrDefault(term, List.of()).stream()
+                            .findFirst()
+                            .orElse(null);
+                    if (first != null) {
+                        chosen = resolvedFrom(item, first, context, null);
+                    }
+                }
+                if (chosen != null) {
+                    resolved.add(chosen);
+                }
             }
         }
         log.info(
-                "MCP <- resolved {} of {} shopping list lines ({} pre-resolved, {} searched)",
+                "MCP <- resolved {} of {} shopping list lines ({} pre-resolved, {} searched, {} partner placements)",
                 resolved.size(),
                 items.size(),
                 preResolved.size(),
-                needsSearch.size());
+                needsSearch.size(),
+                resolved.stream().filter(ResolvedProduct::promoted).count());
         return resolved;
+    }
+
+    private static void addTerm(List<String> terms, String term) {
+        if (term != null && !term.isBlank() && terms.stream().noneMatch(term::equalsIgnoreCase)) {
+            terms.add(term);
+        }
+    }
+
+    /** One catalog hit turned into a cart line, or null when the hit carries no product id. */
+    private static ResolvedProduct resolvedFrom(
+            ShoppingListItem item, JsonNode product, CartContext context, UUID promotionId) {
+        String productId =
+                McpResponses.findString(product, McpResponses.PRODUCT_ID).orElse(null);
+        if (productId == null) {
+            return null;
+        }
+        return new ResolvedProduct(
+                item.getName(),
+                productId,
+                McpResponses.findString(product, McpResponses.COMPANY_ID).orElse(context.companyId()),
+                McpResponses.findString(product, McpResponses.BRANCH_ID).orElse(context.branchId()),
+                cartQuantity(item, product),
+                item.getUnit(),
+                promotionId);
     }
 
     /** A weight (grams), a volume (millilitres) or a count — the three kinds {@code displayRatio} comes in. */
@@ -593,11 +664,25 @@ public class CartBuildingService {
                                         "branchId", nullSafe(product.branchId()),
                                         "quantity", product.quantity()))
                                 .toList()));
+        // Task 46: the partner's second funnel step — the placement is now in a cart Silpo accepted.
+        products.stream()
+                .filter(ResolvedProduct::promoted)
+                .forEach(product -> partnerPromotionService.recordAddedToCart(product.promotionId(), userId));
     }
 
     /** Step 6: read the cart back rather than trusting the write. */
     public CartSummary getVerifiedCart(
             UUID userId, CartContext context, OfferedSlot deliverySlot, List<String> unresolved) {
+        return getVerifiedCart(userId, context, deliverySlot, unresolved, List.of());
+    }
+
+    /** Same, naming the product ids a partner placement put in the cart (task 46) so the message can mark them. */
+    public CartSummary getVerifiedCart(
+            UUID userId,
+            CartContext context,
+            OfferedSlot deliverySlot,
+            List<String> unresolved,
+            List<String> promotedProductIds) {
         JsonNode cart = call(userId, TOOL_CART_BY_ID, Map.of("shoppingCartId", context.cartId()));
 
         List<BasketItem> items = McpResponses.findArray(cart, McpResponses.ITEMS).stream()
@@ -650,7 +735,8 @@ public class CartBuildingService {
                 bonusDecisionPending,
                 checkoutWebLink,
                 checkoutMobileLink,
-                unresolved);
+                unresolved,
+                promotedProductIds == null ? List.of() : promotedProductIds);
         log.info(
                 "MCP <- cart {} verified: {} items, total {}, bonuses available {}, unresolved {}",
                 summary.cartId(),
