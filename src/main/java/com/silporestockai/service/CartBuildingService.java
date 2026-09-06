@@ -306,11 +306,15 @@ public class CartBuildingService {
 
     /** «Молоко «Премія» 2,5% — 1 шт, 45.99 грн», for the cart message. */
     private static String describeTopUp(ResolvedProduct line) {
+        // A baseline stored before units were kept has none; a fractional quantity of it can only be kilograms.
+        String unit = line.unit() != null
+                ? line.unit()
+                : line.quantity().stripTrailingZeros().scale() > 0 ? "кг" : "шт";
         return "%s — %s %s, %s грн"
                 .formatted(
                         line.catalogName(),
                         plain(line.quantity()),
-                        line.unit() == null ? "шт" : line.unit(),
+                        unit,
                         plain(line.unitPrice().multiply(line.quantity()).setScale(2, RoundingMode.HALF_UP)));
     }
 
@@ -1243,7 +1247,14 @@ public class CartBuildingService {
                 .map(node -> new BasketItem(
                         McpResponses.findString(node, McpResponses.PRODUCT_ID).orElse(null),
                         McpResponses.findString(node, McpResponses.NAME).orElse(null),
-                        McpResponses.findString(node, McpResponses.UNIT).orElse(null),
+                        // Silpo's cart lines carry no unit of their own; «weighted» says whether the quantity
+                        // is kilograms or packages, which is the only thing the unit needs to say.
+                        McpResponses.findString(node, McpResponses.UNIT)
+                                .orElseGet(() -> McpResponses.findNode(node, McpResponses.WEIGHTED)
+                                                .map(weighted -> weighted.asBoolean(false))
+                                                .orElse(false)
+                                        ? "кг"
+                                        : "шт"),
                         McpResponses.findNumber(node, McpResponses.QUANTITY).orElse(null),
                         McpResponses.findNumber(node, McpResponses.PRICE).orElse(null)))
                 .toList();

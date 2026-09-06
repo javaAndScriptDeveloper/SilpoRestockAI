@@ -63,8 +63,8 @@ class CartMessageServiceTest {
                 .contains("Не поклав, бо виглядає неправильно:\n— Яловичина — 34 шт");
     }
 
-    private static final OfferedSlot SLOT =
-            new OfferedSlot("slot-1", "18:00 - 20:00", Instant.parse("2026-09-03T15:00:00Z"), null);
+    private static final OfferedSlot SLOT = new OfferedSlot(
+            "slot-1", "2026-09-03T15:00:00+00:00", Instant.parse("2026-09-03T15:00:00Z"), "2026-09-03T16:30:00+00:00");
 
     private static CartSummary twoItems() {
         return summary(
@@ -81,21 +81,20 @@ class CartMessageServiceTest {
     void listsEveryItemWithItsQuantityAndTheTotal() {
         String text = service.cartText(twoItems(), SLOT, OrderType.INITIAL);
 
+        // A line says what it costs, not the price per kilogram beside a fraction of one: half a kilo of onion at
+        // ₴25.50 a kilo is ₴12.75.
         assertThat(text)
-                .contains("Цибуля")
-                .contains("0.5 кг")
-                .contains("25.50")
-                .contains("Гречка")
-                .contains("1 кг")
+                .contains("Цибуля — 0.5 кг — 12.75 грн")
+                .contains("Гречка — 1 кг — 48.00 грн")
                 .contains("Разом: 73.50 грн");
     }
 
     @Test
     void mentionsTheDeliverySlotOrSaysNoneIsChosenYet() {
-        assertThat(service.cartText(twoItems(), SLOT, OrderType.INITIAL))
-                .contains("Доставка:")
-                .contains("18:00 - 20:00");
+        // The slot's own label is raw ISO from Silpo; the person reads the window in Kyiv time.
+        assertThat(service.cartText(twoItems(), SLOT, OrderType.INITIAL)).contains("Доставка: чт, 3 вер · 18:00–19:30");
         assertThat(service.cartText(twoItems(), null, OrderType.INITIAL)).contains("час ще не обрано");
+        assertThat(service.slotButtons(List.of(SLOT)).getFirst().label()).isEqualTo("чт, 3 вер · 18:00–19:30");
     }
 
     @Test

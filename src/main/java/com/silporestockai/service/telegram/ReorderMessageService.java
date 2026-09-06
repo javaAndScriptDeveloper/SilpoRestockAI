@@ -6,6 +6,7 @@ import com.silporestockai.model.OfferedSlot;
 import com.silporestockai.model.ReplacementOption;
 import com.silporestockai.model.ReplacementSuggestion;
 import com.silporestockai.model.TelegramButton;
+import com.silporestockai.utils.DeliverySlots;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
@@ -67,7 +68,7 @@ public class ReorderMessageService {
                     .append(money(order.estimatedSavings()))
                     .append(" грн.");
         }
-        text.append("\n\nДоставка: ").append(slot == null ? "час ще не обрано" : slot.label());
+        text.append("\n\nДоставка: ").append(DeliverySlots.describe(slot));
         return text.toString();
     }
 
@@ -101,7 +102,7 @@ public class ReorderMessageService {
     public List<TelegramButton> slotButtons(List<OfferedSlot> slots) {
         List<TelegramButton> buttons = new ArrayList<>();
         for (int i = 0; i < slots.size(); i++) {
-            buttons.add(TelegramButton.callback(slots.get(i).label(), CALLBACK_SLOT_PREFIX + i));
+            buttons.add(TelegramButton.callback(DeliverySlots.describe(slots.get(i)), CALLBACK_SLOT_PREFIX + i));
         }
         return buttons;
     }

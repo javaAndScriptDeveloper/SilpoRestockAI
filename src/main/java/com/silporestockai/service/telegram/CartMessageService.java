@@ -5,6 +5,7 @@ import com.silporestockai.model.CartSummary;
 import com.silporestockai.model.OfferedSlot;
 import com.silporestockai.model.OrderType;
 import com.silporestockai.model.TelegramButton;
+import com.silporestockai.utils.DeliverySlots;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
@@ -54,7 +55,11 @@ public class CartMessageService {
                 }
             }
             if (item.price() != null) {
-                text.append(" — ").append(money(item.price())).append(" грн");
+                // What this line costs, not the price per kilogram beside a fraction of one: «0.1 — 1399.00 грн»
+                // read as a ₴1399 cheese to the person who complained about it, when the line was ₴139.90.
+                BigDecimal lineCost =
+                        item.quantity() == null ? item.price() : item.price().multiply(item.quantity());
+                text.append(" — ").append(money(lineCost)).append(" грн");
             }
         }
         if (anyPromoted) {
@@ -86,7 +91,7 @@ public class CartMessageService {
             text.append("\n⚠ ").append(validation);
         }
         text.append("\n\nРазом: ").append(money(summary.total())).append(" грн");
-        text.append("\n\nДоставка: ").append(slot == null ? "час ще не обрано" : slot.label());
+        text.append("\n\nДоставка: ").append(DeliverySlots.describe(slot));
         if (summary.bonusDecisionPending()) {
             text.append("\nНа рахунку ")
                     .append(amount(summary.bonusAvailable()))
@@ -122,7 +127,7 @@ public class CartMessageService {
     public List<TelegramButton> slotButtons(List<OfferedSlot> slots) {
         List<TelegramButton> buttons = new ArrayList<>();
         for (int i = 0; i < slots.size(); i++) {
-            buttons.add(TelegramButton.callback(slots.get(i).label(), CALLBACK_SLOT_PREFIX + i));
+            buttons.add(TelegramButton.callback(DeliverySlots.describe(slots.get(i)), CALLBACK_SLOT_PREFIX + i));
         }
         return buttons;
     }
