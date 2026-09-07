@@ -47,7 +47,14 @@ public interface CustomerOrderRepository extends JpaRepository<CustomerOrder, UU
             """)
     List<OrderTotals> confirmedTotalsByType();
 
-    /** How many distinct households ever confirmed an order — the funnel's numerator. */
+    /**
+     * How many distinct households ever confirmed an order — the funnel's numerator.
+     *
+     * <p>Explicit JPQL: as a derived query, {@code countDistinctUserIdByStatus} counted distinct <em>orders</em>
+     * (Spring Data ignores the subject between {@code countDistinct} and {@code By}), and the live dashboard read
+     * «перше замовлення: 4» for one household — a 400 % conversion.
+     */
+    @Query("select count(distinct o.userId) from CustomerOrder o where o.status = :status")
     long countDistinctUserIdByStatus(OrderStatus status);
 
     /**

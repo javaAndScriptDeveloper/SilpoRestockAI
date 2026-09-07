@@ -112,6 +112,9 @@ class ObservabilityMetricsIntegrationTest extends AbstractIntegrationTest {
                 .isEqualTo(1.0);
         assertThat(valueOf(body, "komora_orders_value_missing", "type=\"INITIAL\""))
                 .isEqualTo(0.0);
+        // The funnel's numerator is households, not orders. As a derived query this counted distinct orders and
+        // the live dashboard read «перше замовлення: 4» for one household — a 400 % conversion on the pitch screen.
+        assertThat(valueOf(body, "komora_users_ordered", "")).isEqualTo(1.0);
     }
 
     @Test
