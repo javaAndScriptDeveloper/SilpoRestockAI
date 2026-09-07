@@ -600,3 +600,72 @@ three failed on the environment rather than the code — the branch answered «�
 every line, and by 20:15 Kyiv there was also `timeslot.not_found`, no delivery slot left for the day. One
 confirmed order in daylight fills both money panels within 30 seconds, which is also the strongest shot in
 the demo (step 13.7).
+
+---
+
+# Session 9 — a console a camera can read, 2026-09-07 (night)
+
+**Task 58 — demo-ready MCP call logging.** Step 6 of the demo script puts the console next to the chat
+and calls it the proof of agency. What was actually there: `MCP -> silpo_find_products_batch {branchId=…,
+deliveryType=…, products=[…]}` followed by up to 2000 characters of the response, in the same grey as
+Hibernate's. Technically complete since task 09, unusable on a recording.
+
+## What it is now
+
+A dedicated channel — the class `client.AgentCallLog`, which exists to *be* a logback category (the
+project bans manual `LoggerFactory`, and `@Slf4j` on a class gives the same dedicated logger). One line
+per call, fixed columns, colour by outcome:
+
+```
+00:12:30 🔗 Silpo MCP session opened — 40 tools available
+00:12:31 🔧 silpo_get_time_slots               deliveryTypes=1 item branchId=1edddb40…   263ms  ✅ 27 items
+00:12:31 🔧 silpo_find_products_batch          products=11 items branchId=1edddb40… +3 more   429ms  ✅ 11 items
+00:12:45 🧠 completeStructuredFast             claude-haiku-4-5-20251001        13.3s  ✅
+00:12:49 🔧 silpo_add_or_update_cart_products  products=10 items shoppingCartId=87c8e168…   149ms  ✅ 10 items
+```
+
+`logback-spring.xml` (the project's first) binds two appenders to that one category with additivity off:
+the console, coloured by level through Boot's `%clr` (green worked, yellow did not), and
+`logs/mcp-calls.log` with no escape byte in it, so it stays greppable — **that file is what task 55
+should parse instead of collecting the same data a second time.**
+
+`make demo` is `make run` on a `demo` profile that changes nothing but logging: root at WARN, the app's
+own lines dim and short, ANSI forced on (Boot's DETECT turns colour off behind the `tee` that `make run`
+has always piped through). `make mcp-log` is the second window. Startup is seven faint lines.
+
+## What the rehearsal changed
+
+Three live passes against the real Silpo MCP (blackout, hangover, order history, ad-hoc). Everything
+below was invisible until the lines were on a screen:
+
+- **The arguments column ran to 206 characters.** Now it has a budget, and spends it on the interesting
+  arguments first: collections before scalars, so `products=11 items` leads and the branch id every tool
+  wants falls into `+N more`. Ids collapse to their first block. Widest live line: 112 characters.
+- **Every console line ended in a literal `%n`** — `%clr(%m)` without an options block swallows the token
+  after it. Boot's own default pattern writes `{}` for exactly this reason.
+- **The same sentence appeared twice, once dim and once bright.** The four `MCP -> {tool} {args}` dumps
+  and «connected to Silpo MCP — 40 tools available» are DEBUG now; `AgentCallLog` says both in one
+  redacted line. Liquibase's `includeAll` also stopped handing `.gitkeep` and `CLAUDE.md` to a parser —
+  two stack traces at every startup, and they were the opening shot of the recording.
+- **A failed call gets a line too** (yellow, with the reason). The old logging could not: the event that
+  carried it is published inside the successful branch.
+
+## Deviations worth knowing
+
+- **Claude calls are on the same channel**, which the task did not ask for. On a recording «🧠 thinking
+  13.3s» followed by four «🔧 silpo_…» lines reads as one story about an agent; the MCP half alone reads
+  as an HTTP log. Easy to drop — one line in `ClaudeApiClientImpl.timed`.
+- **Task 09's test survived, repointed.** `logsEveryToolCallAtInfoSoADemoCanBeRecorded` still asserts the
+  same promise, now against the channel the promise lives on.
+- **Tokens:** arguments and results both pass through `SecretRedactor` before formatting, and there is a
+  test that a bearer header and an `access_token` in a response never reach the line. `grep -Ei
+  'bearer|access_token|refresh_token|eyJ'` over both logs after the rehearsal: no hits.
+- **Nothing here is production observability.** Task 54's Grafana path is untouched; this is one console
+  for one screencast.
+
+## What the first rehearsal attempt taught, separately
+
+Firing nine messages at once (the sandbox turns a foreground `sleep` into a no-op) tripped the Claude
+circuit breaker: one 80-second `ClaudeUnavailableException`, then instant failures at 7–14 ms until it
+reset. Worth knowing before a live take — the bot cannot be driven faster than it thinks. It also made
+the yellow ❌ lines legible on screen for the first time, which was not the plan but was useful.

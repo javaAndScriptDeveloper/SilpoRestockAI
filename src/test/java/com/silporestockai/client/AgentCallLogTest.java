@@ -137,6 +137,27 @@ class AgentCallLogTest {
         assertThat(line.indexOf("queries")).isLessThan(line.indexOf("branchId"));
     }
 
+    /** The widest shape seen live: a batch search carrying the query list plus the four arguments every tool wants. */
+    @Test
+    void theWidestLiveCallStillFitsOneTerminalWidth() {
+        AgentCallLog.mcpCall(
+                "silpo_find_products_batch",
+                new java.util.TreeMap<>(Map.of(
+                        "branchId", "1edddb40-e664-609c-a1a7-3e9c11b0f1aa",
+                        "deliveryType", "DeliveryHome",
+                        "timeslotStart", "2026-09-08T06:00:00+00:00",
+                        "timeslotEnd", "2026-09-08T07:30:00+00:00",
+                        "products",
+                                IntStream.range(0, 11)
+                                        .mapToObj(i -> "товар-" + i)
+                                        .toList())),
+                "11 items",
+                429,
+                true);
+
+        assertThat(onlyLine().length()).isLessThanOrEqualTo(112);
+    }
+
     @Test
     void oneOfSomethingIsNotOneItems() {
         AgentCallLog.mcpCall("silpo_get_time_slots", Map.of("deliveryTypes", List.of("DeliveryHome")), "ok", 214, true);

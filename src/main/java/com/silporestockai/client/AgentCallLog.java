@@ -102,10 +102,18 @@ public final class AgentCallLog {
                 .map(entry -> entry.getKey() + "=" + summarizeValue(entry.getValue()))
                 .toList();
 
+        String all = String.join(" ", pairs);
+        if (all.length() <= ARGS_MAX) {
+            return all;
+        }
+
+        // Room for the « +N more» that is now certain to be needed — without reserving it, the suffix pushed the
+        // widest live line (a batch search) to 123 characters, past the budget it was supposed to be inside.
+        int budget = ARGS_MAX - " +9 more".length();
         StringBuilder shown = new StringBuilder();
         int dropped = 0;
         for (String pair : pairs) {
-            if (dropped > 0 || shown.length() + pair.length() + 1 > ARGS_MAX) {
+            if (dropped > 0 || shown.length() + pair.length() + 1 > budget) {
                 dropped++;
                 continue;
             }
