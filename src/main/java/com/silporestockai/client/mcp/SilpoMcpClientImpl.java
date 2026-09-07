@@ -4,8 +4,11 @@ import com.silporestockai.config.SilpoMcpProperties;
 import com.silporestockai.exception.SilpoMcpException;
 import com.silporestockai.exception.SilpoMcpRateLimitedException;
 import com.silporestockai.model.McpToolCalledEvent;
+import com.silporestockai.utils.MeterNames;
 import com.silporestockai.utils.SecretRedactor;
 import io.github.resilience4j.retry.annotation.Retry;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import io.modelcontextprotocol.client.McpClient;
 import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.client.transport.HttpClientStreamableHttpTransport;
@@ -61,6 +64,7 @@ public class SilpoMcpClientImpl implements SilpoMcpClient {
     private final SilpoMcpProperties properties;
     private final SilpoAccessTokenProvider tokenProvider;
     private final ApplicationEventPublisher events;
+    private final MeterRegistry meterRegistry;
 
     private final Map<UUID, McpSyncClient> sessions = new ConcurrentHashMap<>();
 
@@ -81,6 +85,23 @@ public class SilpoMcpClientImpl implements SilpoMcpClient {
     @Retry(name = "silpoMcp")
     public McpToolResponse callTool(String toolName, Map<String, Object> arguments, UUID userId) {
         log.debug("calling Silpo MCP tool {} for user {}", toolName, userId);
+        // Task 54: timed here rather than off McpToolCalledEvent, which is published inside the lambda below and so
+        // never fires when the call throws — a transport failure, a 401 the refresh dance could not fix, an exhausted
+        // retry. Those are exactly the failures a reliability panel exists to show. @Retry proxies this method, so
+        // each attempt is its own sample: the timer measures attempts, which is what makes Silpo's 429 backoff visible.
+        Timer.Sample sample = Timer.start(meterRegistry);
+        String outcome = "error";
+        try {
+            McpToolResponse response = callToolOnce(toolName, arguments, userId);
+            outcome = response.isError() ? "tool_error" : "success";
+            return response;
+        } finally {
+            sample.stop(meterRegistry.timer(
+                    MeterNames.MCP_CALL, MeterNames.TAG_TOOL, toolName, MeterNames.TAG_OUTCOME, outcome));
+        }
+    }
+
+    private McpToolResponse callToolOnce(String toolName, Map<String, Object> arguments, UUID userId) {
         return execute(userId, session -> {
             McpSchema.CallToolResult result = session.callTool(
                     new McpSchema.CallToolRequest(toolName, arguments == null ? Map.of() : arguments, null));

@@ -1,5 +1,6 @@
 .DEFAULT_GOAL := help
-.PHONY: help run dev test build format check db-up db-down up down image clean metrics promotions
+.PHONY: help run dev test build format check db-up db-down up down image clean metrics promotions \
+	alloy-up alloy-down alloy-logs dashboard observability-local-up observability-local-down
 
 # Prefer .env if present, otherwise fall back to the committed example.
 ENV_FILE := $(if $(wildcard .env),.env,.env.example)
@@ -53,3 +54,29 @@ promotions: ## Print the partner-placement funnel report from the running app (n
 	@set -a; . ./$(ENV_FILE); set +a; \
 	curl -sf -H "X-Metrics-Token: $$METRICS_TOKEN" "http://localhost:$${SERVER_PORT:-8080}/internal/promotions/report" \
 	|| echo "no report: is the app running, and is METRICS_TOKEN set in .env?"
+
+alloy-up: ## Start Grafana Alloy, pushing /actuator/prometheus to Grafana Cloud (needs GRAFANA_CLOUD_* in .env)
+	docker compose --env-file $(ENV_FILE) --profile observability up -d alloy
+	@echo "Alloy UI: http://localhost:$${ALLOY_PORT:-12345}  (the scrape target should read UP)"
+
+alloy-down: ## Stop Grafana Alloy
+	docker compose --profile observability rm -sf alloy
+
+alloy-logs: ## Follow Alloy's logs — where a rejected Grafana Cloud token shows up
+	docker compose --profile observability logs -f alloy
+
+dashboard: ## Push observability/grafana/komora-dashboard.json to Grafana (needs GRAFANA_URL + GRAFANA_API_TOKEN)
+	@set -a; . ./$(ENV_FILE); set +a; \
+	jq -n --slurpfile d observability/grafana/komora-dashboard.json \
+	   '{dashboard: ($$d[0] + {id: null}), overwrite: true, message: "komora observability"}' \
+	| curl -sf -X POST -H "Authorization: Bearer $$GRAFANA_API_TOKEN" -H "Content-Type: application/json" \
+	    --data-binary @- "$$GRAFANA_URL/api/dashboards/db" \
+	| jq -r '"pushed: " + .url' \
+	|| echo "no push: are GRAFANA_URL and GRAFANA_API_TOKEN set in .env?"
+
+observability-local-up: ## Throwaway Prometheus+Grafana rendering the same dashboard, no cloud token needed
+	docker compose -f observability/local/docker-compose.yml up -d
+	@echo "Grafana: http://localhost:3000/d/komora-observability  (anonymous admin)"
+
+observability-local-down: ## Tear the local observability harness down
+	docker compose -f observability/local/docker-compose.yml down -v

@@ -868,3 +868,44 @@ the minimum as it is (`CartSummary.belowMinimumOrder()`, goods total and minimum
 baseline exists; `CartBuildingService.topUp` runs on the tap. The one place that still fills unasked is the
 delta reorder — restocking staples with more staples is what a reorder is, and a reorder always has a baseline.
 Open follow-up, not built: offering self-pickup as the other way under the minimum.
+
+## Session 8 — observability decisions taken without asking
+
+### GMV is `customer_order.total`, and it is stored, not derived
+
+There was no money on the order at all before this — the totals only ever existed on the transient
+`CartSummary` and in `conversation_state`. Given a new column had to exist either way, `total` (what the
+household is billed, delivery included) is the headline rather than `goods_total` (merchandise only), for two
+reasons: it is the number the confirmation message already shows the person, so a GMV panel and the chat
+transcript agree; and `goods_total` falls back to `total` whenever Silpo omits `productsTotal`, which makes it
+the less reliable of the two. Both are stored, so the merchandise-only variant is one PromQL edit away.
+
+Consequence worth knowing: the stored total is the cart **as approved**, before any loyalty-bonus spend. The
+confirm step does not re-read the cart from Silpo, and adding a round-trip there to chase the post-bonus
+figure would slow the one moment a person is actually waiting on.
+
+A CONFIRMED order with `total = 0` is a data-quality bug, not a free order — `getVerifiedCart` defaults an
+absent total to zero, so "Silpo sent no total" and "worth ₴0" are indistinguishable at the entity.
+`komora_orders_value_missing` counts null **and** zero for that reason.
+
+### Cumulative numbers are gauges from the database, not counters
+
+Counters reset per JVM and this app restarts constantly; "GMV since launch" reading zero after every
+`make run` would be worse than not having the panel. The cost is a 30-second staleness on absolute levels,
+which no one watching a dashboard will notice, and the gain is that the numbers are true after a restart and
+identical whoever scrapes them. Rates and latencies stay counters and timers — Prometheus handles their
+resets itself.
+
+### `/actuator/prometheus` is unauthenticated, and that is a live decision
+
+It is on the app's own port by default so nothing changes locally and the RUNBOOK's health curls keep working.
+On the tunnelled demo box it must move: `MANAGEMENT_PORT=8081` keeps GMV and household counts off the single
+public tunnel. Not gated behind `METRICS_TOKEN` because a Prometheus scrape has no way to send a custom header
+in Alloy's simplest configuration, and a second shared secret to maintain is worse than a second port.
+
+### Timers measure attempts, not logical calls
+
+`@Retry` proxies the public methods on both clients, so each retry re-enters the timed method and lands as its
+own sample. Deliberate: the question "how long does one call to Silpo take" is the one a latency panel should
+answer, and a 429 backoff showing up as repeated `rate_limited` samples is more informative than being hidden
+inside one long success.

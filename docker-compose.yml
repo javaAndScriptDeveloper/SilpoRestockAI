@@ -45,5 +45,35 @@ services:
       DB_PASSWORD: ${POSTGRES_PASSWORD:-app}
     restart: unless-stopped
 
+  # Grafana Alloy: scrapes /actuator/prometheus and remote-writes to Grafana Cloud (task 54).
+  # Behind its own profile so bootRun's docker-compose integration never starts it — without a Grafana Cloud
+  # token it would only crash-loop on every dev run. Start it with `make alloy-up`.
+  alloy:
+    profiles: ["observability"]
+    image: grafana/alloy:v1.10.0
+    container_name: app-alloy
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
+    volumes:
+      - ./observability/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - alloy-data:/var/lib/alloy/data
+    environment:
+      GRAFANA_CLOUD_PROM_URL: ${GRAFANA_CLOUD_PROM_URL:-}
+      GRAFANA_CLOUD_PROM_USER: ${GRAFANA_CLOUD_PROM_USER:-}
+      GRAFANA_CLOUD_PROM_TOKEN: ${GRAFANA_CLOUD_PROM_TOKEN:-}
+      KOMORA_ENV: ${KOMORA_ENV:-local}
+      APP_METRICS_TARGET: ${APP_METRICS_TARGET:-host.docker.internal:8080}
+    # Linux has no built-in host.docker.internal. This alias is what lets the container reach an app started
+    # on the host by `make run` — the usual case, since the app is not in this compose file by default.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${ALLOY_PORT:-12345}:12345"
+    restart: unless-stopped
+
 volumes:
   db-data:
+  alloy-data:

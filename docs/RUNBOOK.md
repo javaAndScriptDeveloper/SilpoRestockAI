@@ -847,6 +847,91 @@ answers a query badly, the fix is the curated list in `BlackoutModeService`, not
 
 ---
 
+## 16. Metrics and the Grafana dashboard (task 54)
+
+The app publishes Prometheus metrics at `/actuator/prometheus`. Grafana Alloy scrapes that locally and
+pushes them outbound to Grafana Cloud — push, not pull, because a demo box behind a rotating tunnel has
+no address anyone can scrape.
+
+### Check the numbers are real, without any cloud account
+
+```bash
+make run
+curl -s localhost:8080/actuator/prometheus | grep '^komora_' | sort
+```
+
+Absolute levels (`komora_users_registered`, `komora_orders_gmv_uah`, …) come from the database and are
+rebuilt every 30 s, so they survive a restart — a counter would read zero after every `make run`, which
+is exactly wrong for "GMV since launch". Rates and latencies (`komora_mcp_call_seconds`,
+`komora_claude_call_seconds`, `komora_cart_*`) are recorded in-process and start empty on each boot;
+drive a real session first or they will not be there at all.
+
+> **A fresh database prints zeros, and zeros are not results.** `komora_orders_value_missing` is the
+> honest companion to the GMV panel: it counts confirmed orders with no stored total — rows written
+> before task 54 added the columns. Those are excluded from GMV rather than counted as ₴0.
+
+### Cross-check GMV against the order table by hand
+
+This is the number a judge can catch us on, so check it rather than trusting it. `items_json` holds
+`price` and `quantity` per line, which reconstructs the basket independently of the stored column:
+
+```sql
+SELECT o.id,
+       o.type,
+       o.total                                                             AS stored_total,
+       o.goods_total                                                       AS stored_goods,
+       o.savings,
+       ROUND(SUM((line->>'price')::numeric
+                 * COALESCE((line->>'quantity')::numeric, 1)), 2)          AS lines_sum,
+       jsonb_array_length(o.items_json)                                    AS line_count
+FROM customer_order o
+CROSS JOIN LATERAL jsonb_array_elements(o.items_json) AS line
+WHERE o.status = 'CONFIRMED' AND o.total IS NOT NULL
+GROUP BY o.id, o.type, o.total, o.goods_total, o.savings, o.items_json;
+
+-- and the aggregate the GMV / average-cart panels must match, to the kopeck:
+SELECT count(*)                                      AS confirmed,
+       count(total)                                  AS with_a_total,
+       SUM(total)                                    AS gmv,
+       ROUND(AVG(total), 2)                          AS average_cart,
+       ROUND(AVG(jsonb_array_length(items_json)), 2) AS average_lines
+FROM customer_order
+WHERE status = 'CONFIRMED' AND total IS NOT NULL;
+```
+
+`lines_sum` is **not** expected to equal `stored_total`: `total` carries the delivery fee, and an
+unresolved line has a null price that `SUM` skips. What the query proves is that the stored column moves
+line-for-line with the basket — that the write site is wired to the right field. `gmv` is what
+`sum(komora_orders_gmv_uah)` must equal exactly.
+
+### Push to Grafana Cloud
+
+Fill the `GRAFANA_CLOUD_*` block in `.env` (see `.env.example` for where each value comes from), then:
+
+```bash
+make alloy-up      # http://localhost:12345 — the scrape target should read UP
+make alloy-logs    # where a rejected token shows itself
+make dashboard     # pushes observability/grafana/komora-dashboard.json, prints the URL
+```
+
+On the tunnelled demo box also set `MANAGEMENT_PORT=8081`: otherwise one public tunnel serves GMV and
+household counts to whoever finds the URL, which is the concern `METRICS_TOKEN` exists for.
+
+### Render the dashboard with no cloud token at all
+
+```bash
+make run                        # in another shell
+make observability-local-up     # http://localhost:3000/d/komora-observability
+make observability-local-down
+```
+
+A throwaway Prometheus + Grafana that Alloy pushes into using **the same `config.alloy` and the same
+dashboard JSON**. It proves the config parses, the scrape reaches an app on the host, and the panels
+render against real data. It proves nothing about Grafana Cloud's endpoint or token — say so if you use
+a screenshot from here.
+
+---
+
 ## Cleanup
 
 ### Start completely from scratch

@@ -25,9 +25,12 @@ import com.silporestockai.exception.ClaudeApiException;
 import com.silporestockai.exception.ClaudeRateLimitedException;
 import com.silporestockai.exception.ClaudeStructuredOutputException;
 import com.silporestockai.exception.ClaudeUnavailableException;
+import com.silporestockai.utils.MeterNames;
 import com.silporestockai.utils.SecretRedactor;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import java.util.Base64;
 import java.util.List;
 import java.util.Optional;
@@ -52,10 +55,12 @@ import org.springframework.stereotype.Component;
 public class ClaudeApiClientImpl implements ClaudeApiClient {
 
     private final ClaudeProperties properties;
+    private final MeterRegistry meterRegistry;
     private final AnthropicClient client;
 
-    public ClaudeApiClientImpl(ClaudeProperties properties) {
+    public ClaudeApiClientImpl(ClaudeProperties properties, MeterRegistry meterRegistry) {
         this.properties = properties;
+        this.meterRegistry = meterRegistry;
         if (!properties.apiKeyConfigured()) {
             log.warn("ANTHROPIC_API_KEY is not set — Claude calls will fail until it is configured");
             this.client = null;
@@ -90,6 +95,10 @@ public class ClaudeApiClientImpl implements ClaudeApiClient {
     }
 
     private String complete(String callName, String model, String systemPrompt, String userPrompt) {
+        return timed(callName, model, () -> completeOnce(callName, model, systemPrompt, userPrompt));
+    }
+
+    private String completeOnce(String callName, String model, String systemPrompt, String userPrompt) {
         logPrompt(callName, systemPrompt, userPrompt);
         MessageCreateParams params =
                 baseParams(systemPrompt, model).addUserMessage(userPrompt).build();
@@ -114,6 +123,12 @@ public class ClaudeApiClientImpl implements ClaudeApiClient {
     }
 
     private <T> T completeStructured(
+            String callName, String model, String systemPrompt, String userPrompt, Class<T> responseType) {
+        return timed(
+                callName, model, () -> completeStructuredOnce(callName, model, systemPrompt, userPrompt, responseType));
+    }
+
+    private <T> T completeStructuredOnce(
             String callName, String model, String systemPrompt, String userPrompt, Class<T> responseType) {
         logPrompt(callName + " " + responseType.getSimpleName(), systemPrompt, userPrompt);
         StructuredMessageCreateParams<T> params = baseParams(systemPrompt, model)
@@ -158,6 +173,12 @@ public class ClaudeApiClientImpl implements ClaudeApiClient {
     @CircuitBreaker(name = "claude")
     @Retry(name = "claude")
     public String image(String systemPrompt, String userPrompt, byte[] imageBytes, String mediaType) {
+        // Folded into the same helper as the text calls: it used to bypass both private funnels, which is exactly
+        // how a call ends up being the one nobody has latency for.
+        return timed("image", properties.model(), () -> imageOnce(systemPrompt, userPrompt, imageBytes, mediaType));
+    }
+
+    private String imageOnce(String systemPrompt, String userPrompt, byte[] imageBytes, String mediaType) {
         logPrompt("image", systemPrompt, userPrompt);
         Base64ImageSource source = Base64ImageSource.builder()
                 .data(Base64.getEncoder().encodeToString(imageBytes))
@@ -228,6 +249,45 @@ public class ClaudeApiClientImpl implements ClaudeApiClient {
             throw new ClaudeUnavailableException("Claude is unavailable: " + e.getMessage(), e);
         } catch (AnthropicException e) {
             throw new ClaudeApiException("Claude call failed: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Times one call and tags how it ended (task 54).
+     *
+     * <p>Wraps the whole call rather than only the SDK hop, so prompt assembly and structured-output parsing are
+     * inside the number a latency panel shows — that is the wait a person in a chat actually experiences.
+     *
+     * <p>{@code @Retry(name = "claude")} proxies the public methods, so each attempt lands as its own sample. That is
+     * deliberate: the meter answers "how long does one call to Claude take", and a rate-limit backoff shows up as
+     * repeated {@code rate_limited} samples rather than being hidden inside one long success.
+     */
+    private <T> T timed(String callName, String model, Supplier<T> action) {
+        Timer.Sample sample = Timer.start(meterRegistry);
+        String outcome = "success";
+        try {
+            return action.get();
+        } catch (ClaudeRateLimitedException e) {
+            outcome = "rate_limited";
+            throw e;
+        } catch (ClaudeUnavailableException e) {
+            outcome = "unavailable";
+            throw e;
+        } catch (ClaudeStructuredOutputException e) {
+            outcome = "structured";
+            throw e;
+        } catch (RuntimeException e) {
+            outcome = "error";
+            throw e;
+        } finally {
+            sample.stop(meterRegistry.timer(
+                    MeterNames.CLAUDE_CALL,
+                    MeterNames.TAG_CALL,
+                    callName,
+                    MeterNames.TAG_MODEL,
+                    model,
+                    MeterNames.TAG_OUTCOME,
+                    outcome));
         }
     }
 }

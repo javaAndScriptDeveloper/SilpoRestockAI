@@ -62,6 +62,7 @@ public class CartConfirmationService {
     private static final ObjectMapper MAPPER = new ObjectMapper().findAndRegisterModules();
 
     private final CartBuildingService cartBuildingService;
+    private final ObservabilityService observabilityService;
     private final CustomerOrderRepository customerOrderRepository;
     private final BaselineBasketRepository baselineBasketRepository;
     private final ConversationStateService conversationStateService;
@@ -102,6 +103,7 @@ public class CartConfirmationService {
             summary = cartBuildingService.buildCart(user.getId(), items, preferDiscounted);
         } catch (NoSilpoDeliveryAddressException e) {
             log.error("could not build a cart for user {}", user.getId(), e);
+            observabilityService.recordFailureMessage("cart_build", "no_address");
             telegramOutboundService.sendMessage(
                     chatId,
                     "У «Сільпо» немає збереженої адреси доставки, тому я не можу створити кошик. Додай адресу "
@@ -109,17 +111,20 @@ public class CartConfirmationService {
             return false;
         } catch (CartBuildException e) {
             log.error("could not build a cart for user {}", user.getId(), e);
+            observabilityService.recordFailureMessage("cart_build", "cart_build");
             telegramOutboundService.sendMessage(chatId, cartBuildFailureMessage(e));
             return false;
         } catch (RuntimeException e) {
             // No promise of a retry nobody performs: the person is told what to do, and the list flow adds the
             // button that does it.
             log.error("could not build a cart for user {}", user.getId(), e);
+            observabilityService.recordFailureMessage("cart_build", "unexpected");
             telegramOutboundService.sendMessage(chatId, CART_BUILD_FAILED_TEXT);
             return false;
         }
         if (summary.items().isEmpty()) {
             log.warn("cart {} came back empty for user {}", summary.cartId(), user.getId());
+            observabilityService.recordFailureMessage("cart_build", "empty_cart");
             telegramOutboundService.sendMessage(
                     chatId, "У «Сільпо» не знайшлось жодної позиції зі списку. Спробуй описати продукти інакше.");
             return false;
@@ -141,6 +146,13 @@ public class CartConfirmationService {
                 .silpoCartId(summary.cartId())
                 .unresolvedCount(
                         summary.unresolved() == null ? 0 : summary.unresolved().size())
+                // Task 54: the cart's money is only ever in hand here, while the CartSummary exists. confirm()
+                // flips a status on a row it re-reads from conversation_state and never asks Silpo again, so this
+                // is the last point where a total can be written without an extra MCP round-trip.
+                .total(summary.total())
+                .goodsTotal(summary.goodsTotal())
+                .savings(summary.savings())
+                .toppedUpCount(summary.toppedUpLines().size())
                 .createdAt(Instant.now())
                 .build());
 
@@ -192,12 +204,18 @@ public class CartConfirmationService {
             topped = cartBuildingService.topUp(user.getId(), summary);
         } catch (RuntimeException e) {
             log.error("could not top cart {} up for user {}", summary.cartId(), user.getId(), e);
+            observabilityService.recordFailureMessage("cart_topup", "unexpected");
             telegramOutboundService.sendMessage(chatId, CART_BUILD_FAILED_TEXT);
             return;
         }
         order.setItems(topped.items());
         order.setUnresolvedCount(
                 topped.unresolved() == null ? 0 : topped.unresolved().size());
+        // The basket grew, so its money did too — without these the stored total would be the pre-top-up one.
+        order.setTotal(topped.total());
+        order.setGoodsTotal(topped.goodsTotal());
+        order.setSavings(topped.savings());
+        order.setToppedUpCount(topped.toppedUpLines().size());
         customerOrderRepository.save(order);
         Map<String, Object> context = new LinkedHashMap<>(state.getContext());
         context.put(KEY_SUMMARY, asMap(topped));
@@ -330,6 +348,10 @@ public class CartConfirmationService {
         order.setStatus(OrderStatus.CONFIRMED);
         order.setConfirmedAt(Instant.now());
         customerOrderRepository.save(order);
+        // The money was written when the draft was saved: nothing here re-reads the cart from Silpo, so the stored
+        // total is the one the household actually approved.
+        observabilityService.recordConfirmedOrder(
+                order.getType(), order.getTotal(), summary.items().size());
         shoppingListService.markOrdered(user.getId());
         if (order.getType() == OrderType.INITIAL) {
             storeBaseline(user.getId(), order);

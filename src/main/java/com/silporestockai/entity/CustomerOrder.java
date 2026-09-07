@@ -9,6 +9,7 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -80,4 +81,24 @@ public class CustomerOrder {
      */
     @Column(name = "edited_before_confirm")
     private Boolean editedBeforeConfirm;
+
+    /**
+     * What the household is billed for this cart — Silpo's own {@code total}, delivery included (task 54). Null for
+     * rows written before the column existed, and those rows are excluded from every GMV aggregate rather than being
+     * counted as zero.
+     */
+    @Column(name = "total", precision = 10, scale = 2)
+    private BigDecimal total;
+
+    /** Merchandise only — Silpo's {@code productsTotal}, the figure its ₴799 minimum is measured against. */
+    @Column(name = "goods_total", precision = 10, scale = 2)
+    private BigDecimal goodsTotal;
+
+    /** What promotions took off this cart — Silpo's {@code subDiscount}. */
+    @Column(name = "savings", precision = 10, scale = 2)
+    private BigDecimal savings;
+
+    /** How many lines the ₴799 minimum-order top-up added from the household's baseline (task 51). */
+    @Column(name = "topped_up_count")
+    private Integer toppedUpCount;
 }

@@ -96,9 +96,9 @@ public class MetricsService {
 
         List<Duration> toFirstOrder = new ArrayList<>();
         firstConfirmed.forEach((userId, confirmedAt) -> {
-            Instant start = createdAt.get(userId);
-            if (start != null && !confirmedAt.isBefore(start)) {
-                toFirstOrder.add(Duration.between(start, confirmedAt));
+            Duration elapsed = onboardingToFirstOrder(createdAt.get(userId), confirmedAt);
+            if (elapsed != null) {
+                toFirstOrder.add(elapsed);
             }
         });
         toFirstOrder.sort(Comparator.naturalOrder());
@@ -186,7 +186,22 @@ public class MetricsService {
         return text.toString();
     }
 
-    private static Duration median(List<Duration> sorted) {
+    /**
+     * How long a household took to get from «/start» to its first confirmed order, or null when that question has no
+     * answer: no account timestamp, no confirmed order, or a clock skew that puts the order before the account.
+     *
+     * <p>Public and static because task 54's gauge reads the same number from a different source (an aggregate
+     * projection rather than whole entities) — the rule for what counts belongs in one place, not two.
+     */
+    public static Duration onboardingToFirstOrder(Instant createdAt, Instant firstConfirmedAt) {
+        if (createdAt == null || firstConfirmedAt == null || firstConfirmedAt.isBefore(createdAt)) {
+            return null;
+        }
+        return Duration.between(createdAt, firstConfirmedAt);
+    }
+
+    /** Median of an already-sorted list, or null when empty. Public for the same reason as above. */
+    public static Duration median(List<Duration> sorted) {
         if (sorted.isEmpty()) {
             return null;
         }

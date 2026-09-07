@@ -484,3 +484,102 @@ first) → gastritis → calendar (named day) → back to normal → mass-gain d
 | Carbonara a third time: «не відповіли вчасно» with no tool call in the log | The MCP session handshake hung for the full 60 s on a fresh JVM while Silpo answered a probe in 0.1 s; nothing retried a hung handshake | Handshake gets its own 20 s timeout and one retry on a fresh session (`0ee94ce`) |
 | «Шукай тільки українського виробника» → «Прибрав обмеження…»; the same sentence again → on | The intent toggled the flag instead of setting it | Set from the sentence; negations («не тільки», «прибери», «будь-якого») switch it off; a repeat answers «Уже шукаю…» (`toggle→set` commit) |
 | With the flag on: «не знайшлось жодної позиції зі списку» for a 24-line list | Every term got « українського виробництва» appended and Silpo's plain-text search found nothing; the second pass then sent 48 terms in one call, over the tool's limit of 30, and was refused | Plain search terms everywhere; the preference is a note to the matcher with the Ukrainian brands to prefer; the second pass searches 30 at a time |
+
+---
+
+# Session 8 — production observability: real metrics behind a Grafana dashboard, 2026-09-07 (evening)
+
+Task 54. The pitch needed a live dashboard rather than a claim about one, and the honest version of that
+turned out to start with a schema change, not with Micrometer.
+
+## The thing the task could not have known
+
+**`customer_order` had no money column at all.** Silpo's totals (`total`, `productsTotal`, `subDiscount`)
+lived only on the transient `CartSummary` record and inside `conversation_state.context_json`; nothing ever
+reached a column. So GMV and average cart value were not "a query away" — they were **uncomputable**, and
+the task's own acceptance criterion asks for them to be cross-checked against the order table.
+
+`028-order-cart-value.yaml` adds `total`, `goods_total`, `savings`, `topped_up_count`, all nullable. Nullable
+is the honest choice: orders confirmed before this change genuinely have no known total, and a `0` there
+would quietly drag the average down. Every aggregate filters on `NOT NULL`, and a gauge
+(`komora_orders_value_missing`) publishes how many confirmed orders lack a value, so the dashboard states the
+coverage of its own GMV number.
+
+Four write sites, not the two that looked obvious:
+
+| Where | Why it is there |
+|---|---|
+| `CartConfirmationService:134` draft builder | The only point where the first order's `CartSummary` exists |
+| `CartConfirmationService:198` top-up re-save | The basket grew; without this the stored total is the pre-top-up one |
+| `ReorderConfirmationService:119` draft builder | Same as the first, for a reorder |
+| `ReorderConfirmationService:270` confirm | The **only** confirm that re-reads the cart, after accepted replacements |
+
+`CartConfirmationService.confirm` deliberately gets **no** money write: it flips a status on a row rebuilt
+from `conversation_state` and never asks Silpo again, so there is nothing newer to write. The stored total is
+therefore the cart as the household saw and approved it, before any loyalty-bonus spend — which is the right
+definition of GMV anyway, and avoids an extra MCP round-trip on the confirmation path.
+
+## The shape rule everything else follows
+
+*If a panel needs `rate()`, the meter is a counter or timer at the call site. If it shows an absolute level,
+it is a gauge fed from the database.*
+
+A Micrometer `Counter` is monotonic only within one JVM, and this app restarts constantly. "Households
+registered" and "GMV" are facts about the database, not about this process — after a `make run` they must
+still read what the tables say, not zero. So `ObservabilityService` registers gauges over an
+`AtomicReference<ObservabilitySnapshot>` that `ObservabilityRefreshScheduler` rebuilds every 30 s: a
+Prometheus scrape reads memory and never costs a query.
+
+The scheduler placement is not decoration. ArchUnit lets only `Controller` and `Job` reach a `Service`, and
+only `Service` reach a `Repository` — so the natural Spring idiom, a `MeterBinder` bean in `config`, could not
+have done this. `job/ObservabilityRefreshScheduler` is the layer that is allowed to.
+
+Task 37's derivation is reused rather than reimplemented: `MetricsService.onboardingToFirstOrder` and
+`median` became public statics, and both the markdown report and the gauge call them. `compute()`'s five
+`findAll()` stayed where they are — it is a once-per-rehearsal human action, and running it on a 30-second
+loop forever would pull five whole tables into heap to extract two fields.
+
+## Instrumented at the call sites
+
+`komora.cart.build` (timer, outcome), `komora.cart.lines`, `komora.cart.minimum`, `komora.cart.topup`,
+`komora.mcp.call` (timer, tool + outcome), `komora.claude.call` (timer, call + model + outcome),
+`komora.failure.message`, `komora.onboarding.started`/`.completed`, `komora.orders.confirmations`,
+`komora.cart.value`, `komora.cart.size`, `komora.intent.classified`.
+
+Three decisions worth keeping:
+
+- **MCP latency is timed inside `callTool`, not off `McpToolCalledEvent`.** That event is published inside the
+  lambda and so never fires when the call throws — a transport failure, a 401 the refresh dance could not fix,
+  an exhausted retry. Those are precisely the failures a reliability panel exists to show.
+- **`image(...)` was folded into the same timing helper as the text calls.** It bypassed both private funnels
+  in `ClaudeApiClientImpl`, which is exactly how a call ends up being the one nobody has latency for.
+- **`IntentRouterService` gets only `routed | unclassified | failed`, with no per-intent tag.** Intent
+  distribution is task 55's artefact, a plain list rather than a Grafana panel; keeping `IntentType` private is
+  what stops the two from colliding.
+
+SLO buckets (`management.metrics.distribution.slo`) rather than full percentile histograms: ~40 buckets per
+timer × 15 tools × 3 outcomes would spend a quarter of Grafana Cloud free's 10 000 series on one meter.
+
+## Push, not pull
+
+`observability/alloy/config.alloy` scrapes `/actuator/prometheus` and remote-writes to Grafana Cloud's Mimir.
+Alloy runs as a container behind a new `observability` compose profile — profile-gated so `bootRun`'s
+docker-compose integration never starts it, since without a token it would only crash-loop on every dev run.
+On Linux it needs `extra_hosts: host.docker.internal:host-gateway` to reach an app running on the host.
+
+`observability/grafana/komora-dashboard.json` is the dashboard, committed: six rows — зростання, воронка,
+замовлення і GMV, якість кошика, партнерські розміщення, надійність. It binds its datasource through a
+template variable, which is what lets **one file** render against a throwaway local Prometheus and against
+Grafana Cloud. `make dashboard` pushes it; `observability/local/` brings up the local pair that renders it
+with no cloud account at all.
+
+`unit/DashboardJsonTest` parses the committed JSON, pulls every `komora_*` series out of the PromQL, and
+asserts each maps back to a `utils/MeterNames` constant. That is the cheap guard against the standard way a
+checked-in dashboard rots: a meter is renamed, nothing fails, and the panel shows «No data» until somebody
+notices it during a pitch.
+
+## Verified live
+
+`MANAGEMENT_PORT` defaults to the app's own port so nothing changes locally; setting it to 8081 on the
+tunnelled demo box is what stops one public tunnel from handing GMV and household counts to whoever finds
+the URL — the concern `METRICS_TOKEN` already exists for.

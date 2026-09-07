@@ -37,6 +37,9 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
     implementation("org.springframework.boot:spring-boot-starter-validation")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
+    // Backs /actuator/prometheus (task 54). The actuator starter brings micrometer-core, so MeterRegistry
+    // compiles without this — but the endpoint is a 404 until a registry implementation is on the runtime path.
+    runtimeOnly("io.micrometer:micrometer-registry-prometheus")
     implementation("org.springframework.boot:spring-boot-starter-cache")
     // Caffeine backs the cache abstraction above (starter-cache alone only ships a simple in-memory map)
     implementation("com.github.ben-manes.caffeine:caffeine")

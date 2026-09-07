@@ -72,6 +72,7 @@ public class IntentRouterService {
     private final TelegramOutboundService telegramOutboundService;
     private final PastOrderSeedService pastOrderSeedService;
     private final DishRequestService dishRequestService;
+    private final ObservabilityService observabilityService;
     private final String systemPrompt;
 
     public IntentRouterService(
@@ -90,6 +91,7 @@ public class IntentRouterService {
             TelegramOutboundService telegramOutboundService,
             PastOrderSeedService pastOrderSeedService,
             DishRequestService dishRequestService,
+            ObservabilityService observabilityService,
             @Value("classpath:prompts/intent-router-system.txt") Resource systemPromptResource) {
         this.claudeApiClient = claudeApiClient;
         this.speechToTextClient = speechToTextClient;
@@ -106,6 +108,7 @@ public class IntentRouterService {
         this.telegramOutboundService = telegramOutboundService;
         this.pastOrderSeedService = pastOrderSeedService;
         this.dishRequestService = dishRequestService;
+        this.observabilityService = observabilityService;
         this.systemPrompt = read(systemPromptResource);
     }
 
@@ -180,12 +183,17 @@ public class IntentRouterService {
             classified = claudeApiClient.completeStructured(systemPrompt, withToday(text), ClassifiedIntent.class);
         } catch (RuntimeException e) {
             log.warn("could not classify intent for text", e);
+            observabilityService.recordIntent("failed");
             return false;
         }
         IntentType intent = parse(classified.intent());
         if (intent == IntentType.UNKNOWN || classified.confidence() < CONFIDENCE_THRESHOLD) {
+            // Deliberately no per-intent tag: which intents fire is task 55's artefact, a plain list rather than a
+            // Grafana panel, and keeping IntentType private is what stops the two from drifting into each other.
+            observabilityService.recordIntent("unclassified");
             return false;
         }
+        observabilityService.recordIntent("routed");
         dispatch(user, text, classified, intent);
         return true;
     }

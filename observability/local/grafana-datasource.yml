@@ -1,0 +1,10 @@
+# The dashboard JSON refers to its datasource through a template variable, so it binds to whichever Prometheus is
+# present — this one locally, Grafana Cloud's hosted one after `make dashboard`. One file, both places.
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    type: prometheus
+    uid: komora-prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true

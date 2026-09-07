@@ -81,6 +81,7 @@ public class ReorderConfirmationService {
             JsonMapper.builder().addModule(new JavaTimeModule()).build();
 
     private final CartBuildingService cartBuildingService;
+    private final ObservabilityService observabilityService;
     private final ReorderService reorderService;
     private final CartMessageService cartMessageService;
     private final CustomerOrderRepository customerOrderRepository;
@@ -127,6 +128,12 @@ public class ReorderConfirmationService {
                         order.cart().unresolved() == null
                                 ? 0
                                 : order.cart().unresolved().size())
+                // Task 54: the reorder's money, same as the first-order path. Refreshed at confirmation below,
+                // because a reorder is the one flow where the cart genuinely changes between draft and confirm.
+                .total(order.cart().total())
+                .goodsTotal(order.cart().goodsTotal())
+                .savings(order.cart().savings())
+                .toppedUpCount(order.cart().toppedUpLines().size())
                 .createdAt(clock.instant())
                 .build());
 
@@ -264,7 +271,15 @@ public class ReorderConfirmationService {
         order.setStatus(OrderStatus.CONFIRMED);
         order.setConfirmedAt(clock.instant());
         order.setEditedBeforeConfirm(edited);
+        // The cart was genuinely re-read above after the accepted replacements went in, so unlike the
+        // first-order confirm this one has a fresher total than the draft carried.
+        order.setTotal(cart.total());
+        order.setGoodsTotal(cart.goodsTotal());
+        order.setSavings(cart.savings());
+        order.setToppedUpCount(cart.toppedUpLines().size());
         customerOrderRepository.save(order);
+        observabilityService.recordConfirmedOrder(
+                order.getType(), cart.total(), cart.items().size());
 
         if (edited) {
             supersedeBaseline(user.getId(), cart);

@@ -82,6 +82,7 @@ public class CartBuildingService {
     private final PartnerPromotionService partnerPromotionService;
     private final ProductMatchingService productMatchingService;
     private final BaselineBasketRepository baselineBasketRepository;
+    private final ObservabilityService observabilityService;
 
     /**
      * Candidates Silpo says it can actually sell right now. {@code available: false} is not a judgement call, so it
@@ -186,6 +187,23 @@ public class CartBuildingService {
      * its promotions into the cart itself, so the saving reported afterwards is its own number.
      */
     public CartSummary buildCart(UUID userId, List<ShoppingListItem> items, boolean preferDiscounted) {
+        // Task 54: the timer wraps the whole pipeline, both exits, because "how long does a cart take" is the
+        // question a person waiting on one actually has, and a failure that takes 90s is the worst case of all.
+        long startedAt = System.nanoTime();
+        try {
+            CartSummary built = build(userId, items, preferDiscounted);
+            observabilityService.recordCartBuild(
+                    built.belowMinimumOrder() ? "below_minimum" : "ok",
+                    Duration.ofNanos(System.nanoTime() - startedAt));
+            observabilityService.recordMinimumOrder(built.belowMinimumOrder());
+            return built;
+        } catch (RuntimeException e) {
+            observabilityService.recordCartBuild("failed", Duration.ofNanos(System.nanoTime() - startedAt));
+            throw e;
+        }
+    }
+
+    private CartSummary build(UUID userId, List<ShoppingListItem> items, boolean preferDiscounted) {
         CartContext context = getOrCreateCartContext(userId);
         clearCart(userId, context);
         OfferedSlot deliverySlot = firstDeliverableSlot(userId, context);
@@ -210,6 +228,7 @@ public class CartBuildingService {
         if (!unresolved.isEmpty()) {
             log.info("Silpo matched no product for {} of {} items: {}", unresolved.size(), items.size(), unresolved);
         }
+        observabilityService.recordCartLines(resolved.size(), unresolved.size());
         addProductsToCart(userId, context, resolved);
         List<String> promoted = resolved.stream()
                 .filter(ResolvedProduct::promoted)
@@ -239,12 +258,16 @@ public class CartBuildingService {
         List<ResolvedProduct> topUp =
                 topUpFromBaseline(userId, context, alreadyInCart, cart.goodsTotal(), cart.minimumOrder());
         if (topUp.isEmpty()) {
+            observabilityService.recordTopUp("no_baseline");
             throw new CartBuildException(
                     "no baseline to top cart %s up from".formatted(cart.cartId()),
                     cart.validations(),
                     cart.goodsTotal(),
                     cart.minimumOrder());
         }
+        // Counted here rather than in the callers: a scheduled reorder tops up unasked (ReorderService), and a
+        // counter that only saw the button tap would miss half the population.
+        observabilityService.recordTopUp("applied");
         addProductsToCart(userId, context, topUp);
         return getVerifiedCart(
                 userId,

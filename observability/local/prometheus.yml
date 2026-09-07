@@ -1,0 +1,5 @@
+# Nothing is scraped here: Alloy remote-writes into this Prometheus the same way it writes to Grafana Cloud's
+# Mimir, so the harness exercises the real push path rather than a pull that production never uses.
+global:
+  scrape_interval: 30s
+scrape_configs: []

@@ -67,6 +67,23 @@ management:
   info:
     env:
       enabled: true
+  # Task 54. Same port as the app by default, so nothing changes locally and the RUNBOOK's health curls keep
+  # working. Set MANAGEMENT_PORT=8081 on the tunnelled demo box: one ngrok tunnel would otherwise serve GMV
+  # and household counts to whoever finds the URL, which is the concern METRICS_TOKEN exists for.
+  server:
+    port: ${MANAGEMENT_PORT:${SERVER_PORT:8080}}
+  metrics:
+    tags:
+      application: ${APP_NAME:silpo-restock-ai}
+      env: ${KOMORA_ENV:local}
+    distribution:
+      # Explicit SLO boundaries rather than percentiles-histogram: a full percentile histogram is ~40 buckets
+      # per timer, and 15 MCP tools x 3 outcomes x 40 would spend a quarter of Grafana Cloud free's 10k series
+      # on one meter. The trade is that p95 is interpolated between coarse boundaries.
+      slo:
+        komora.mcp.call: 100ms,250ms,500ms,1s,2s,5s,10s,30s
+        komora.claude.call: 500ms,1s,2s,5s,10s,20s,45s,90s
+        komora.cart.build: 1s,5s,10s,20s,45s,90s,180s
 
 # Sensible defaults applied to every Resilience4j instance; Feign clients pick these up by client name.
 resilience4j:
@@ -190,6 +207,13 @@ komora:
   # Task 37: GET /internal/metrics/pitch with header X-Metrics-Token. Blank disables the endpoint (404).
   metrics:
     token: ${METRICS_TOKEN:}
+  # Task 54. The DB-derived gauges are refreshed on this interval and read from memory on every scrape, so a
+  # Prometheus scrape never costs a query. Shorter than the 30s Alloy scrape would only add load; much longer
+  # and a demo's first order takes visible minutes to appear on the dashboard.
+  observability:
+    refresh-interval: ${OBSERVABILITY_REFRESH_INTERVAL:30s}
+    # "Active households" means: had any conversation turn inside this window.
+    active-window: ${OBSERVABILITY_ACTIVE_WINDOW:7d}
 
 springdoc:
   swagger-ui:

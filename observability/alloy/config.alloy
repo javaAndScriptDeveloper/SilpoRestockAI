@@ -1,0 +1,42 @@
+// Комора → Grafana Cloud (task 54).
+//
+// Push, not pull: the app runs on a laptop or a demo box behind a rotating tunnel, so Grafana Cloud has no stable
+// address to scrape. Alloy scrapes locally and remote-writes outbound, which needs no inbound port at all.
+//
+// Runs as a container (`make alloy-up`); there is no Alloy binary to install. Every value comes from the environment
+// so nothing secret is ever in this file — see .env.example for the three variables and where to get them.
+
+prometheus.scrape "komora" {
+	// The app usually runs on the HOST via `make run`, which a container reaches through the host-gateway alias
+	// wired up in docker-compose.yml. Set APP_METRICS_TARGET=app:8080 when it runs in compose via `make up`.
+	targets = [{
+		__address__ = coalesce(sys.env("APP_METRICS_TARGET"), "host.docker.internal:8080"),
+		job         = "komora",
+		instance    = coalesce(sys.env("KOMORA_ENV"), "local"),
+	}]
+
+	metrics_path    = "/actuator/prometheus"
+	scrape_interval = "30s"
+	scrape_timeout  = "10s"
+
+	forward_to = [prometheus.remote_write.grafanacloud.receiver]
+}
+
+prometheus.remote_write "grafanacloud" {
+	// Labels every series with where it came from, so a rehearsal on a laptop and the demo box do not average
+	// into each other on the same dashboard.
+	external_labels = {
+		env = coalesce(sys.env("KOMORA_ENV"), "local"),
+	}
+
+	endpoint {
+		url = sys.env("GRAFANA_CLOUD_PROM_URL")
+
+		basic_auth {
+			// Grafana Cloud's Prometheus: the username is the numeric instance id, the password is an access-policy
+			// token with the metrics:write scope. Neither is ever committed.
+			username = sys.env("GRAFANA_CLOUD_PROM_USER")
+			password = sys.env("GRAFANA_CLOUD_PROM_TOKEN")
+		}
+	}
+}

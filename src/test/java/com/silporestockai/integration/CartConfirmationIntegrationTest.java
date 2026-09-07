@@ -318,6 +318,10 @@ class CartConfirmationIntegrationTest extends AbstractIntegrationTest {
         assertThat(orders.getFirst().getSilpoCartId()).isEqualTo("cart-1");
         assertThat(orders.getFirst().getDeliverySlot()).isEqualTo("slot-1");
         assertThat(orders.getFirst().getItems()).hasSize(2);
+        // Task 54: the money has to land on the row here, because confirm() never re-reads the cart from Silpo.
+        // Without this the GMV panel would have nothing to sum and nobody would notice until the pitch.
+        assertThat(orders.getFirst().getTotal()).isEqualByComparingTo("73.5");
+        assertThat(orders.getFirst().getGoodsTotal()).isEqualByComparingTo("73.5");
 
         assertThat(lastMessageText()).contains("Цибуля").contains("Гречка").contains("73.50");
         assertThat(conversationStateService.load(CHAT_ID).getCurrentFlow())
@@ -384,6 +388,8 @@ class CartConfirmationIntegrationTest extends AbstractIntegrationTest {
                 .getFirst();
         assertThat(order.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
         assertThat(order.getConfirmedAt()).isNotNull();
+        // Confirming keeps the total the household approved — this is what a confirmed row contributes to GMV.
+        assertThat(order.getTotal()).isEqualByComparingTo("73.5");
 
         assertThat(shoppingListItemRepository.findByUserIdAndStatus(
                         user.getId(), com.silporestockai.model.ShoppingListStatus.ORDERED))

@@ -1,0 +1,35 @@
+databaseChangeLog:
+  - changeSet:
+      id: 028-order-cart-value
+      author: komora
+      comment: >-
+        Task 54: GMV and average cart value could not be computed at all. The cart totals Silpo returns
+        (total, productsTotal, subDiscount) lived only on the transient CartSummary record and inside
+        conversation_state.context_json — nothing ever reached a column, so the order table could not
+        answer "what is this household worth" even approximately. These four columns are what the
+        observability gauges read and what the acceptance cross-check reconciles against items_json.
+
+        Nullable with no backfill and no default: every order confirmed before this change genuinely has
+        no known total, and writing 0 would be a lie that silently drags the average down. Aggregates
+        filter on NOT NULL and a gauge publishes how many confirmed orders lack a value, so the dashboard
+        shows the coverage of its own GMV number rather than hiding it.
+
+        The stored total is the cart as the household saw and approved it, before any loyalty-bonus spend
+        — the confirm step does not re-read the cart from Silpo, so there is no fresher number to write
+        without an extra MCP round-trip on the confirmation path.
+      changes:
+        - addColumn:
+            tableName: customer_order
+            columns:
+              - column:
+                  name: total
+                  type: NUMERIC(10, 2)
+              - column:
+                  name: goods_total
+                  type: NUMERIC(10, 2)
+              - column:
+                  name: savings
+                  type: NUMERIC(10, 2)
+              - column:
+                  name: topped_up_count
+                  type: INTEGER

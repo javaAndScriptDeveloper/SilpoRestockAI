@@ -21,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class UserAccountService {
 
     private final UserRepository userRepository;
+    private final ObservabilityService observabilityService;
 
     @Transactional
     public User findOrCreate(long telegramChatId) {
@@ -31,6 +32,8 @@ public class UserAccountService {
                     .createdAt(Instant.now())
                     .build());
             log.info("registered a new user for chat {}", telegramChatId);
+            // Only on the insert branch: this is the top of the funnel, not a count of messages.
+            observabilityService.recordOnboardingStarted();
             return created;
         });
     }

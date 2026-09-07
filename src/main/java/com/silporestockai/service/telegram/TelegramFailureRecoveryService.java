@@ -5,6 +5,7 @@ import com.silporestockai.exception.ClaudeApiException;
 import com.silporestockai.exception.SilpoMcpException;
 import com.silporestockai.model.ConversationFlow;
 import com.silporestockai.service.ConversationStateService;
+import com.silporestockai.service.ObservabilityService;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -28,6 +29,7 @@ public class TelegramFailureRecoveryService {
 
     private final ConversationStateService conversationStateService;
     private final TelegramOutboundService telegramOutboundService;
+    private final ObservabilityService observabilityService;
 
     /**
      * Logs the full exception for debugging, resets the chat's conversation state so the next message is
@@ -36,7 +38,21 @@ public class TelegramFailureRecoveryService {
     public void recover(long chatId, RuntimeException e) {
         log.error("unhandled failure while processing an update for chat {}", chatId, e);
         conversationStateService.save(chatId, ConversationFlow.NONE, null, Map.of());
+        // Task 54: this counter should sit at zero. It is the one panel where a spike means something is actually
+        // broken for a person, rather than a number going up being good news.
+        observabilityService.recordFailureMessage("recovery", kindOf(e));
         telegramOutboundService.sendMessage(chatId, messageFor(e));
+    }
+
+    /** The same three branches {@link #messageFor} takes, as a bounded metric tag. */
+    private static String kindOf(RuntimeException e) {
+        if (e instanceof SilpoMcpException || e instanceof CartBuildException) {
+            return "silpo";
+        }
+        if (e instanceof ClaudeApiException) {
+            return "claude";
+        }
+        return "other";
     }
 
     private static String messageFor(RuntimeException e) {
