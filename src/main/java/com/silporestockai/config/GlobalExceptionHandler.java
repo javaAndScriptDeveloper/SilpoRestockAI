@@ -10,6 +10,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.client.RestClientException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 /**
  * Translates exceptions into RFC 9457 {@link ProblemDetail} responses (served as {@code application/problem+json}).
@@ -41,6 +42,17 @@ public class GlobalExceptionHandler {
         log.error("Upstream API call failed", ex);
         return ProblemDetail.forStatusAndDetail(
                 HttpStatus.BAD_GATEWAY, "Upstream API is currently unavailable: " + ex.getMessage());
+    }
+
+    /**
+     * A browser asking for {@code /favicon.ico} on the OAuth callback page or the WebApp form is not an incident.
+     * Before this it was logged as «Unhandled exception» with a full stack trace — twice per onboarding, at ERROR,
+     * which is exactly the level the demo console shows.
+     */
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ProblemDetail handleMissingResource(NoResourceFoundException ex) {
+        log.debug("No static resource: {}", ex.getResourcePath());
+        return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, "Not found");
     }
 
     @ExceptionHandler(Exception.class)
