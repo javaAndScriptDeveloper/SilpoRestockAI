@@ -393,7 +393,7 @@ class ReorderConfirmationIntegrationTest extends AbstractIntegrationTest {
         tapButton(1, ReorderMessageService.CALLBACK_CONFIRM);
 
         JsonNode update = MCP.callArguments("silpo_update_shopping_cart").getFirst();
-        assertThat(update.path("timeslot").asText()).isEqualTo("slot-sooner");
+        assertThat(update.path("timeslot").path("start").asText()).isEqualTo("slot-sooner");
         assertThat(draft2()).isEmpty();
     }
 
@@ -412,7 +412,7 @@ class ReorderConfirmationIntegrationTest extends AbstractIntegrationTest {
 
         // Index 0 is the later window, which is not the one chosen for them.
         JsonNode update = MCP.callArguments("silpo_update_shopping_cart").getFirst();
-        assertThat(update.path("timeslot").asText()).isEqualTo("slot-later");
+        assertThat(update.path("timeslot").path("start").asText()).isEqualTo("slot-later");
         // Changing when the food arrives is not an edit of what is in the basket.
         assertThat(trustCounter()).isEqualTo(1);
     }

@@ -59,7 +59,6 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class ReorderConfirmationService {
 
-    private static final String TOOL_UPDATE_CART = "silpo_update_shopping_cart";
     private static final String STEP_AWAITING_DECISION = "AWAITING_DECISION";
 
     private static final String KEY_ORDER_ID = "orderId";
@@ -261,7 +260,7 @@ public class ReorderConfirmationService {
         String slotId = slot == null ? null : slot.id();
 
         addAcceptedReplacements(user.getId(), context, delta, decisions);
-        boolean slotFixed = slotId != null && bookSlot(user.getId(), context.cartId(), slotId);
+        boolean slotFixed = slot != null && cartBuildingService.bookSlot(user.getId(), context.cartId(), slot);
         CartSummary cart = cartBuildingService.getVerifiedCart(user.getId(), context, slot, List.of());
 
         // Refusing a substitute is an edit; accepting one is agreeing with the suggestion.
@@ -333,11 +332,6 @@ public class ReorderConfirmationService {
                 userId,
                 "silpo_add_or_update_cart_products",
                 Map.of("shoppingCartId", context.cartId(), "products", products));
-    }
-
-    /** Books the chosen window. A refusal is reported, not fatal: checkout can still fix it. */
-    private boolean bookSlot(UUID userId, String cartId, String slotId) {
-        return call(userId, TOOL_UPDATE_CART, Map.of("cartId", cartId, "timeslot", slotId));
     }
 
     /** The edited order becomes the reference point; the previous snapshot is superseded, not deleted. */

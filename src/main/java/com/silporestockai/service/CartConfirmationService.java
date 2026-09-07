@@ -1,8 +1,6 @@
 package com.silporestockai.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.silporestockai.client.mcp.McpToolResponse;
-import com.silporestockai.client.mcp.SilpoMcpClient;
 import com.silporestockai.entity.BaselineBasket;
 import com.silporestockai.entity.ConversationState;
 import com.silporestockai.entity.CustomerOrder;
@@ -49,9 +47,6 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class CartConfirmationService {
 
-    /** Silpo's tool for changing cart-level settings; the only one that carries the loyalty decision. */
-    private static final String TOOL_UPDATE_CART = "silpo_update_shopping_cart";
-
     private static final String STEP_AWAITING_DECISION = "AWAITING_DECISION";
     private static final String KEY_ORDER_ID = "orderId";
     private static final String KEY_SUMMARY = "summary";
@@ -68,7 +63,6 @@ public class CartConfirmationService {
     private final ConversationStateService conversationStateService;
     private final CartMessageService cartMessageService;
     private final TelegramOutboundService telegramOutboundService;
-    private final SilpoMcpClient silpoMcpClient;
     private final ShoppingListService shoppingListService;
     private final ApplicationEventPublisher events;
 
@@ -340,7 +334,11 @@ public class CartConfirmationService {
         }
         String selectedSlotId = String.valueOf(state.getContext().get(KEY_SLOT));
         if (!selectedSlotId.equals(summary.deliverySlot())) {
-            bookSlot(user.getId(), summary.cartId(), selectedSlotId);
+            OfferedSlot selected = slotsOf(state).stream()
+                    .filter(slot -> selectedSlotId.equals(slot.id()))
+                    .findFirst()
+                    .orElse(new OfferedSlot(selectedSlotId, selectedSlotId, null, null));
+            cartBuildingService.bookSlot(user.getId(), summary.cartId(), selected);
             order.setDeliverySlot(selectedSlotId);
         }
         boolean bonusesApplied = spendBonuses && applyBonuses(user.getId(), summary);
@@ -384,19 +382,6 @@ public class CartConfirmationService {
         log.info("order {} cancelled by user {}", order.getId(), user.getId());
     }
 
-    /** A refusal is reported, not fatal: checkout can still fix the delivery window if this call failed. */
-    private void bookSlot(UUID userId, String cartId, String slotId) {
-        try {
-            McpToolResponse response =
-                    silpoMcpClient.callTool(TOOL_UPDATE_CART, Map.of("cartId", cartId, "timeslot", slotId), userId);
-            if (response.isError()) {
-                log.warn("Silpo declined to rebook cart {} onto slot {}", cartId, slotId);
-            }
-        } catch (RuntimeException e) {
-            log.warn("could not rebook cart {} onto slot {}: {}", cartId, slotId, e.getMessage());
-        }
-    }
-
     /**
      * Asks Silpo to put the loyalty bonuses against this cart.
      *
@@ -407,20 +392,7 @@ public class CartConfirmationService {
         if (summary.bonusAvailable() == null || summary.bonusAvailable().signum() <= 0) {
             return false;
         }
-        try {
-            McpToolResponse response = silpoMcpClient.callTool(
-                    TOOL_UPDATE_CART,
-                    Map.of("cartId", summary.cartId(), "bonusRequested", summary.bonusAvailable()),
-                    userId);
-            if (response.isError()) {
-                log.warn("Silpo declined to apply bonuses to cart {}", summary.cartId());
-                return false;
-            }
-            return true;
-        } catch (RuntimeException e) {
-            log.warn("could not apply bonuses to cart {}: {}", summary.cartId(), e.getMessage());
-            return false;
-        }
+        return cartBuildingService.applyBonuses(userId, summary.cartId(), summary.bonusAvailable());
     }
 
     /**

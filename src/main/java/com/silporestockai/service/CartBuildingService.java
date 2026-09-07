@@ -1,6 +1,7 @@
 package com.silporestockai.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.silporestockai.client.mcp.McpToolResponse;
 import com.silporestockai.client.mcp.SilpoMcpClient;
 import com.silporestockai.entity.BaselineBasket;
@@ -66,6 +67,9 @@ public class CartBuildingService {
     private static final String TOOL_DELIVERY_TYPES = "silpo_get_available_delivery_types";
     private static final String TOOL_LIST_BRANCHES = "silpo_list_branches";
     private static final String TOOL_CREATE_CART = "silpo_create_shopping_cart";
+    private static final String TOOL_UPDATE_CART = "silpo_update_shopping_cart";
+
+    private static final ObjectMapper MAPPER = new ObjectMapper().findAndRegisterModules();
 
     /** {@code silpo_get_available_delivery_types} hands back a branch directly for these; the rest need resolving. */
     private static final Set<String> DELIVERY_TYPES_WITH_A_BRANCH_ALREADY =
@@ -548,6 +552,82 @@ public class CartBuildingService {
             log.error("{} for user {}. Raw response: {}", problem, userId, node);
             return new CartBuildException(problem + " for user " + userId);
         });
+    }
+
+    /**
+     * Books a delivery window on an existing cart.
+     *
+     * <p>{@code silpo_update_shopping_cart} is not a patch: its schema marks the delivery type, the address and the
+     * shipments required on every call and says to copy them from {@code silpo_get_shopping_cart_by_id} verbatim. The
+     * two confirm flows used to send {@code {cartId, timeslot: <id>}} and were refused with «Invalid arguments» on
+     * every live run since task 15 — the household read «Доставка: вт · 10:30–12:00» while Silpo still held the
+     * 09:00 window. Best effort by design: a refusal is reported, not fatal, because checkout can still fix the window.
+     *
+     * @return whether Silpo accepted the change
+     */
+    public boolean bookSlot(UUID userId, String cartId, OfferedSlot slot) {
+        // Real slots carry no id of their own, so the id is the start (see offeredTimeSlots); the end rides along.
+        Map<String, Object> timeslot = new LinkedHashMap<>();
+        timeslot.put("start", slot.id());
+        if (slot.end() != null) {
+            timeslot.put("end", slot.end());
+        }
+        return updateCart(userId, cartId, Map.of("timeslot", timeslot));
+    }
+
+    /**
+     * Asks Silpo to pay part of the cart with loyalty bonuses. Same tool, same required baggage as {@link #bookSlot}.
+     */
+    public boolean applyBonuses(UUID userId, String cartId, BigDecimal bonuses) {
+        return updateCart(userId, cartId, Map.of("bonusRequested", bonuses));
+    }
+
+    /** One {@code silpo_update_shopping_cart} call: the cart's own required fields read back, plus {@code changes}. */
+    private boolean updateCart(UUID userId, String cartId, Map<String, Object> changes) {
+        try {
+            JsonNode cart = call(userId, TOOL_CART_BY_ID, Map.of("shoppingCartId", cartId));
+            Map<String, Object> arguments = new LinkedHashMap<>();
+            arguments.put("shoppingCartId", cartId);
+            arguments.put(
+                    "deliveryType",
+                    McpResponses.findString(cart, McpResponses.DELIVERY_TYPE).orElse(""));
+            McpResponses.findNode(cart, McpResponses.TIMESLOT)
+                    .filter(JsonNode::isObject)
+                    .ifPresent(node -> arguments.put("timeslot", MAPPER.convertValue(node, Map.class)));
+            McpResponses.findNode(cart, McpResponses.ADDRESS)
+                    .filter(JsonNode::isObject)
+                    .ifPresent(node -> arguments.put("address", MAPPER.convertValue(node, Map.class)));
+            List<Map<String, Object>> shipments = new ArrayList<>();
+            for (JsonNode shipment : McpResponses.findArray(cart, McpResponses.SHIPMENTS)) {
+                Map<String, Object> reduced = new LinkedHashMap<>();
+                McpResponses.findString(shipment, McpResponses.COMPANY_ID).ifPresent(v -> reduced.put("companyId", v));
+                McpResponses.findString(shipment, McpResponses.BRANCH_ID).ifPresent(v -> reduced.put("branchId", v));
+                if (!reduced.isEmpty()) {
+                    shipments.add(reduced);
+                }
+            }
+            if (shipments.isEmpty()) {
+                // A cart with no shipments array (a stub, an empty cart): the cart-level branch is the only shipment.
+                Map<String, Object> reduced = new LinkedHashMap<>();
+                McpResponses.findString(cart, McpResponses.COMPANY_ID).ifPresent(v -> reduced.put("companyId", v));
+                McpResponses.findString(cart, McpResponses.BRANCH_ID).ifPresent(v -> reduced.put("branchId", v));
+                if (!reduced.isEmpty()) {
+                    shipments.add(reduced);
+                }
+            }
+            arguments.put("shipments", shipments);
+            arguments.putAll(changes);
+            log.debug("MCP -> {} {}", TOOL_UPDATE_CART, arguments);
+            McpToolResponse response = silpoMcpClient.callTool(TOOL_UPDATE_CART, arguments, userId);
+            if (response.isError()) {
+                log.warn("Silpo declined to update cart {} with {}", cartId, changes.keySet());
+                return false;
+            }
+            return true;
+        } catch (RuntimeException e) {
+            log.warn("could not update cart {} with {}: {}", cartId, changes.keySet(), e.getMessage());
+            return false;
+        }
     }
 
     /**

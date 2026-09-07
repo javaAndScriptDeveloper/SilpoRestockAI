@@ -29,6 +29,10 @@ public final class McpResponses {
     public static final String[] COMPANY_ID = {"companyId"};
     public static final String[] PRODUCT_ID = {"productId", "id"};
     public static final String[] DELIVERY_TYPE = {"deliveryType", "type"};
+    /** The cart's own address and shipments — {@code silpo_update_shopping_cart} wants them back on every call. */
+    public static final String[] ADDRESS = {"address"};
+
+    public static final String[] SHIPMENTS = {"shipments"};
     public static final String[] TIMESLOT = {"timeslot", "timeSlot", "slot"};
     public static final String[] TIME_SLOTS = {"timeSlots", "timeslots", "slots"};
     public static final String[] SLOT_ID = {"id", "slotId", "code"};

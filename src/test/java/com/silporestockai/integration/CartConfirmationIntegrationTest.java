@@ -419,6 +419,14 @@ class CartConfirmationIntegrationTest extends AbstractIntegrationTest {
         tapButton(3, CartMessageService.CALLBACK_CONFIRM);
 
         assertThat(MCP.calledTools()).contains("silpo_update_shopping_cart");
+        // silpo_update_shopping_cart marks the cart's own delivery type, address and shipments required on every
+        // call; sent as {cartId, timeslot: <id>} it was refused live on every run and the slot never changed.
+        JsonNode update = MCP.callArguments("silpo_update_shopping_cart").getFirst();
+        assertThat(update.path("shoppingCartId").asText()).isEqualTo("cart-1");
+        assertThat(update.path("deliveryType").asText()).isEqualTo("delivery");
+        assertThat(update.path("timeslot").path("start").asText()).isEqualTo("slot-2");
+        assertThat(update.path("shipments").get(0).path("branchId").asText()).isEqualTo("branch-7");
+        assertThat(update.path("shipments").get(0).path("companyId").asText()).isEqualTo("company-3");
         CustomerOrder order = customerOrderRepository
                 .findByUserIdOrderByCreatedAtDesc(user.getId())
                 .getFirst();
