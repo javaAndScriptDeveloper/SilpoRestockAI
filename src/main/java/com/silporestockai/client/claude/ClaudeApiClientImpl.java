@@ -20,6 +20,7 @@ import com.anthropic.models.messages.StructuredContentBlock;
 import com.anthropic.models.messages.StructuredMessage;
 import com.anthropic.models.messages.StructuredMessageCreateParams;
 import com.anthropic.models.messages.StructuredTextBlock;
+import com.silporestockai.client.AgentCallLog;
 import com.silporestockai.config.ClaudeProperties;
 import com.silporestockai.exception.ClaudeApiException;
 import com.silporestockai.exception.ClaudeRateLimitedException;
@@ -264,6 +265,7 @@ public class ClaudeApiClientImpl implements ClaudeApiClient {
      */
     private <T> T timed(String callName, String model, Supplier<T> action) {
         Timer.Sample sample = Timer.start(meterRegistry);
+        long startedAt = System.nanoTime();
         String outcome = "success";
         try {
             return action.get();
@@ -280,6 +282,10 @@ public class ClaudeApiClientImpl implements ClaudeApiClient {
             outcome = "error";
             throw e;
         } finally {
+            // Task 58: on the demo channel next to the MCP lines — on a recording the viewer sees the agent think
+            // («🧠 completeStructured … 31.4s»), then act («🔧 silpo_find_products_batch …»), as one story.
+            AgentCallLog.claudeCall(
+                    callName, model, (System.nanoTime() - startedAt) / 1_000_000, "success".equals(outcome));
             sample.stop(meterRegistry.timer(
                     MeterNames.CLAUDE_CALL,
                     MeterNames.TAG_CALL,

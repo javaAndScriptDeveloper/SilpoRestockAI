@@ -88,15 +88,22 @@ public final class AgentCallLog {
     /**
      * What a tool answered, in three words or fewer. Prefers the first list in the structured content — for this
      * server that is the products, the slots, the orders — then a field count, then the raw text.
+     *
+     * <p>{@code structuredContent} is whatever the server sent, so it is typed as loosely here as it is on
+     * {@link com.silporestockai.client.mcp.McpToolResponse}: a shape this codebase has never seen must degrade to a
+     * short line, never to a stack trace on the demo channel.
      */
-    public static String summarizeResult(Map<String, Object> structuredContent, String text) {
-        if (structuredContent != null && !structuredContent.isEmpty()) {
-            for (Object value : structuredContent.values()) {
+    public static String summarizeResult(Object structuredContent, String text) {
+        if (structuredContent instanceof Map<?, ?> map && !map.isEmpty()) {
+            for (Object value : map.values()) {
                 if (value instanceof Collection<?> collection) {
                     return collection.size() + " items";
                 }
             }
-            return structuredContent.size() + " fields";
+            return map.size() + " fields";
+        }
+        if (structuredContent instanceof Collection<?> collection) {
+            return collection.size() + " items";
         }
         String flat = clean(text, MAX_RESULT);
         return flat.isEmpty() ? "ok" : flat;

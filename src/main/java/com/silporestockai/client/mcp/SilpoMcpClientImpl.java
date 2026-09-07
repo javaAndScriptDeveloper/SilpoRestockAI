@@ -1,5 +1,6 @@
 package com.silporestockai.client.mcp;
 
+import com.silporestockai.client.AgentCallLog;
 import com.silporestockai.config.SilpoMcpProperties;
 import com.silporestockai.exception.SilpoMcpException;
 import com.silporestockai.exception.SilpoMcpRateLimitedException;
@@ -90,15 +91,41 @@ public class SilpoMcpClientImpl implements SilpoMcpClient {
         // retry. Those are exactly the failures a reliability panel exists to show. @Retry proxies this method, so
         // each attempt is its own sample: the timer measures attempts, which is what makes Silpo's 429 backoff visible.
         Timer.Sample sample = Timer.start(meterRegistry);
+        // Task 58: the same reasoning again for the demo line — a call that failed is the most interesting thing that
+        // can happen on camera, so it gets a line too. Wall clock rather than the Micrometer sample because this
+        // number is read by a person off a screen, not aggregated into a percentile.
+        long startedAt = System.nanoTime();
         String outcome = "error";
         try {
             McpToolResponse response = callToolOnce(toolName, arguments, userId);
             outcome = response.isError() ? "tool_error" : "success";
+            AgentCallLog.mcpCall(
+                    toolName,
+                    arguments,
+                    AgentCallLog.summarizeResult(response.structuredContent(), response.text()),
+                    millisSince(startedAt),
+                    !response.isError());
             return response;
+        } catch (RuntimeException e) {
+            AgentCallLog.mcpCall(toolName, arguments, failureOf(e), millisSince(startedAt), false);
+            throw e;
         } finally {
             sample.stop(meterRegistry.timer(
                     MeterNames.MCP_CALL, MeterNames.TAG_TOOL, toolName, MeterNames.TAG_OUTCOME, outcome));
         }
+    }
+
+    private static long millisSince(long startedAtNanos) {
+        return (System.nanoTime() - startedAtNanos) / 1_000_000;
+    }
+
+    /** The demo line wants the shortest true statement about a failure, not a stack trace. */
+    private static String failureOf(RuntimeException e) {
+        if (e instanceof SilpoMcpRateLimitedException) {
+            return "rate limited";
+        }
+        String message = e.getMessage();
+        return message == null || message.isBlank() ? e.getClass().getSimpleName() : message;
     }
 
     private McpToolResponse callToolOnce(String toolName, Map<String, Object> arguments, UUID userId) {
@@ -236,6 +263,8 @@ public class SilpoMcpClientImpl implements SilpoMcpClient {
         List<McpSchema.Tool> tools = client.listTools().tools();
         // The live catalogue is the only authority on what is callable; the count also doubles as smoke-test output.
         log.info("connected to Silpo MCP for user {} — {} tools available", userId, tools.size());
+        // Task 58: and once more on the demo channel, where it is the opening line of the whole story.
+        AgentCallLog.mcpSession(tools.size());
         // Full names + schemas at DEBUG: the one place to look when a cart step needs a tool this codebase has never
         // called (e.g. no cart exists yet for a guest — the documented six-step sequence assumes one already does).
         if (log.isDebugEnabled()) {
