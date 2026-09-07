@@ -71,6 +71,7 @@ public class IntentRouterService {
     private final ReorderConfirmationService reorderConfirmationService;
     private final TelegramOutboundService telegramOutboundService;
     private final PastOrderSeedService pastOrderSeedService;
+    private final OrderHistoryService orderHistoryService;
     private final DishRequestService dishRequestService;
     private final ObservabilityService observabilityService;
     private final String systemPrompt;
@@ -90,6 +91,7 @@ public class IntentRouterService {
             ReorderConfirmationService reorderConfirmationService,
             TelegramOutboundService telegramOutboundService,
             PastOrderSeedService pastOrderSeedService,
+            OrderHistoryService orderHistoryService,
             DishRequestService dishRequestService,
             ObservabilityService observabilityService,
             @Value("classpath:prompts/intent-router-system.txt") Resource systemPromptResource) {
@@ -107,6 +109,7 @@ public class IntentRouterService {
         this.reorderConfirmationService = reorderConfirmationService;
         this.telegramOutboundService = telegramOutboundService;
         this.pastOrderSeedService = pastOrderSeedService;
+        this.orderHistoryService = orderHistoryService;
         this.dishRequestService = dishRequestService;
         this.observabilityService = observabilityService;
         this.systemPrompt = read(systemPromptResource);
@@ -249,6 +252,9 @@ public class IntentRouterService {
                                 () -> calendarViewService.showWeek(user));
             case CALENDAR_CONNECT -> calendarIntegrationService.offerConnection(user);
             case PAST_ORDER_SEED -> pastOrderSeedService.offer(user);
+            // Read-only, and the short form: the sentence asked about one order, so answer about that one.
+            // The «📦 Замовлення» button (task 57) asks the same service for the fuller view.
+            case WHERE_IS_MY_ORDER -> orderHistoryService.showStatus(user, false);
             case DISH_INGREDIENTS_ORDER -> dishRequestService.start(user, classified.themeDescription());
             case HELP -> sendHelp(user);
             case UNKNOWN -> askClarifyingQuestion(user);
@@ -342,6 +348,7 @@ public class IntentRouterService {
         CALENDAR_VIEW,
         CALENDAR_CONNECT,
         PAST_ORDER_SEED,
+        WHERE_IS_MY_ORDER,
         DISH_INGREDIENTS_ORDER,
         HELP,
         UNKNOWN

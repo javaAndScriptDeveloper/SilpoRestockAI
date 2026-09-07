@@ -79,6 +79,16 @@ public final class McpResponses {
     /** Order history (task 35): the list, one order's id and date. Items inside an order use {@link #ITEMS}. */
     public static final String[] ORDERS = {"orders", "items", "results", "data"};
 
+    /**
+     * An order's own state and its promised delivery time (task 56). The status is shown verbatim when it is
+     * not one we recognise — a made-up translation of a state we have never seen would be worse than Silpo's
+     * own wording. The slot is looked up separately from {@link #ORDER_DATE} on purpose: somebody asking
+     * «коли приїде» must not be answered with when they ordered.
+     */
+    public static final String[] ORDER_STATUS = {"status", "orderStatus", "state", "statusName"};
+
+    public static final String[] DELIVERY_SLOT = {"deliveryTime", "deliveryTimeslot", "timeslot", "timeSlot"};
+
     public static final String[] ORDER_ID = {"orderId", "orderNumber", "number", "id"};
     public static final String[] ORDER_DATE = {
         "date", "createdAt", "created", "orderDate", "dateCreated", "deliveryDate"
