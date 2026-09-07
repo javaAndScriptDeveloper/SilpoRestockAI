@@ -304,6 +304,9 @@ public class IntentRouterService {
     }
 
     private void adjustPlan(User user, String instruction) {
+        // The regenerate is a 20-30 s model call; live, «зроби менш калорійним» was answered by nothing at all
+        // until the new list appeared, which reads as a dead bot on a recording.
+        telegramOutboundService.sendMessage(user.getTelegramChatId(), "Перероблю план — хвилинку.");
         List<ShoppingListItem> previousItems = shoppingListService.currentItems(user.getId());
         MealPlan plan = mealPlanService.regenerateWithAdjustment(user.getId(), instruction);
         List<ShoppingListItem> items = shoppingListService.deriveFromMealPlan(plan.getId(), plan.getSourceType());
