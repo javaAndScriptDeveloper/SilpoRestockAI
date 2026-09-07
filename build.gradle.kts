@@ -118,6 +118,15 @@ tasks.withType<Test> {
     useJUnitPlatform()
     systemProperty("junit.jupiter.extensions.autodetection.enabled", true)
     systemProperty("file.encoding", "UTF-8")
+    // The demo channel's file appender (logback-spring.xml) defaults to logs/mcp-calls.log — the file a screen
+    // recording tails. A test run against the stub MCP wrote its stub JSON there, in among the live lines.
+    systemProperty(
+        "DEMO_LOG_FILE",
+        layout.buildDirectory
+            .file("mcp-calls.log")
+            .get()
+            .asFile.path,
+    )
     finalizedBy(tasks.jacocoTestReport)
     // Gradle's default test-executor heap (512m) no longer covers this many Spring Boot / Testcontainers
     // integration tests in one JVM — the executor itself was dying with "Java heap space", not a real
