@@ -133,8 +133,16 @@ public class CartBuildingService {
             "каструл",
             "сковорід");
 
-    /** {@link #availableOnly}, minus the hits that are obviously not food for people — see the list above. */
-    private static List<JsonNode> plausibleFor(String requestedName, List<JsonNode> candidates) {
+    /**
+     * {@link #availableOnly}, minus the hits that are obviously not food for people (see the list above), minus
+     * the ones the branch cannot cover in the asked amount.
+     *
+     * <p>The stock rule is deterministic on purpose: the matcher was told to avoid short stock and still took
+     * «Банан» at 0.4 kg for a 1 kg line («хоча запасу мало»), and Silpo then refused the whole cart with
+     * {@code product.offer.stock.max}. A candidate that would be refused is not a candidate.
+     */
+    private static List<JsonNode> plausibleFor(ShoppingListItem item, List<JsonNode> candidates) {
+        String requestedName = item.getName();
         String asked = requestedName == null ? "" : requestedName.toLowerCase(Locale.ROOT);
         List<String> markers = NOT_GROCERIES_FOR_PEOPLE.stream()
                 .filter(marker -> !asked.contains(marker))
@@ -146,6 +154,16 @@ public class CartBuildingService {
                     .toLowerCase(Locale.ROOT);
             if (markers.stream().anyMatch(name::contains)) {
                 log.debug("dropping «{}» as a candidate for «{}»: not groceries for people", name, requestedName);
+                continue;
+            }
+            Optional<BigDecimal> stock = McpResponses.findNumber(candidate, McpResponses.STOCK);
+            if (stock.isPresent() && stock.get().compareTo(cartQuantity(item, candidate)) < 0) {
+                log.info(
+                        "dropping «{}» as a candidate for «{}»: {} in stock, the line needs {}",
+                        name,
+                        requestedName,
+                        stock.get().toPlainString(),
+                        cartQuantity(item, candidate).toPlainString());
                 continue;
             }
             kept.add(candidate);
@@ -841,8 +859,7 @@ public class CartBuildingService {
             List<ShoppingListItem> toMatch = chunk;
             List<List<JsonNode>> candidatesFor = toMatch.stream()
                     .map(item -> plausibleFor(
-                            item.getName(),
-                            productsByQuery.getOrDefault(item.getName().toLowerCase(Locale.ROOT), List.of())))
+                            item, productsByQuery.getOrDefault(item.getName().toLowerCase(Locale.ROOT), List.of())))
                     .toList();
             List<Integer> picked = productMatchingService.choose(
                     matchRequests(toMatch, candidatesFor, preferDiscounted, onlyUaProducer));
@@ -991,8 +1008,8 @@ public class CartBuildingService {
             ShoppingListItem item = stillMissing.get(entry.getKey());
             List<JsonNode> union = new ArrayList<>();
             for (String term : entry.getValue()) {
-                for (JsonNode product : plausibleFor(
-                        item.getName(), productsByQuery.getOrDefault(term.toLowerCase(Locale.ROOT), List.of()))) {
+                for (JsonNode product :
+                        plausibleFor(item, productsByQuery.getOrDefault(term.toLowerCase(Locale.ROOT), List.of()))) {
                     String id = McpResponses.findString(product, McpResponses.PRODUCT_ID)
                             .orElse(null);
                     boolean seen = union.stream()

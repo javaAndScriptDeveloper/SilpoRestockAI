@@ -593,6 +593,34 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
     }
 
     /**
+     * Live on 2026-09-08 the blackout kit died on Silpo's {@code product.offer.stock.max}: the search said 0.4 kg
+     * of bananas for a 1 kg line, the matcher took them anyway («хоча запасу мало»), and the whole cart was
+     * refused. A candidate the branch cannot cover in the asked amount never reaches the matcher; with no other
+     * candidate the line is honestly unresolved and the rest of the cart still builds.
+     */
+    @Test
+    void dropsACandidateWhoseStockCannotCoverTheAskedAmountInsteadOfLettingSilpoRefuseTheCart() {
+        UUID userId = connectedUser(8432L);
+        scriptCartTools();
+        MCP.respondToTool("silpo_find_products_batch", """
+                {"queries":[{"query":"банани","products":[\
+                {"name":"Банан","productId":"p-banana","companyId":"company-3","branchId":"branch-7",\
+                "weighted":true,"step":0.1,"stock":0.4}]},\
+                {"query":"вода","products":[\
+                {"name":"Вода мінеральна","productId":"p-water","companyId":"company-3","branchId":"branch-7",\
+                "step":1,"stock":30}]}]}""");
+        MCP.respondToTool("silpo_add_or_update_cart_products", "{\"ok\":true}");
+
+        CartSummary cart =
+                cartBuildingService.buildCart(userId, List.of(item("банани", "1", "кг"), item("вода", "2", "шт")));
+
+        JsonNode added = MCP.callArguments("silpo_add_or_update_cart_products").getFirst();
+        assertThat(added.path("products")).hasSize(1);
+        assertThat(added.path("products").get(0).path("productId").asText()).isEqualTo("p-water");
+        assertThat(cart.unresolved()).contains("банани");
+    }
+
+    /**
      * Silpo's home delivery starts at ₴799 (its own {@code order.cost.min}), and a dish's ingredients come to a
      * few hundred. The build comes back as it is — the goods total and the minimum on it, no checkout link, no
      * lines added unasked. Only {@code topUp} fills the shortfall from the household's confirmed baseline — real
