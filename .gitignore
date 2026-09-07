@@ -31,3 +31,6 @@ CLAUDE.md
 
 # Local OAuth spike artifacts (contains PKCE verifiers / auth codes)
 .spike/
+
+# Runtime logs the tunnel supervisor writes; *.log above already covers the rest.
+logs/*.out
