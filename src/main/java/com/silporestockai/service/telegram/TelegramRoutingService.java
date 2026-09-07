@@ -22,6 +22,7 @@ import com.silporestockai.service.ShoppingListBuilderService;
 import com.silporestockai.service.SpecialModeService;
 import com.silporestockai.service.UserAccountService;
 import com.silporestockai.service.onboarding.OnboardingFlowService;
+import java.util.Map;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -181,6 +182,10 @@ public class TelegramRoutingService {
             // A second /start — after a cleared chat, a reinstall, or the failure-recovery message's own advice to
             // type it — used to fall through to the classifier and get "Не зовсім зрозумів" for the one word
             // every Telegram user knows. It is also the one message guaranteed to bring the keyboard back.
+            // And it closes whatever question was open: live, /start typed mid mass-gain setup said «Я тут» and
+            // the next sentence was still answered «Не зрозумів число» — the flow the person was escaping from
+            // had kept the chat. /start is the way out; the failure-recovery message names it as such.
+            conversationStateService.save(incoming.chatId(), ConversationFlow.NONE, null, Map.of());
             telegramOutboundService.sendMessageWithMainMenu(
                     incoming.chatId(), "Я тут. Кнопки внизу — або просто напиши, що потрібно.");
             return;

@@ -397,6 +397,20 @@ class IntentRouterIntegrationTest extends AbstractIntegrationTest {
     }
 
     /**
+     * Live on 2026-09-08: /start typed in the middle of the mass-gain setup answered «Я тут», and the next sentence
+     * was still «Не зрозумів число» — the setup step kept the chat. /start is the escape hatch the failure-recovery
+     * message itself recommends, so it closes whatever question was open.
+     */
+    @Test
+    void startClosesWhateverFlowWasOpen() throws Exception {
+        conversationStateService.save(CHAT_ID, ConversationFlow.SPECIAL_MODE_SETUP, "ASK_PROTEIN", Map.of());
+
+        sendText(1, "/start");
+
+        assertThat(conversationStateService.load(CHAT_ID).getCurrentFlow()).isEqualTo(ConversationFlow.NONE);
+    }
+
+    /**
      * The state every household is actually in when they type something: a list is on screen with its
      * «Замовити / Змінити» keyboard under it, which parks {@code conversation_state} in
      * {@code LIST_BUILDING/AWAITING_APPROVAL} and never clears it. Nothing ever resolves that state on its own, so
