@@ -14,6 +14,7 @@ import com.silporestockai.service.DishRequestService;
 import com.silporestockai.service.FeedbackService;
 import com.silporestockai.service.IntentRouterService;
 import com.silporestockai.service.MealPlanHandoffService;
+import com.silporestockai.service.OrderHistoryService;
 import com.silporestockai.service.PastOrderSeedService;
 import com.silporestockai.service.ReorderConfirmationService;
 import com.silporestockai.service.ScheduledTaskManagementService;
@@ -55,6 +56,7 @@ public class TelegramRoutingService {
     private final CalendarIntegrationService calendarIntegrationService;
     private final BlackoutModeService blackoutModeService;
     private final ShoppingListBuilderService shoppingListBuilderService;
+    private final OrderHistoryService orderHistoryService;
     private final VoiceReplyService voiceReplyService;
     private final UserRepository userRepository;
     private final TelegramOutboundService telegramOutboundService;
@@ -191,6 +193,13 @@ public class TelegramRoutingService {
         if (incoming instanceof TelegramIncomingUpdate.Text list
                 && matches(list.text(), "/list", MainMenuKeyboard.LIST)) {
             shoppingListBuilderService.showCurrentOrAsk(user);
+            return;
+        }
+        // The fuller, management-view form of task 56's read (task 57): same service, same single history
+        // call, more of what it found — the button is how a person checks a state they keep coming back to.
+        if (incoming instanceof TelegramIncomingUpdate.Text orders
+                && matches(orders.text(), "/orders", MainMenuKeyboard.ORDERS)) {
+            orderHistoryService.showStatus(user, true);
             return;
         }
         if (incoming instanceof TelegramIncomingUpdate.Text form

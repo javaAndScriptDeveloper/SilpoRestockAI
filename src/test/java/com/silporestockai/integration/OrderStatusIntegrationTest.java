@@ -34,10 +34,10 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
- * «Де моє замовлення» (task 56): a read of the two read-only MCP history tools, answered from what Silpo
- * actually returned and from nothing else.
+ * «Де моє замовлення» (task 56) and the «📦 Замовлення» button (task 57): one read of the two read-only MCP
+ * history tools, answered from what Silpo actually returned and from nothing else.
  */
-@DisplayName("order status from the real Silpo history (task 56)")
+@DisplayName("order status from the real Silpo history (tasks 56 and 57)")
 class OrderStatusIntegrationTest extends AbstractIntegrationTest {
 
     private static final String BOT_TOKEN = "5656:stub-bot-token";
@@ -224,5 +224,33 @@ class OrderStatusIntegrationTest extends AbstractIntegrationTest {
 
         assertThat(lastMessageText()).contains("під'єднай акаунт");
         assertThat(MCP.calledTools()).doesNotContain("silpo_get_my_online_orders");
+    }
+
+    @Test
+    void theButtonAnswersTheSameFactsInMoreDetail() throws Exception {
+        MCP.respondToTool("silpo_get_my_online_orders", ONLINE_ORDERS);
+        MCP.respondToTool("silpo_get_my_offline_orders", "{\"orders\":[]}");
+
+        sendText(1, "📦 Замовлення");
+
+        String text = lastMessageText();
+        assertThat(text).contains("1234.56 грн").contains("Готується").contains("7 вересня, 10:00–12:00");
+        // The management view also lists what came before, with Silpo's own English status translated.
+        assertThat(text).contains("20 серп").contains("310.50 грн").contains("Доставлено");
+        // A button tap is navigation, not a sentence: nothing is sent to the classifier.
+        assertThat(CLAUDE.callCount()).isZero();
+        // One read of the history per interaction, not one per line shown.
+        assertThat(MCP.calledTools().stream().filter("silpo_get_my_online_orders"::equals))
+                .hasSize(1);
+    }
+
+    @Test
+    void theButtonSaysTheSameThingAsTheIntentWhenTheHistoryIsEmpty() throws Exception {
+        MCP.respondToTool("silpo_get_my_online_orders", "{\"orders\":[]}");
+        MCP.respondToTool("silpo_get_my_offline_orders", "{\"orders\":[]}");
+
+        sendText(1, "📦 Замовлення");
+
+        assertThat(lastMessageText()).contains("Не бачу замовлень");
     }
 }

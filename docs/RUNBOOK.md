@@ -538,6 +538,27 @@ curl -s -X POST -H "X-Metrics-Token: $METRICS_TOKEN" -H "Content-Type: applicati
 
 4. Pause it: `UPDATE partner_promotion SET status='PAUSED';` — the next cart resolves normally.
 
+### Tasks 56 and 57: verify «де моє замовлення» and the Замовлення button
+
+The account must be connected to Silpo; everything here is read-only, so nothing in the database changes.
+
+| Do | Expect |
+|---|---|
+| Type `де моє замовлення?` | One message: «Останнє замовлення: …» with the date, sum, and — only if Silpo sent them — a «Статус:» and a «Доставка:» line |
+| Type `коли приїде доставка?` and `що там із замовленням` | The same facts as above; the three phrasings must not diverge |
+| Tap «📦 Замовлення» | The same newest order plus «Раніше:» with the previous ones, and the note that the status is pulled on request |
+| Type `зроби список як минулого разу` | Still the past-order **picker** (task 35), not the status view — the two intents must not swallow each other |
+| Look at the keyboard | Three rows of two: Список/Замовлення, Заплановані/Анкета, Інструкція/Фідбек — no label truncated with «…» |
+| Tap «📦 Замовлення» on an account with no orders | «Не бачу замовлень в акаунті «Сільпо» — ні активних, ні минулих.» — never silence |
+
+```sql
+-- Nothing may have been written by any of the above.
+SELECT count(*) FROM conversation_state WHERE current_flow <> 'NONE';
+```
+
+In `logs/app.log` the whole interaction is two tool calls and no more:
+`grep -c 'silpo_get_my_online_orders' logs/app.log` grows by exactly one per request.
+
 ### Task 47: verify the Фідбек button
 
 | Do | Expect |

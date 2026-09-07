@@ -76,20 +76,22 @@ class TelegramOutboundServiceIntegrationTest extends AbstractIntegrationTest {
     void sendsThePersistentMainMenuKeyboard() {
         telegramOutboundService.sendMessageWithMainMenu(777L, "Записав. Готую перший план на тиждень.");
 
-        // Task 31 retired the button-per-feature menu in favour of chat-first free text; task 33 added one
-        // management-view button back. Two rows of two, so no label gets truncated on a phone — see
-        // MainMenuKeyboard's own javadoc.
+        // Task 31 retired the button-per-feature menu in favour of chat-first free text; tasks 33, 47 and 57
+        // added back the three things that are management views rather than requests. Never more than two per
+        // row, so no label gets truncated on a phone — see MainMenuKeyboard's own javadoc.
         var keyboard = STUB.sentMessages().getFirst().path("reply_markup").path("keyboard");
         assertThat(keyboard).hasSize(3);
         assertThat(keyboard.get(0)).hasSize(2);
         assertThat(keyboard.get(1)).hasSize(2);
-        assertThat(keyboard.get(2)).hasSize(1);
+        assertThat(keyboard.get(2)).hasSize(2);
         assertThat(keyboard.get(0).get(0).path("text").asText()).isEqualTo("📝 Список");
-        assertThat(keyboard.get(0).get(1).path("text").asText()).isEqualTo("🗓 Заплановані");
-        assertThat(keyboard.get(1).get(0).path("text").asText()).isEqualTo("🧾 Анкета");
-        assertThat(keyboard.get(1).get(1).path("text").asText()).isEqualTo("❓ Інструкція");
-        // Task 47: feedback on its own row — the one button that is not about groceries.
-        assertThat(keyboard.get(2).get(0).path("text").asText()).isEqualTo("💬 Фідбек");
+        // Task 57: order status is state a person re-checks, so it sits next to the list rather than in chat.
+        assertThat(keyboard.get(0).get(1).path("text").asText()).isEqualTo("📦 Замовлення");
+        assertThat(keyboard.get(1).get(0).path("text").asText()).isEqualTo("🗓 Заплановані");
+        assertThat(keyboard.get(1).get(1).path("text").asText()).isEqualTo("🧾 Анкета");
+        assertThat(keyboard.get(2).get(0).path("text").asText()).isEqualTo("❓ Інструкція");
+        // The two buttons that are about the bot rather than about groceries share the last row.
+        assertThat(keyboard.get(2).get(1).path("text").asText()).isEqualTo("💬 Фідбек");
         assertThat(STUB.sentMessages()
                         .getFirst()
                         .path("reply_markup")
