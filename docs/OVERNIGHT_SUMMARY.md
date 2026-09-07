@@ -583,3 +583,20 @@ notices it during a pitch.
 `MANAGEMENT_PORT` defaults to the app's own port so nothing changes locally; setting it to 8081 on the
 tunnelled demo box is what stops one public tunnel from handing GMV and household counts to whoever finds
 the URL — the concern `METRICS_TOKEN` already exists for.
+
+## Addendum, same evening: the dashboard went live in Grafana Cloud
+
+Token arrived, `make alloy-up` + `make dashboard`. Proof it is the hosted stack and not the local harness:
+Alloy reported **212 samples sent, 0 failed, 0 retried**; querying the stack's own Prometheus through the
+Grafana API returns **24 `komora_*` series** and `up{job="komora"} = 1`; and the dashboard's datasource
+variable bound itself to `grafanacloud-charmingaphid2632-prom` on load — which is exactly why it is a variable
+rather than a hardcoded uid.
+
+Live: <https://charmingaphid2632.grafana.net/d/komora-observability/komora-e28094-observability>
+
+Still ₴0.00 in GMV, honestly: no order has been confirmed *since* the money columns landed, and the panel
+next to it says «Замовлень без збереженої суми: 1». Three cart builds were attempted that evening and all
+three failed on the environment rather than the code — the branch answered «на складі лишилось 0» for nearly
+every line, and by 20:15 Kyiv there was also `timeslot.not_found`, no delivery slot left for the day. One
+confirmed order in daylight fills both money panels within 30 seconds, which is also the strongest shot in
+the demo (step 13.7).

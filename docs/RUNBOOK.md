@@ -906,6 +906,9 @@ line-for-line with the basket — that the write site is wired to the right fiel
 
 ### Push to Grafana Cloud
 
+**The live dashboard:**
+<https://charmingaphid2632.grafana.net/d/komora-observability/komora-e28094-observability>
+
 Fill the `GRAFANA_CLOUD_*` block in `.env` (see `.env.example` for where each value comes from), then:
 
 ```bash
