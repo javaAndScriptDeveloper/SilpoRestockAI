@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.silporestockai.client.mcp.McpToolResponse;
 import com.silporestockai.client.mcp.SilpoMcpClient;
 import com.silporestockai.entity.User;
-import com.silporestockai.model.CartContext;
 import com.silporestockai.model.OrderHistory;
 import com.silporestockai.model.PastOrderLine;
 import com.silporestockai.model.PastOrderSummary;
@@ -15,7 +14,6 @@ import java.math.RoundingMode;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -179,13 +177,7 @@ public class OrderHistoryService {
         if (!tool.contains("offline")) {
             return Map.of();
         }
-        CartContext context = cartBuildingService.getOrCreateCartContext(userId);
-        Map<String, Object> arguments = new LinkedHashMap<>();
-        arguments.put("branchId", context.branchId() == null ? "" : context.branchId());
-        arguments.put("deliveryType", context.deliveryType() == null ? "" : context.deliveryType());
-        arguments.put("timeslotStart", context.timeslotStart() == null ? "" : context.timeslotStart());
-        arguments.put("timeslotEnd", context.timeslotEnd() == null ? "" : context.timeslotEnd());
-        return arguments;
+        return cartBuildingService.getOrCreateCartContext(userId).catalogArguments();
     }
 
     static List<PastOrderSummary> parse(JsonNode root, String source) {

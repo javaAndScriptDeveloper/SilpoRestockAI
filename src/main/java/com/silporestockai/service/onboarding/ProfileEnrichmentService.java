@@ -4,6 +4,7 @@ import com.silporestockai.client.claude.ClaudeApiClient;
 import com.silporestockai.client.mcp.McpToolResponse;
 import com.silporestockai.client.mcp.SilpoMcpClient;
 import com.silporestockai.model.SilpoProfileSnapshot;
+import com.silporestockai.service.CartBuildingService;
 import com.silporestockai.service.SilpoAuthService;
 import java.util.ArrayList;
 import java.util.List;
@@ -25,12 +26,16 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class ProfileEnrichmentService {
 
+    /**
+     * Favorites are a catalog view, so the tool wants the branch / delivery type / time slot of the guest's cart
+     * (its schema marks all three required). Called with no arguments it answered «Invalid arguments» on every
+     * live onboarding — a yellow line in the demo console at the one moment the console is on camera.
+     */
+    private static final String TOOL_FAVORITES = "silpo_get_my_favorites";
+
     /** The tools named by task 06. Each is called independently so one refusal does not lose the rest. */
     private static final List<String> PROFILE_TOOLS = List.of(
-            "silpo_get_my_family",
-            "silpo_get_my_food_restrictions",
-            "silpo_get_my_online_orders",
-            "silpo_get_my_favorites");
+            "silpo_get_my_family", "silpo_get_my_food_restrictions", "silpo_get_my_online_orders", TOOL_FAVORITES);
 
     private static final String EXTRACTION_PROMPT = """
             Ти отримуєш сирі відповіді інструментів профілю «Сільпо» для одного клієнта.
@@ -43,6 +48,7 @@ public class ProfileEnrichmentService {
     private final SilpoAuthService silpoAuthService;
     private final SilpoMcpClient silpoMcpClient;
     private final ClaudeApiClient claudeApiClient;
+    private final CartBuildingService cartBuildingService;
 
     public SilpoProfileSnapshot enrich(UUID userId) {
         if (!silpoAuthService.isConnected(userId)) {
@@ -88,7 +94,11 @@ public class ProfileEnrichmentService {
         List<String> gathered = new ArrayList<>();
         for (String tool : PROFILE_TOOLS) {
             try {
-                McpToolResponse response = silpoMcpClient.callTool(tool, Map.of(), userId);
+                Map<String, Object> arguments = TOOL_FAVORITES.equals(tool) ? favoritesArguments(userId) : Map.of();
+                if (arguments == null) {
+                    continue;
+                }
+                McpToolResponse response = silpoMcpClient.callTool(tool, arguments, userId);
                 if (response.isError()
                         || response.text() == null
                         || response.text().isBlank()) {
@@ -101,5 +111,19 @@ public class ProfileEnrichmentService {
             }
         }
         return gathered;
+    }
+
+    /**
+     * The cart context behind the favorites call, or null when this guest has no cart to scope it by (no saved
+     * delivery address yet, Silpo down) — in which case the tool is skipped rather than called with arguments it
+     * would refuse. Nothing here may throw: enrichment has one fallback path, the empty snapshot.
+     */
+    private Map<String, Object> favoritesArguments(UUID userId) {
+        try {
+            return cartBuildingService.getOrCreateCartContext(userId).catalogArguments();
+        } catch (RuntimeException e) {
+            log.info("no cart context for user {}; skipping {}: {}", userId, TOOL_FAVORITES, e.getMessage());
+            return null;
+        }
     }
 }

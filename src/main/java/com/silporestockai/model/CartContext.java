@@ -1,5 +1,8 @@
 package com.silporestockai.model;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 /**
  * What the Silpo cart tools say about a guest's current cart, and everything later calls in the sequence need.
  *
@@ -16,4 +19,20 @@ public record CartContext(
         String companyId,
         String deliveryType,
         String timeslotStart,
-        String timeslotEnd) {}
+        String timeslotEnd) {
+
+    /**
+     * The branch / delivery-type / time-slot triple that every catalog-scoped Silpo tool wants
+     * ({@code silpo_get_my_favorites}, {@code silpo_get_my_offline_orders}, the product searches). Their schemas
+     * mark all three required, so a missing value goes out as an empty string rather than being dropped — the
+     * tool then refuses that one argument by name instead of the whole call being «Invalid arguments».
+     */
+    public Map<String, Object> catalogArguments() {
+        Map<String, Object> arguments = new LinkedHashMap<>();
+        arguments.put("branchId", branchId == null ? "" : branchId);
+        arguments.put("deliveryType", deliveryType == null ? "" : deliveryType);
+        arguments.put("timeslotStart", timeslotStart == null ? "" : timeslotStart);
+        arguments.put("timeslotEnd", timeslotEnd == null ? "" : timeslotEnd);
+        return arguments;
+    }
+}

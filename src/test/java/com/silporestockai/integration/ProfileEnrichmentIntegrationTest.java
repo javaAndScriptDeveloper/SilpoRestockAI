@@ -51,7 +51,9 @@ class ProfileEnrichmentIntegrationTest extends AbstractIntegrationTest {
                     "silpo_get_my_family",
                     "silpo_get_my_food_restrictions",
                     "silpo_get_my_online_orders",
-                    "silpo_get_my_favorites"));
+                    "silpo_get_my_favorites",
+                    "silpo_get_my_shopping_cart",
+                    "silpo_get_shopping_cart_by_id"));
         } catch (IOException e) {
             throw new IllegalStateException("could not start the MCP stub", e);
         }
@@ -84,6 +86,12 @@ class ProfileEnrichmentIntegrationTest extends AbstractIntegrationTest {
         CLAUDE.reset();
         tokenRepository.deleteAll();
         userRepository.deleteAll();
+        // The favorites tool is scoped by the guest's cart (branch / delivery type / slot), so a cart exists by
+        // default.
+        MCP.respondToTool("silpo_get_my_shopping_cart", "{\"cartId\":\"cart-s\"}");
+        MCP.respondToTool("silpo_get_shopping_cart_by_id", """
+                {"cartId":"cart-s","branchId":"branch-7","companyId":"company-3","deliveryType":"DeliveryHome",\
+                "timeslot":{"start":"2026-09-07T06:00:00+00:00","end":"2026-09-07T07:30:00+00:00"},"items":[]}""");
     }
 
     /** isConnected reads the database, so a connected guest is simulated by inserting a token row. */
@@ -120,7 +128,19 @@ class ProfileEnrichmentIntegrationTest extends AbstractIntegrationTest {
 
         SilpoProfileSnapshot snapshot = profileEnrichmentService.enrich(userId);
 
-        assertThat(MCP.callCount("tools/call")).isEqualTo(4);
+        // Four profile tools plus the two cart calls that scope the favorites lookup.
+        assertThat(MCP.callCount("tools/call")).isEqualTo(6);
+        assertThat(MCP.calledTools()).contains("silpo_get_my_favorites");
+        assertThat(MCP.callArguments("silpo_get_my_favorites")
+                        .getFirst()
+                        .path("branchId")
+                        .asText())
+                .isEqualTo("branch-7");
+        assertThat(MCP.callArguments("silpo_get_my_favorites")
+                        .getFirst()
+                        .path("deliveryType")
+                        .asText())
+                .isEqualTo("DeliveryHome");
         assertThat(snapshot.householdSize()).isEqualTo(4);
         assertThat(snapshot.hasKids()).isTrue();
         assertThat(snapshot.kidsAges()).containsExactly(3, 7);
@@ -139,6 +159,26 @@ class ProfileEnrichmentIntegrationTest extends AbstractIntegrationTest {
         SilpoProfileSnapshot snapshot = profileEnrichmentService.enrich(userId);
 
         assertThat(snapshot.householdSize()).isEqualTo(2);
+        assertThat(CLAUDE.callCount()).isEqualTo(1);
+    }
+
+    /**
+     * Favorites are a catalog view and the tool refuses a call without the cart's branch / delivery type / slot
+     * («Invalid arguments» on every live onboarding before this). A guest with no cart yet — no saved delivery
+     * address — gets the tool skipped, not called with arguments Silpo would refuse, and the rest still reaches
+     * Claude.
+     */
+    @Test
+    void skipsFavoritesWhenThereIsNoCartToScopeThemByAndKeepsTheRest() {
+        UUID userId = connectedUser(7207L);
+        MCP.failTool("silpo_get_my_shopping_cart");
+        CLAUDE.respondWithText("{\"householdSize\":3}");
+
+        SilpoProfileSnapshot snapshot = profileEnrichmentService.enrich(userId);
+
+        assertThat(MCP.calledTools()).doesNotContain("silpo_get_my_favorites");
+        assertThat(MCP.calledTools()).contains("silpo_get_my_family", "silpo_get_my_online_orders");
+        assertThat(snapshot.householdSize()).isEqualTo(3);
         assertThat(CLAUDE.callCount()).isEqualTo(1);
     }
 
