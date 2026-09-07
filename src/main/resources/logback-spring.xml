@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Task 58. The only reason this file exists: the demo channel (com.silporestockai.client.AgentCallLog) needs
+  appenders of its own. Everything else — the root logger, the console pattern, every `logging.level.*` in
+  application.yml — stays exactly as Spring Boot configures it, which is what the two includes below bring in.
+  Take them out and Boot's own defaults (colour converters, `logging.pattern.console`, the whole property
+  bridge) disappear with them.
+
+  Console lines are coloured through Boot's %clr converter, which maps the level: INFO green for a call that
+  worked, WARN yellow for one that did not. The file deliberately gets the same text with no escape byte in it,
+  so `tail -f logs/mcp-calls.log`, grep, and task 55's parser all see plain lines.
+-->
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+    <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+
+    <appender name="DEMO_CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%clr(%d{HH:mm:ss}){faint} %clr(%m)%n</pattern>
+        </encoder>
+    </appender>
+
+    <appender name="DEMO_FILE" class="ch.qos.logback.core.FileAppender">
+        <file>${DEMO_LOG_FILE:-logs/mcp-calls.log}</file>
+        <append>true</append>
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} %m%n</pattern>
+        </encoder>
+    </appender>
+
+    <logger name="com.silporestockai.client.AgentCallLog" level="INFO" additivity="false">
+        <appender-ref ref="DEMO_CONSOLE"/>
+        <appender-ref ref="DEMO_FILE"/>
+    </logger>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+</configuration>
