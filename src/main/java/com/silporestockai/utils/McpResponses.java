@@ -85,9 +85,18 @@ public final class McpResponses {
      * own wording. The slot is looked up separately from {@link #ORDER_DATE} on purpose: somebody asking
      * «коли приїде» must not be answered with when they ordered.
      */
-    public static final String[] ORDER_STATUS = {"status", "orderStatus", "state", "statusName"};
+    public static final String[] ORDER_STATUS = {
+        "statusText", "statusName", "statusTitle", "status", "orderStatus", "state"
+    };
 
-    public static final String[] DELIVERY_SLOT = {"deliveryTime", "deliveryTimeslot", "timeslot", "timeSlot"};
+    /**
+     * The delivery moment lives under a nested object in the live tool: {@code silpo_get_my_online_orders}
+     * documents {@code delivery.deliveredAt} (UTC, explicit offset) next to the order's own {@code createdAt}.
+     */
+    public static final String[] DELIVERY_SLOT = {"delivery", "deliveryTime", "deliveryTimeslot", "timeslot", "timeSlot"
+    };
+
+    public static final String[] DELIVERY_AT = {"deliveredAt", "from", "start", "startTime", "plannedAt", "dateTime"};
 
     public static final String[] ORDER_ID = {"orderId", "orderNumber", "number", "id"};
     public static final String[] ORDER_DATE = {

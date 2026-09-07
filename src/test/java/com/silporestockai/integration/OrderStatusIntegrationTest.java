@@ -253,4 +253,26 @@ class OrderStatusIntegrationTest extends AbstractIntegrationTest {
 
         assertThat(lastMessageText()).contains("Не бачу замовлень");
     }
+
+    /**
+     * The shape the live tool documents: {@code createdAt} for the order and {@code delivery.deliveredAt} for
+     * the delivery, both UTC — and a status that came back as a bare code, which says nothing to a person.
+     */
+    @Test
+    void readsTheShapeTheLiveToolDocumentsAndHidesABareStatusCode() throws Exception {
+        CLAUDE.respondWithText(CLASSIFIED);
+        MCP.respondToTool("silpo_get_my_online_orders", """
+                {"success":true,"orders":[{"orderId":"B-1","createdAt":"2026-09-06T15:00:00+00:00","total":540.0,
+                 "status":7,"delivery":{"deliveredAt":"2026-09-07T09:00:00+00:00"},
+                 "items":[{"productId":"p-tea","name":"Чай чорний","quantity":1,"unit":"шт","price":95.00}]}]}""");
+        MCP.respondToTool("silpo_get_my_offline_orders", "{\"orders\":[]}");
+
+        sendText(1, "де моє замовлення?");
+
+        String text = lastMessageText();
+        // 09:00 UTC is noon in Kyiv, and noon is the answer the person needs.
+        assertThat(text).contains("540.00 грн").contains("Доставка: 7 вересня, 12:00");
+        // A status of "7" is Silpo's internal code, not an answer — better silent than meaningless.
+        assertThat(text).doesNotContain("Статус");
+    }
 }

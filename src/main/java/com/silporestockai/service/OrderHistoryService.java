@@ -93,7 +93,7 @@ public class OrderHistoryService {
             message.append("Останнє замовлення: ");
         }
         message.append(label(newest));
-        if (newest.status() != null && !newest.status().isBlank()) {
+        if (showable(newest.status())) {
             message.append("\nСтатус: ").append(humanStatus(newest.status()));
         }
         if (newest.deliveryLabel() != null && !newest.deliveryLabel().isBlank()) {
@@ -106,7 +106,7 @@ public class OrderHistoryService {
             message.append("\n\nРаніше:");
             for (PastOrderSummary order : orders.subList(1, orders.size())) {
                 message.append("\n• ").append(label(order));
-                if (order.status() != null && !order.status().isBlank()) {
+                if (showable(order.status())) {
                     message.append(" — ").append(humanStatus(order.status()));
                 }
             }
@@ -115,6 +115,11 @@ public class OrderHistoryService {
         // no webhook, so this is a pull on request. Promising notifications we cannot send would be worse.
         message.append("\n\nСтатус тягну з «Сільпо» на запит — сповіщення про зміну не приходять.");
         return message.toString();
+    }
+
+    /** Whether a status is worth showing at all: a bare status code says nothing to the person reading it. */
+    private static boolean showable(String status) {
+        return status != null && !status.isBlank() && !status.strip().chars().allMatch(Character::isDigit);
     }
 
     /**
@@ -230,7 +235,7 @@ public class OrderHistoryService {
         }
         OffsetDateTime from = slot.isValueNode()
                 ? parseMoment(slot.asText())
-                : McpResponses.findString(slot, McpResponses.SLOT_START)
+                : McpResponses.findString(slot, McpResponses.DELIVERY_AT)
                         .map(OrderHistoryService::parseMoment)
                         .orElse(null);
         OffsetDateTime to = slot.isValueNode()
@@ -243,11 +248,17 @@ public class OrderHistoryService {
             String raw = slot.isValueNode() ? slot.asText() : null;
             return raw == null || raw.isBlank() ? null : raw;
         }
-        String day = DAY_LABEL.format(from);
-        String start = TIME_LABEL.format(from);
-        return to == null ? day + ", " + start : day + ", " + start + "–" + TIME_LABEL.format(to);
+        // The tool documents its timestamps as UTC and says to convert before displaying: a delivery at
+        // 09:00+00:00 is noon in Kyiv, and showing 09:00 would be a wrong answer to "коли приїде".
+        java.time.ZonedDateTime localFrom = from.atZoneSameInstant(KYIV);
+        String day = DAY_LABEL.format(localFrom);
+        String start = TIME_LABEL.format(localFrom);
+        return to == null
+                ? day + ", " + start
+                : day + ", " + start + "–" + TIME_LABEL.format(to.atZoneSameInstant(KYIV));
     }
 
+    private static final java.time.ZoneId KYIV = java.time.ZoneId.of("Europe/Kyiv");
     private static final DateTimeFormatter DAY_LABEL = DateTimeFormatter.ofPattern("d MMMM", new Locale("uk"));
     private static final DateTimeFormatter TIME_LABEL = DateTimeFormatter.ofPattern("HH:mm");
 
