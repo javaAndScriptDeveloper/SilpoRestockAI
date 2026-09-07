@@ -66,6 +66,9 @@ public class CheckinFlowService {
         // written back over it afterwards would leave that flow's buttons dead.
         conversationStateService.save(chatId, ConversationFlow.NONE, null, Map.of());
         if (intentRouterService.tryRoute(user, text)) {
+            // The parser already stored the sentence as an unanswered check-in. It was never one: leaving the row
+            // counts a hangover order as a check-in reply in the pitch metrics and as a cycle in the trend.
+            checkinParsingService.discardNotAnAnswer(user.getId(), text);
             log.info("check-in for user {} stepped aside for a request typed over it", user.getId());
             return true;
         }

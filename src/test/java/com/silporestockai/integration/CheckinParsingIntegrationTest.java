@@ -306,6 +306,24 @@ class CheckinParsingIntegrationTest extends AbstractIntegrationTest {
         assertThat(conversationStateService.load(CHAT_ID).getCurrentFlow()).isEqualTo(ConversationFlow.LIST_BUILDING);
     }
 
+    /**
+     * Live on 2026-09-08 the hangover request typed over a prompt was carried out — and also stored as a check-in
+     * with no delta, which made the pitch metrics report «2 відповідей на 2 запитів» for one real answer. A request
+     * is not an answer, so the row the parser wrote before the router saw the sentence must go.
+     */
+    @Test
+    void aRequestTypedOverAnOpenCheckinLeavesNoCheckinRowBehind() throws Exception {
+        User user = awaitingCheckin();
+        CLAUDE.respondWithTexts(
+                delta("", "", ""),
+                "{\"intent\":\"LIST_VIEW\",\"confidence\":0.95,\"themeDescription\":null,\"targetDateTimeIso\":null}");
+
+        sendText(1, "покажи список");
+
+        assertThat(checkinRepository.findByUserIdOrderByReceivedAtDesc(user.getId()))
+                .isEmpty();
+    }
+
     private static final String UNKNOWN_INTENT =
             "{\"intent\":\"UNKNOWN\",\"confidence\":0.2,\"themeDescription\":null,\"targetDateTimeIso\":null}";
 

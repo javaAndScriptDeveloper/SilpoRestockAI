@@ -202,6 +202,19 @@ public class CheckinParsingService {
                 && delta.goneCompletely().isEmpty();
     }
 
+    /**
+     * Removes the row {@link #parseText} just stored for a sentence that turned out to be a request, not an answer.
+     *
+     * <p>Only the newest row, only when it holds exactly this text and no delta: a genuine answer that happened to
+     * arrive a moment earlier stays. Nothing in the trend needs undoing — an unparsed row moved no counter.
+     */
+    public void discardNotAnAnswer(UUID userId, String rawText) {
+        checkinRepository
+                .findFirstByUserIdOrderByReceivedAtDesc(userId)
+                .filter(checkin -> checkin.getParsedDelta() == null && rawText.equals(checkin.getRawInputText()))
+                .ifPresent(checkinRepository::delete);
+    }
+
     private static CheckinDelta empty() {
         return new CheckinDelta(List.of(), List.of(), List.of());
     }
