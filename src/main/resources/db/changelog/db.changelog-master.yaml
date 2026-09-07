@@ -1,3 +1,7 @@
 databaseChangeLog:
   - includeAll:
       path: db/changelog/changes
+      # Without this, includeAll hands every file in the directory to a parser — including .gitkeep and the
+      # per-package CLAUDE.md — and each one costs a full UnknownChangelogFormatException stack trace at every
+      # startup. Harmless, but it is the first thing on screen when the console is being recorded (task 58).
+      endsWithFilter: .yaml

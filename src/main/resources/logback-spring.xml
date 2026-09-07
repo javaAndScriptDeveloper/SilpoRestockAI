@@ -16,7 +16,9 @@
 
     <appender name="DEMO_CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
-            <pattern>%clr(%d{HH:mm:ss}){faint} %clr(%m)%n</pattern>
+            <!-- The empty `{}` is load-bearing: a %clr(...) with no options block swallows the token after it, and
+                 the line ends with a literal "%n" on the console. Boot's own default pattern writes it the same way. -->
+            <pattern>%clr(%d{HH:mm:ss}){faint} %clr(%m){}%n</pattern>
         </encoder>
     </appender>
 

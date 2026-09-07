@@ -8,6 +8,7 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.silporestockai.client.AgentCallLog;
 import com.silporestockai.entity.ShoppingListItem;
 import com.silporestockai.entity.SilpoOAuthToken;
 import com.silporestockai.entity.User;
@@ -884,6 +885,11 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
         assertThat(MCP.calledTools()).doesNotContain("silpo_add_or_update_cart_products");
     }
 
+    /**
+     * Task 09's guarantee, on task 58's channel: the same promise — every tool call is on screen at INFO without a
+     * grep — but the lines now come from {@link AgentCallLog} rather than from this service's own logger, which is
+     * what makes them one summarised line each instead of an argument dump.
+     */
     @Test
     void logsEveryToolCallAtInfoSoADemoCanBeRecorded() {
         UUID userId = connectedUser(8409L);
@@ -891,7 +897,7 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
         scriptProductTools();
         scriptVerifiedCart();
 
-        Logger logger = (Logger) LoggerFactory.getLogger(CartBuildingService.class);
+        Logger logger = (Logger) LoggerFactory.getLogger(AgentCallLog.class);
         ListAppender<ILoggingEvent> appender = new ListAppender<>();
         appender.start();
         logger.addAppender(appender);

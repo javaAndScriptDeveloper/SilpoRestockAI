@@ -2,8 +2,10 @@ package com.silporestockai.client;
 
 import com.silporestockai.utils.SecretRedactor;
 import java.util.Collection;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
+import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -30,7 +32,19 @@ public final class AgentCallLog {
     private static final int MAX_SCALAR = 24;
     private static final int MAX_RESULT = 44;
 
+    /**
+     * A hard ceiling on the arguments column. Live calls carry as many as five arguments — an offline-orders read
+     * sends a branch id, a delivery type and both ends of a slot — and spelling all of them out pushed the duration
+     * and the status off a 120-column terminal, which is the one thing this format exists to prevent. What does not
+     * fit becomes «+N more»: the first arguments are the ones that say what the call was about.
+     */
+    private static final int ARGS_MAX = 46;
+
     private static final String LINE = "%s %-" + TOOL_WIDTH + "s %-" + ARGS_WIDTH + "s %7s  %s";
+
+    /** A cart or order id is 36 characters of nothing anyone can read off a screen; its first block identifies it. */
+    private static final Pattern UUID_ARGUMENT = Pattern.compile(
+            "^([0-9a-f]{8})-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", Pattern.CASE_INSENSITIVE);
 
     private AgentCallLog() {}
 
@@ -78,11 +92,33 @@ public final class AgentCallLog {
         if (arguments == null || arguments.isEmpty()) {
             return "";
         }
-        return arguments.entrySet().stream()
+        // Collections first, then scalars, alphabetically inside each group. Live, this is the difference between
+        // «branchId=1edddb40… deliveryType=DeliveryHome +3 more» and «queries=16 items +3 more» for the same call:
+        // what the agent asked for is the interesting half, and the branch id it asks every tool for is not.
+        List<String> pairs = arguments.entrySet().stream()
                 .filter(entry -> entry.getValue() != null)
-                .sorted(Map.Entry.comparingByKey())
+                .sorted(Comparator.comparing((Map.Entry<String, Object> entry) -> isPlural(entry.getValue()) ? 0 : 1)
+                        .thenComparing(Map.Entry::getKey))
                 .map(entry -> entry.getKey() + "=" + summarizeValue(entry.getValue()))
-                .collect(Collectors.joining(" "));
+                .toList();
+
+        StringBuilder shown = new StringBuilder();
+        int dropped = 0;
+        for (String pair : pairs) {
+            if (dropped > 0 || shown.length() + pair.length() + 1 > ARGS_MAX) {
+                dropped++;
+                continue;
+            }
+            if (!shown.isEmpty()) {
+                shown.append(' ');
+            }
+            shown.append(pair);
+        }
+        if (dropped > 0) {
+            // Never silently: an argument that is not on the line has to be visibly missing, or the line lies.
+            shown.append(shown.isEmpty() ? "" : " ").append("+").append(dropped).append(" more");
+        }
+        return shown.toString();
     }
 
     /**
@@ -97,29 +133,36 @@ public final class AgentCallLog {
         if (structuredContent instanceof Map<?, ?> map && !map.isEmpty()) {
             for (Object value : map.values()) {
                 if (value instanceof Collection<?> collection) {
-                    return collection.size() + " items";
+                    return count(collection.size(), "item");
                 }
             }
-            return map.size() + " fields";
+            return count(map.size(), "field");
         }
         if (structuredContent instanceof Collection<?> collection) {
-            return collection.size() + " items";
+            return count(collection.size(), "item");
         }
         String flat = clean(text, MAX_RESULT);
         return flat.isEmpty() ? "ok" : flat;
     }
 
+    /** True for the arguments worth leading with: the ones that carry how much the agent asked for. */
+    private static boolean isPlural(Object value) {
+        return value instanceof Collection<?> || value instanceof Map<?, ?> || value instanceof Object[];
+    }
+
     private static String summarizeValue(Object value) {
         if (value instanceof Collection<?> collection) {
-            return collection.size() + " items";
+            return count(collection.size(), "item");
         }
         if (value instanceof Map<?, ?> map) {
-            return map.size() + " fields";
+            return count(map.size(), "field");
         }
         if (value instanceof Object[] array) {
-            return array.length + " items";
+            return count(array.length, "item");
         }
-        return clean(String.valueOf(value), MAX_SCALAR);
+        String scalar = String.valueOf(value);
+        var uuid = UUID_ARGUMENT.matcher(scalar);
+        return uuid.matches() ? uuid.group(1) + "…" : clean(scalar, MAX_SCALAR);
     }
 
     /** Redacts, flattens to one line and caps — in that order, so a secret cannot survive by being long. */
@@ -129,6 +172,12 @@ public final class AgentCallLog {
         }
         String flat = SecretRedactor.redact(text).replaceAll("\\s+", " ").trim();
         return flat.length() <= maxLength ? flat : flat.substring(0, maxLength - 1) + "…";
+    }
+
+    /** «1 item», not «1 items» — the line is read by people, and a plural that is wrong is the kind of thing a
+     * viewer's eye catches instead of the tool name. */
+    private static String count(int size, String noun) {
+        return size + " " + noun + (size == 1 ? "" : "s");
     }
 
     private static String duration(long millis) {

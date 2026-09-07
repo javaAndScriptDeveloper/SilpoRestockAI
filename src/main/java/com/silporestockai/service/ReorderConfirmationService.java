@@ -456,7 +456,10 @@ public class ReorderConfirmationService {
 
     /** True when the tool answered without an error. Both calls here are best effort by design. */
     private boolean call(UUID userId, String tool, Map<String, Object> arguments) {
-        log.info("MCP -> {} {}", tool, arguments);
+        // Task 58: DEBUG, not INFO — client.AgentCallLog now prints this call as one summarised, redacted
+        // line on the demo channel. This one dumps the whole argument map, which is what you want when
+        // debugging a shape mismatch and exactly what you do not want on a screen recording.
+        log.debug("MCP -> {} {}", tool, arguments);
         try {
             McpToolResponse response = silpoMcpClient.callTool(tool, arguments, userId);
             if (response.isError()) {

@@ -956,6 +956,50 @@ a screenshot from here.
 
 ---
 
+## 17. The demo console: what the recording shows (task 58)
+
+Step 6 of the demo script puts the console next to the chat, and that console is the whole proof of
+agency. It has its own profile and its own log channel now.
+
+```bash
+: > logs/mcp-calls.log   # append-only; truncate before a take
+make demo                # the window that goes on camera
+make mcp-log             # optional second window: tail -f logs/mcp-calls.log
+```
+
+`make demo` is `make run` with `SPRING_PROFILES_ACTIVE=demo`: root at WARN, the application's own lines
+dimmed to `23:10:46 registered the Telegram webhook…`, ANSI forced on (Boot would switch colour off
+behind `tee`). Startup is seven faint lines; everything bright after that is the agent working.
+
+**What a good line looks like** — one call, one line, colour by outcome:
+
+```
+23:11:46 🔗 Silpo MCP session opened — 40 tools available
+23:11:46 🔧 silpo_find_products_batch          queries=16 items                  1.2s  ✅ 14 items
+23:11:47 🔧 silpo_add_or_update_cart_products  products=23 items                 0.8s  ✅ 3 fields
+23:11:48 🔧 silpo_get_my_offline_orders        branchId=1edddb40… +3 more      332ms  ✅ 0 items
+23:11:50 🧠 completeStructured                 claude-sonnet-5                  31.4s  ✅
+```
+
+Green is a call that worked, yellow one that did not (INFO vs WARN, coloured by `%clr` in
+`logback-spring.xml`). 🧠 lines are Claude, on the same channel on purpose: on camera the agent thinks,
+then acts, and both halves are visible.
+
+### Check it before a take
+
+| Do this | Expect |
+|---|---|
+| `make demo`, then watch startup | Seven dim lines, no stack trace. A Liquibase `UnknownChangelogFormatException` means the `endsWithFilter` in `db.changelog-master.yaml` was lost |
+| Send anything that touches Silpo | One 🔧 line per call — never a JSON dump, never a wrapped line at 120 columns |
+| `grep -Ei 'bearer\|access_token\|refresh_token\|eyJ' logs/mcp-calls.log` | No hits. Arguments and results both go through `SecretRedactor`; a hit is a task 02 regression, not a cosmetic one |
+| `wc -L logs/mcp-calls.log` | Under ~120. Arguments past that budget collapse into «+N more» rather than pushing the status off screen |
+| Pull the network mid-call | A yellow ❌ line with the reason («rate limited», a transport message) — failures get a line too, deliberately |
+
+`logs/mcp-calls.log` holds the same text with no escape bytes, so it stays greppable — that is the file
+task 55 parses for the unique-tool list instead of collecting the same data twice.
+
+---
+
 ## Cleanup
 
 ### Start completely from scratch

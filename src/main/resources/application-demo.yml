@@ -1,0 +1,25 @@
+# Task 58. The recording profile: everything that is not the agent acting gets out of the way.
+#
+# The default profiles run com.silporestockai at DEBUG, which prints up to 2000 characters of every MCP response —
+# right when debugging, unreadable on camera. Here the ordinary application log is dimmed to a short faint one-liner
+# and the demo channel (client.AgentCallLog, see logback-spring.xml) is the only bright thing on the screen.
+#
+# Activate with `make demo`, or SPRING_PROFILES_ACTIVE=demo on top of any other profile — this file changes nothing
+# but logging, so it composes with dev/prod rather than replacing them.
+spring:
+  output:
+    ansi:
+      # `make demo` pipes stdout through tee, so Boot's DETECT would turn colour off exactly when it is wanted.
+      enabled: always
+
+logging:
+  level:
+    root: WARN
+    # Kept at INFO rather than WARN: the application's own milestones (an order confirmed, a session opened) are worth
+    # one faint line each on the recording — they are the context the 🔧 lines act on.
+    com.silporestockai: INFO
+    # The channel the console recording is actually about.
+    com.silporestockai.client.AgentCallLog: INFO
+  pattern:
+    # No thread, no pid, no class name: on camera those three columns push the message off the right-hand side.
+    console: "%clr(%d{HH:mm:ss}){faint} %clr(%m){faint}%n"

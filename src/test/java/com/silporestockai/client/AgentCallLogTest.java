@@ -87,6 +87,64 @@ class AgentCallLogTest {
     }
 
     @Test
+    void anIdIsShortenedToItsFirstBlockSoItDoesNotEatTheLine() {
+        AgentCallLog.mcpCall(
+                "silpo_get_shopping_cart_by_id",
+                Map.of("shoppingCartId", "87c8e168-65cc-495b-90d5-4b2f1c9a77e3"),
+                "3 fields",
+                567,
+                true);
+
+        String line = onlyLine();
+        assertThat(line).contains("shoppingCartId=87c8e168…");
+        assertThat(line).doesNotContain("4b2f1c9a77e3");
+    }
+
+    @Test
+    void aCallWithManyArgumentsStaysInsideOneTerminalWidth() {
+        AgentCallLog.mcpCall(
+                "silpo_get_my_offline_orders",
+                new java.util.TreeMap<>(Map.of(
+                        "branchId", "1edddb40-e664-609c-a1a7-3e9c11b0f1aa",
+                        "deliveryType", "DeliveryHome",
+                        "timeslotStart", "2026-09-08T06:00:00+00:00",
+                        "timeslotEnd", "2026-09-08T07:30:00+00:00")),
+                "0 items",
+                332,
+                true);
+
+        String line = onlyLine();
+        assertThat(line).contains("branchId=1edddb40…");
+        assertThat(line).contains("more");
+        assertThat(line.length()).isLessThan(120);
+    }
+
+    @Test
+    void whatTheAgentAskedForLeadsTheLineAndTheBranchIdIsWhatGetsDropped() {
+        AgentCallLog.mcpCall(
+                "silpo_find_products_batch",
+                new java.util.TreeMap<>(Map.of(
+                        "branchId", "1edddb40-e664-609c-a1a7-3e9c11b0f1aa",
+                        "deliveryType", "DeliveryHome",
+                        "timeslotStart", "2026-09-08T06:00:00+00:00",
+                        "queries", List.of("вода", "сік", "хліб"))),
+                "11 items",
+                947,
+                true);
+
+        String line = onlyLine();
+        assertThat(line).contains("queries=3 items");
+        assertThat(line.indexOf("queries")).isLessThan(line.indexOf("branchId"));
+    }
+
+    @Test
+    void oneOfSomethingIsNotOneItems() {
+        AgentCallLog.mcpCall("silpo_get_time_slots", Map.of("deliveryTypes", List.of("DeliveryHome")), "ok", 214, true);
+
+        assertThat(onlyLine()).contains("deliveryTypes=1 item ");
+    }
+
+    @Test
     void aLongScalarArgumentIsTruncated() {
         String essay = "я".repeat(300);
 

@@ -118,7 +118,10 @@ public class ReadyMealCatalogService {
     }
 
     private JsonNode call(UUID userId, String tool, Map<String, Object> arguments) {
-        log.info("MCP -> {} {}", tool, arguments);
+        // Task 58: DEBUG, not INFO — client.AgentCallLog now prints this call as one summarised, redacted
+        // line on the demo channel. This one dumps the whole argument map, which is what you want when
+        // debugging a shape mismatch and exactly what you do not want on a screen recording.
+        log.debug("MCP -> {} {}", tool, arguments);
         McpToolResponse response = silpoMcpClient.callTool(tool, arguments, userId);
         if (response.isError()) {
             throw new CartBuildException("Silpo tool %s reported an error".formatted(tool));

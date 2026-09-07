@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help run dev test build format check db-up db-down up down image clean metrics promotions \
+.PHONY: help run dev demo mcp-log test build format check db-up db-down up down image clean metrics promotions \
 	alloy-up alloy-down alloy-logs dashboard observability-local-up observability-local-down
 
 # Prefer .env if present, otherwise fall back to the committed example.
@@ -14,6 +14,15 @@ run: ## Run the app (auto-starts docker-compose DB), full log at logs/app.log
 
 dev: ## Run with a throwaway Testcontainers DB (no docker-compose needed)
 	set -a; . ./$(ENV_FILE); set +a; ./gradlew bootTestRun
+
+demo: ## Run in recording mode: quiet app log, colour-coded MCP/Claude lines (profile `demo`)
+	@mkdir -p logs
+	set -a; . ./$(ENV_FILE); set +a; SPRING_PROFILES_ACTIVE=demo ./gradlew bootRun 2>&1 | tee logs/app.log
+
+mcp-log: ## tail -f the demo call log — the second window during a screen recording
+	@mkdir -p logs
+	@touch logs/mcp-calls.log
+	@tail -f logs/mcp-calls.log
 
 test: ## Run unit + integration tests (needs Docker for Testcontainers)
 	./gradlew test
