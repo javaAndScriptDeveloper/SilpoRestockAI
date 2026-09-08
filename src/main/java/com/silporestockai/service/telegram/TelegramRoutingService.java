@@ -1,5 +1,6 @@
 package com.silporestockai.service.telegram;
 
+import com.silporestockai.config.TelegramProperties;
 import com.silporestockai.entity.User;
 import com.silporestockai.model.ConversationFlow;
 import com.silporestockai.model.TelegramIncomingUpdate;
@@ -12,6 +13,7 @@ import com.silporestockai.service.CheckinFlowService;
 import com.silporestockai.service.ConversationStateService;
 import com.silporestockai.service.DishRequestService;
 import com.silporestockai.service.FeedbackService;
+import com.silporestockai.service.GroupEventService;
 import com.silporestockai.service.IntentRouterService;
 import com.silporestockai.service.MealPlanHandoffService;
 import com.silporestockai.service.OrderHistoryService;
@@ -22,6 +24,7 @@ import com.silporestockai.service.ShoppingListBuilderService;
 import com.silporestockai.service.SpecialModeService;
 import com.silporestockai.service.UserAccountService;
 import com.silporestockai.service.onboarding.OnboardingFlowService;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
@@ -29,7 +32,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.telegram.telegrambots.meta.api.objects.CallbackQuery;
+import org.telegram.telegrambots.meta.api.objects.MessageEntity;
 import org.telegram.telegrambots.meta.api.objects.Update;
+import org.telegram.telegrambots.meta.api.objects.chat.Chat;
+import org.telegram.telegrambots.meta.api.objects.chatmember.ChatMemberUpdated;
 import org.telegram.telegrambots.meta.api.objects.message.Message;
 
 /**
@@ -70,6 +76,8 @@ public class TelegramRoutingService {
     private final PastOrderSeedService pastOrderSeedService;
     private final DishRequestService dishRequestService;
     private final MealPlanHandoffService mealPlanHandoffService;
+    private final GroupEventService groupEventService;
+    private final TelegramProperties telegramProperties;
 
     /**
      * Off the webhook thread on purpose. A fridge photo means a vision call — the slowest and most expensive kind
@@ -80,6 +88,20 @@ public class TelegramRoutingService {
      */
     @Async("applicationTaskExecutor")
     public void route(Update update) {
+        // A group chat is not a household (task 68): it gets no user row, no onboarding, no intent router. Split
+        // off before any of that, so a group can never be mistaken for a person who has not filled in the form.
+        Optional<TelegramIncomingUpdate> group = toGroupIncoming(update);
+        if (group.isPresent()) {
+            TelegramIncomingUpdate incoming = group.get();
+            try {
+                groupEventService.handle(incoming);
+            } catch (RuntimeException e) {
+                log.error("failed to handle a group update in chat {}", incoming.chatId(), e);
+                telegramOutboundService.sendMessage(
+                        incoming.chatId(), "Щось пішло не так на моєму боці. Тегни мене ще раз за хвилину.");
+            }
+            return;
+        }
         toIncoming(update)
                 .ifPresentOrElse(
                         incoming -> {
@@ -115,6 +137,159 @@ public class TelegramRoutingService {
                 turningOn
                         ? "Тепер відповідатиму ще й голосом. Щоб вимкнути — надішли /voice ще раз."
                         : "Вимкнув голосові відповіді.");
+    }
+
+    /**
+     * The group-chat shapes (task 68): the bot being added to or removed from a group, a text in a group, a tap on
+     * one of the bot's group messages. Empty for anything from a private chat, which goes down the household path.
+     */
+    private Optional<TelegramIncomingUpdate> toGroupIncoming(Update update) {
+        long botId = telegramProperties.botId();
+        if (update.hasMyChatMember()) {
+            ChatMemberUpdated change = update.getMyChatMember();
+            Chat chat = change.getChat();
+            if (chat == null || !TelegramIncomingUpdate.isGroupChatType(chat.getType())) {
+                return Optional.empty();
+            }
+            String status = change.getNewChatMember() == null
+                    ? ""
+                    : String.valueOf(change.getNewChatMember().getStatus());
+            if ("member".equals(status) || "administrator".equals(status) || "restricted".equals(status)) {
+                return Optional.of(new TelegramIncomingUpdate.BotAddedToGroup(
+                        chat.getId(),
+                        chat.getTitle(),
+                        change.getFrom() == null ? 0L : change.getFrom().getId(),
+                        displayName(change.getFrom())));
+            }
+            if ("left".equals(status) || "kicked".equals(status)) {
+                return Optional.of(new TelegramIncomingUpdate.BotRemovedFromGroup(chat.getId()));
+            }
+            return Optional.empty();
+        }
+        if (update.hasMessage()) {
+            Message message = update.getMessage();
+            Chat chat = message.getChat();
+            if (chat == null || !TelegramIncomingUpdate.isGroupChatType(chat.getType())) {
+                return Optional.empty();
+            }
+            long chatId = chat.getId();
+            if (message.getNewChatMembers() != null
+                    && botId > 0
+                    && message.getNewChatMembers().stream().anyMatch(member -> member.getId() == botId)) {
+                // Some clients send this service message with — or instead of — my_chat_member; the group
+                // handler treats a second add of the same round as a no-op.
+                return Optional.of(new TelegramIncomingUpdate.BotAddedToGroup(
+                        chatId,
+                        chat.getTitle(),
+                        message.getFrom() == null ? 0L : message.getFrom().getId(),
+                        displayName(message.getFrom())));
+            }
+            if (message.getLeftChatMember() != null
+                    && botId > 0
+                    && message.getLeftChatMember().getId() == botId) {
+                return Optional.of(new TelegramIncomingUpdate.BotRemovedFromGroup(chatId));
+            }
+            if (!message.hasText()) {
+                // Photos, voice, stickers, joins of other people: a group round is a text conversation. Claimed as
+                // group traffic all the same, so nothing from a group ever reaches the household path.
+                return Optional.of(new TelegramIncomingUpdate.GroupText(
+                        chatId,
+                        userIdOf(message.getFrom()),
+                        displayName(message.getFrom()),
+                        messageIdOf(message),
+                        "",
+                        null,
+                        false,
+                        null));
+            }
+            String text = message.getText();
+            Integer replyToBot = null;
+            Message repliedTo = message.getReplyToMessage();
+            if (repliedTo != null
+                    && repliedTo.getFrom() != null
+                    && botId > 0
+                    && repliedTo.getFrom().getId() == botId) {
+                replyToBot = repliedTo.getMessageId();
+            }
+            Optional<String> username = telegramOutboundService.botUsername();
+            boolean mentionsBot = false;
+            String command = null;
+            for (MessageEntity entity :
+                    message.getEntities() == null ? List.<MessageEntity>of() : message.getEntities()) {
+                String span = entitySpan(text, entity);
+                if ("mention".equals(entity.getType())) {
+                    mentionsBot |= username.isPresent() && span.equalsIgnoreCase("@" + username.get());
+                } else if ("bot_command".equals(entity.getType()) && command == null) {
+                    int at = span.indexOf('@');
+                    String target = at < 0 ? null : span.substring(at + 1);
+                    boolean forThisBot =
+                            target == null || username.isPresent() && target.equalsIgnoreCase(username.get());
+                    if (forThisBot) {
+                        command = (at < 0 ? span : span.substring(0, at)).toLowerCase(java.util.Locale.ROOT);
+                    }
+                }
+            }
+            return Optional.of(new TelegramIncomingUpdate.GroupText(
+                    chatId,
+                    userIdOf(message.getFrom()),
+                    displayName(message.getFrom()),
+                    messageIdOf(message),
+                    text,
+                    replyToBot,
+                    mentionsBot,
+                    command));
+        }
+        if (update.hasCallbackQuery()) {
+            CallbackQuery callback = update.getCallbackQuery();
+            if (callback.getMessage() == null
+                    || callback.getMessage().getChat() == null
+                    || !TelegramIncomingUpdate.isGroupChatType(
+                            callback.getMessage().getChat().getType())) {
+                return Optional.empty();
+            }
+            return Optional.of(new TelegramIncomingUpdate.GroupButtonTap(
+                    callback.getMessage().getChatId(),
+                    userIdOf(callback.getFrom()),
+                    displayName(callback.getFrom()),
+                    callback.getId(),
+                    callback.getData(),
+                    callback.getMessage().getMessageId() == null
+                            ? 0
+                            : callback.getMessage().getMessageId()));
+        }
+        return Optional.empty();
+    }
+
+    /** Entity offsets are UTF-16 code units, which is exactly what {@link String#substring} counts. */
+    private static String entitySpan(String text, MessageEntity entity) {
+        if (entity.getOffset() == null || entity.getLength() == null) {
+            return "";
+        }
+        int from = Math.max(0, Math.min(text.length(), entity.getOffset()));
+        int to = Math.max(from, Math.min(text.length(), entity.getOffset() + entity.getLength()));
+        return text.substring(from, to);
+    }
+
+    private static long userIdOf(org.telegram.telegrambots.meta.api.objects.User user) {
+        return user == null ? 0L : user.getId();
+    }
+
+    private static int messageIdOf(Message message) {
+        return message.getMessageId() == null ? 0 : message.getMessageId();
+    }
+
+    /** {@code @username} when the person has one, else their name — what the group already calls them. */
+    private static String displayName(org.telegram.telegrambots.meta.api.objects.User user) {
+        if (user == null) {
+            return "учасник";
+        }
+        if (user.getUserName() != null && !user.getUserName().isBlank()) {
+            return "@" + user.getUserName();
+        }
+        String first = user.getFirstName() == null ? "" : user.getFirstName().strip();
+        String last = user.getLastName() == null ? "" : user.getLastName().strip();
+        String name = (first + " " + last).strip();
+        return name.isEmpty() ? "учасник" : name;
     }
 
     private Optional<TelegramIncomingUpdate> toIncoming(Update update) {

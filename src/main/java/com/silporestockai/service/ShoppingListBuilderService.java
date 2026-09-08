@@ -232,6 +232,8 @@ public class ShoppingListBuilderService {
                 telegramOutboundService.sendMessage(chatId, "Напиши текстом або надішли фото, будь ласка.");
             case TelegramIncomingUpdate.WebAppData ignored ->
                 telegramOutboundService.sendMessage(chatId, "Напиши текстом або надішли фото, будь ласка.");
+            // The group-chat shapes (task 68) never reach a household flow; the router splits them off first.
+            default -> log.debug("ignoring a group update in a household flow for chat {}", incoming.chatId());
         }
     }
 

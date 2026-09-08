@@ -51,6 +51,8 @@ public class CheckinFlowService {
                 // A stray onboarding-form submission arriving while a check-in is in progress; nothing here
                 // reads it.
                 log.debug("ignoring web_app_data during a check-in in chat {}", chatId);
+            // The group-chat shapes (task 68) never reach a household flow; the router splits them off first.
+            default -> log.debug("ignoring a group update in a household flow for chat {}", incoming.chatId());
         }
     }
 

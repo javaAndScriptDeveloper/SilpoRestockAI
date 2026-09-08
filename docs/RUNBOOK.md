@@ -1118,6 +1118,79 @@ task 55 parses for the unique-tool list instead of collecting the same data twic
 
 ---
 
+## 18. A group drinks round (task 68)
+
+A group chat is not a household: it gets no `users` row, no onboarding, no intent router. Everything a group
+sends goes to `GroupEventService`, whose state is `group_event.status`. The bot reads only what is addressed
+to it — a reply to one of its own messages, an `@mention`, a `/command` — which is also all that Telegram
+delivers to a bot in the default privacy mode.
+
+### Set-up
+
+- `TELEGRAM_BOT_USERNAME` in `.env` (without the `@`). Blank works too: the first group message triggers one
+  `getMe`. Without a username, mentions are not recognised; replies and `/drinks` still are.
+- The organizer must be a Komora user with Silpo connected **in their private chat** — a private chat's id is
+  the person's Telegram id, which is how the group round finds their household row. Without it the proposal is
+  posted unpriced with a «підключи «Сільпо»» hint, and consensus repeats the hint instead of building a cart.
+
+### Drive it
+
+| Do this | Expect |
+|---|---|
+| Add the bot to a group (or type `/drinks` in one it is already in) | A greeting with the rules and one button «✅ Всі відповіли»; `group_event` row in `COLLECTING_REPLIES` with `organizer_telegram_user_id` = whoever added it / typed the command, taken from `my_chat_member.from` |
+| Reply to the greeting: «вино червоне», «пиво світле, це на ДР», «.» | Each gets «Записав, {ім'я}. Відповіли: N.» as a reply; one row per person, a second reply overwrites the text |
+| Write anything in the group without replying or tagging | Nothing. `logs/app.log` at DEBUG: `ignoring an unaddressed message in group …`; no Claude call, no MCP call |
+| Organizer: «@bot бюджет 1500, привід: ДР, дата 20.09» | «Прийняв: бюджет 1500 грн · привід: ДР · дата 20.09.2026» |
+| Someone other than the organizer taps «Всі відповіли» | A toast «Це кнопка організатора.», nothing else |
+| Organizer taps «Всі відповіли» | «Закрив список: N людей. Рахую пропозицію — хвилинку.», then within ~30 s the proposal: real catalog names, quantities, line costs, «Разом орієнтовно», the budget verdict, «~X грн з людини … просто арифметика, платить організатор», «Кількості орієнтовні», and one «👍 Погоджуюсь» button. Every reply row now has `counted_in_denominator = true`, `frozen_at` set, status `PROPOSED` |
+| Reply to the greeting after that | «Записав, …, але цей раунд уже закрито» — the row exists with `counted_in_denominator = false` and the count above does not move |
+| Tap 👍 | Toasts «Погодились: 1 з N», «2 з N» …; a second tap says so; a tap from somebody who was not counted says «Ти не у списку цього раунду» |
+| «@bot менше пива, більше вина» (anyone) | «Прийняв правку від … усі 👍 обнулено.», then «Пропозиція №2»; `proposal_version` = 2, `group_event_approval` rows for version 1 stay, none for version 2; a tap on the old button says «стара пропозиція» |
+| Everyone counted taps 👍 on the latest version | Group: «✅ Усі N погодились. Поклав у кошик «Сільпо» {організатор}: …» with the split. **Organizer's private chat:** the usual cart message with «Підтвердити / Інший час / Скасувати» and, after confirming, «Перейти до оплати». Status `APPROVED`, `group_event_item` holds the lines |
+| Organizer confirms in private | Group: «🎉 {організатор} підтвердив замовлення». Status `ORDERED` |
+
+**What to read in the log:** `opened group round … for organizer …`, `frozen with N counted participants`,
+`gathered signals … same-group round …, N seasonal lines` (the tiers that fed the model), `the model proposed
+N lines`, `clamped «…»` if a quantity was cut, then the ordinary matcher and cart lines under the organizer's
+user id, and every `Telegram -> chat <group id>` line is what the group read.
+
+### Driving it without three phones
+
+Only the outbound side needs a real group. Create the group with the bot in Telegram Web, let the real
+`my_chat_member` arrive (tunnel up) — or post it yourself — then post the other participants as synthetic
+webhooks carrying the group's real (negative) chat id and any `from.id`. Every bot message lands in the real
+group; only those participants' replies are synthetic. Shapes (secret header as in section 3):
+
+```bash
+# a reply to the bot's greeting (message_id from the greeting, from.id 2020… = the bot's own id = token prefix)
+{"update_id":900101,"message":{"message_id":9101,"date":1,"chat":{"id":-100…,"type":"supergroup"},
+ "from":{"id":900042,"is_bot":false,"first_name":"Ігор"},"text":"пиво світле, це на ДР",
+ "reply_to_message":{"message_id":<greeting id>,"date":1,"chat":{"id":-100…,"type":"supergroup"},
+ "from":{"id":<bot id>,"is_bot":true,"first_name":"Komora"},"text":"…"}}}
+# a 👍 tap on the proposal (callback data from the button)
+{"update_id":900102,"callback_query":{"id":"cb-1","chat_instance":"x","from":{"id":900042,"is_bot":false,"first_name":"Ігор"},
+ "data":"grp:ok:<event id>:<version>","message":{"message_id":<proposal id>,"date":1,"chat":{"id":-100…,"type":"supergroup"},
+ "from":{"id":<bot id>,"is_bot":true,"first_name":"Komora"},"text":"…"}}}
+```
+
+The ids of the bot's own messages are not in the log; read them from Postgres: `select id, greeting_message_id,
+proposal_message_id, proposal_version, status from group_event order by created_at desc limit 1;`.
+
+### What was walked live (session 15, 2026-09-08) and what is left for you
+
+Walked in a real group («Комора — тест напоїв») with the real Silpo MCP: the real add event named the organizer,
+a plain message got no reaction, the owner's reply and two synthetic replies were stored, the organizer's tap
+froze 3, the proposal came back with real catalog names and prices, 2 of 3 approved, a synthetic revision
+posted version 2 with zero approvals and refused a tap on the old button, three 👍 built the real cart in the
+organizer's account, the ₴799 top-up and «Підтвердити» ran in the private chat, and the group got «🎉 …
+підтвердив замовлення». Left for you: (1) three *real* phones in one group — the two synthetic participants
+prove the code path, not the UX of three people tapping; (2) «Перейти до оплати» — real money.
+
+### Reset
+
+`delete from group_event;` cascades to participants, items and approvals. The organizer's draft
+`customer_order` (type `AD_HOC`) is cancelled like any other draft.
+
 ## Cleanup
 
 ### Start completely from scratch

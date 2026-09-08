@@ -236,6 +236,9 @@ telegram:
   # URL (/webapp/onboarding.html). Blank skips the WebApp button entirely; onboarding goes straight to the
   # text-chain fallback.
   web-app-base-url: ${TELEGRAM_WEB_APP_BASE_URL:}
+  # The bot's @username without the at sign, so a group chat's «@bot менше пива» is recognised as addressed to
+  # it (task 68). Blank means one getMe lookup the first time a group message needs it.
+  bot-username: ${TELEGRAM_BOT_USERNAME:}
 
 claude:
   api-key: ${ANTHROPIC_API_KEY:}

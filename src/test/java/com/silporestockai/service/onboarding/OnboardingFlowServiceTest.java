@@ -22,7 +22,7 @@ class OnboardingFlowServiceTest {
 
     @Test
     void reopenFormWithoutWebAppSaysSo() {
-        TelegramProperties properties = new TelegramProperties(null, null, null, null, "");
+        TelegramProperties properties = new TelegramProperties(null, null, null, null, "", null);
         TelegramOutboundService outbound = mock(TelegramOutboundService.class);
         OnboardingFlowService service = new OnboardingFlowService(
                 mock(UserProfileRepository.class),

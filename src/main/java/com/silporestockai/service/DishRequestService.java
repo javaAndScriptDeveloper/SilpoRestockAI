@@ -102,6 +102,8 @@ public class DishRequestService {
             }
             case TelegramIncomingUpdate.Voice ignored -> askForDish(chatId);
             case TelegramIncomingUpdate.WebAppData ignored -> askForDish(chatId);
+            // The group-chat shapes (task 68) never reach a household flow; the router splits them off first.
+            default -> log.debug("ignoring a group update in a household flow for chat {}", incoming.chatId());
         }
     }
 

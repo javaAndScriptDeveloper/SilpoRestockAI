@@ -13,18 +13,21 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.List;
+import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.telegram.telegrambots.client.okhttp.OkHttpTelegramClient;
 import org.telegram.telegrambots.meta.TelegramUrl;
 import org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery;
 import org.telegram.telegrambots.meta.api.methods.GetFile;
+import org.telegram.telegrambots.meta.api.methods.GetMe;
 import org.telegram.telegrambots.meta.api.methods.send.SendAudio;
 import org.telegram.telegrambots.meta.api.methods.send.SendDocument;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.methods.updates.SetWebhook;
 import org.telegram.telegrambots.meta.api.objects.File;
 import org.telegram.telegrambots.meta.api.objects.InputFile;
+import org.telegram.telegrambots.meta.api.objects.message.Message;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
@@ -53,6 +56,10 @@ public class TelegramOutboundService {
     private final HttpClient fileDownloader = HttpClient.newHttpClient();
     private final String apiUrl;
     private final String botToken;
+    private final String configuredBotUsername;
+
+    /** Null until the first lookup; then whatever getMe answered, empty included, for the rest of the process. */
+    private volatile Optional<String> lookedUpBotUsername;
 
     private final VoiceReplyService voiceReplyService;
     private final UserRepository userRepository;
@@ -61,6 +68,7 @@ public class TelegramOutboundService {
             TelegramProperties properties, VoiceReplyService voiceReplyService, UserRepository userRepository) {
         this.apiUrl = stripTrailingSlash(properties.apiUrl());
         this.botToken = properties.botToken();
+        this.configuredBotUsername = properties.botUsername();
         this.client = new OkHttpTelegramClient(botToken, telegramUrl(apiUrl));
         this.voiceReplyService = voiceReplyService;
         this.userRepository = userRepository;
@@ -143,7 +151,13 @@ public class TelegramOutboundService {
         speakIfWanted(chatId, text);
     }
 
-    public void sendMessageWithButtons(long chatId, String text, List<TelegramButton> buttons) {
+    /**
+     * Sends a message with an inline keyboard.
+     *
+     * @return the id Telegram gave the sent message — a group flow (task 68) keeps it, so a later reply can be
+     *     recognised as an answer to this exact message
+     */
+    public int sendMessageWithButtons(long chatId, String text, List<TelegramButton> buttons) {
         logOutbound(chatId, text, buttons.stream().map(TelegramButton::label).toList());
         InlineKeyboardRow row = new InlineKeyboardRow(
                 buttons.stream().map(TelegramOutboundService::toInlineButton).toList());
@@ -153,10 +167,74 @@ public class TelegramOutboundService {
                 .replyMarkup(InlineKeyboardMarkup.builder().keyboardRow(row).build())
                 .build();
         try {
-            client.execute(message);
+            Message sent = client.execute(message);
+            return sent == null || sent.getMessageId() == null ? 0 : sent.getMessageId();
         } catch (TelegramApiException e) {
             throw failure("sendMessage", e);
         }
+    }
+
+    /**
+     * Sends a message as a reply to another one — in a busy group chat (task 68) an acknowledgement that hangs
+     * under the message it answers is readable; the same words on their own, three messages later, are noise.
+     *
+     * @return the id of the sent message
+     */
+    public int sendReply(long chatId, int replyToMessageId, String text) {
+        logOutbound(chatId, text, List.of());
+        SendMessage message = SendMessage.builder()
+                .chatId(chatId)
+                .text(text)
+                .replyToMessageId(replyToMessageId)
+                .build();
+        try {
+            Message sent = client.execute(message);
+            return sent == null || sent.getMessageId() == null ? 0 : sent.getMessageId();
+        } catch (TelegramApiException e) {
+            if (e.getMessage() != null && e.getMessage().contains("message to be replied not found")) {
+                // The person deleted their message before the bot answered. The answer still matters — the
+                // reply row was already written — so it goes out on its own rather than not at all.
+                log.debug("message {} in chat {} is gone; answering without the reply link", replyToMessageId, chatId);
+                return sendPlain(chatId, text);
+            }
+            throw failure("sendMessage", e);
+        }
+    }
+
+    private int sendPlain(long chatId, String text) {
+        try {
+            Message sent = client.execute(
+                    SendMessage.builder().chatId(chatId).text(text).build());
+            return sent == null || sent.getMessageId() == null ? 0 : sent.getMessageId();
+        } catch (TelegramApiException e) {
+            throw failure("sendMessage", e);
+        }
+    }
+
+    /**
+     * The bot's own {@code @username}, without the at sign — what a group member types to address it.
+     *
+     * <p>From configuration when set; otherwise one {@code getMe} call, cached for the life of the process. Empty
+     * when neither is available: mentions are then not recognised, and the group flow still works through replies
+     * to the bot's own messages and through commands, which need no username.
+     */
+    public Optional<String> botUsername() {
+        if (configuredBotUsername != null && !configuredBotUsername.isBlank()) {
+            return Optional.of(configuredBotUsername);
+        }
+        Optional<String> cached = lookedUpBotUsername;
+        if (cached != null) {
+            return cached;
+        }
+        try {
+            org.telegram.telegrambots.meta.api.objects.User me = client.execute(new GetMe());
+            cached = Optional.ofNullable(me == null ? null : me.getUserName());
+        } catch (TelegramApiException | RuntimeException e) {
+            log.warn("could not look up the bot's username with getMe: {}", e.getMessage());
+            cached = Optional.empty();
+        }
+        lookedUpBotUsername = cached;
+        return cached;
     }
 
     /**
@@ -203,8 +281,19 @@ public class TelegramOutboundService {
      * correct price for that; losing the order is not.
      */
     public void answerCallback(String callbackQueryId) {
-        AnswerCallbackQuery answer =
-                AnswerCallbackQuery.builder().callbackQueryId(callbackQueryId).build();
+        answerCallback(callbackQueryId, null);
+    }
+
+    /**
+     * Acknowledges the tap and, when {@code text} is given, shows it as a toast to the person who tapped — the
+     * one channel in a group chat that reaches exactly that person and nobody else (task 68).
+     */
+    public void answerCallback(String callbackQueryId, String text) {
+        var builder = AnswerCallbackQuery.builder().callbackQueryId(callbackQueryId);
+        if (text != null && !text.isBlank()) {
+            builder.text(text);
+        }
+        AnswerCallbackQuery answer = builder.build();
         try {
             client.execute(answer);
         } catch (TelegramApiException e) {

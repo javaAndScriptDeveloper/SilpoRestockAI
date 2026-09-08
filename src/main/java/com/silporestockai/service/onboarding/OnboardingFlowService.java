@@ -364,6 +364,8 @@ public class OnboardingFlowService {
                 telegramOutboundService.sendMessage(chatId, "Голосові поки не розбираю. Напиши, будь ласка, текстом.");
             case TelegramIncomingUpdate.Photo ignored ->
                 telegramOutboundService.sendMessage(chatId, "Фото тут не допоможе. Напиши, будь ласка, текстом.");
+            // The group-chat shapes (task 68) never reach a household flow; the router splits them off first.
+            default -> log.debug("ignoring a group update in a household flow for chat {}", incoming.chatId());
         }
     }
 

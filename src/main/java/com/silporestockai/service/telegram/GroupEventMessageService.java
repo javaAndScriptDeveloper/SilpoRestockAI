@@ -1,0 +1,286 @@
+package com.silporestockai.service.telegram;
+
+import com.silporestockai.entity.GroupEvent;
+import com.silporestockai.model.GroupProposal;
+import com.silporestockai.model.GroupProposalLine;
+import com.silporestockai.model.TelegramButton;
+import com.silporestockai.service.GroupProposalService;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.format.DateTimeFormatter;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+import org.springframework.stereotype.Service;
+
+/**
+ * Every string a group chat reads during a drinks round (task 68), and the callback payloads under its buttons.
+ *
+ * <p>Plain text, no parse mode: names come from people and a stray underscore in a username must not break a
+ * message. Money and counts follow the same honesty as the cart message — a split is called arithmetic, never a
+ * payment, and quantities are called approximate.
+ */
+@Service
+public class GroupEventMessageService {
+
+    public static final String CALLBACK_FREEZE_PREFIX = "grp:freeze:";
+    public static final String CALLBACK_APPROVE_PREFIX = "grp:ok:";
+
+    private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("dd.MM.yyyy");
+
+    public String greeting(String organizerName, Optional<String> botUsername) {
+        String mention = botUsername.map(name -> "@" + name).orElse("мене");
+        return """
+                Привіт! Я зберу напої на компанію — в кошик «Сільпо» організатора, оплата як зазвичай.
+
+                Кожен — відповідай реплаєм на це повідомлення, що п'єш: «пиво світле», «червоне вино», «не п'ю — сік». \
+                Можна з поясненням: «сьогодні за кермом», «це на ДР». Крапка «.» — на мій розсуд.
+
+                %s, ти організатор: коли всі відповіли — тисни кнопку нижче. Бюджет і привід (не обов'язково): \
+                «%s бюджет 2000, привід: новий рік, дата 31.12».
+
+                Читаю тільки те, що адресовано мені — реплаї, теги, команди. Решту розмови не чіпаю.""".formatted(organizerName, mention);
+    }
+
+    public List<TelegramButton> greetingButtons(UUID eventId) {
+        return List.of(TelegramButton.callback("✅ Всі відповіли", CALLBACK_FREEZE_PREFIX + eventId));
+    }
+
+    public String replyAck(String name, long count) {
+        return "Записав, %s. Відповіли: %d.".formatted(name, count);
+    }
+
+    public String lateReplyAck(String name) {
+        return ("Записав, %s, але цей раунд уже закрито — у підрахунок не потрапить. "
+                        + "Новий збір — командою /drinks.")
+                .formatted(name);
+    }
+
+    public String settingsAck(GroupEvent event) {
+        StringBuilder text = new StringBuilder("Прийняв:");
+        if (event.getBudget() != null) {
+            text.append(" бюджет ")
+                    .append(event.getBudget().stripTrailingZeros().toPlainString())
+                    .append(" грн ·");
+        }
+        if (event.getEventTag() != null) {
+            text.append(" привід: ").append(event.getEventTag()).append(" ·");
+        }
+        if (event.getEventDate() != null) {
+            text.append(" дата ").append(DATE.format(event.getEventDate())).append(" ·");
+        }
+        return text.substring(0, text.length() - 2);
+    }
+
+    public String freezeNotOrganizer() {
+        return "Це кнопка організатора.";
+    }
+
+    public String nobodyReplied() {
+        return "Поки ніхто не відповів — нема з чого рахувати.";
+    }
+
+    public String frozen(long headcount) {
+        return "Закрив список: %d %s. Рахую пропозицію — хвилинку.".formatted(headcount, people(headcount));
+    }
+
+    public String alreadyClosed() {
+        return "Список уже закрито.";
+    }
+
+    public String connectHint(String organizerName, Optional<String> botUsername) {
+        String where = botUsername
+                .map(name -> "у приваті зі мною: https://t.me/" + name)
+                .orElse("у приваті зі мною");
+        return "%s, щоб я зібрав кошик, підключи «Сільпо» %s — потім тегни мене «збери кошик»."
+                .formatted(organizerName, where);
+    }
+
+    /** The proposal: real lines with prices when priced, the total against the budget, the split, the rules. */
+    public String proposal(GroupEvent event, GroupProposal proposal, int headcount, Optional<String> botUsername) {
+        StringBuilder text = new StringBuilder();
+        text.append("Пропозиція №")
+                .append(proposal.version())
+                .append(" на ")
+                .append(headcount)
+                .append(' ')
+                .append(people(headcount))
+                .append(":\n");
+        for (GroupProposalLine line : proposal.lines()) {
+            text.append("\n— ").append(line.catalogName());
+            if (line.quantity() != null) {
+                text.append(" — ").append(amount(line.quantity()));
+                if (line.unit() != null) {
+                    text.append(' ').append(line.unit());
+                }
+            }
+            if (line.lineCost() != null) {
+                text.append(" — ").append(money(line.lineCost())).append(" грн");
+            }
+            if (line.forWhom() != null && !line.forWhom().isBlank()) {
+                text.append(" (").append(line.forWhom()).append(')');
+            }
+        }
+        if (!proposal.unresolved().isEmpty()) {
+            text.append("\n\nНе знайшов у «Сільпо»: ").append(String.join(", ", proposal.unresolved()));
+        }
+        if (proposal.priced() && proposal.estimatedTotal() != null) {
+            text.append("\n\nРазом орієнтовно ~")
+                    .append(money(proposal.estimatedTotal()))
+                    .append(" грн");
+            if (event.getBudget() != null) {
+                BigDecimal over = proposal.estimatedTotal().subtract(event.getBudget());
+                text.append(" — бюджет ").append(amount(event.getBudget())).append(" грн, ");
+                text.append(
+                        over.signum() > 0
+                                ? "на " + money(over) + " грн більше за бюджет — скажи, що прибрати"
+                                : "вкладаємось");
+            }
+            BigDecimal split = GroupProposalService.perHead(proposal.estimatedTotal(), headcount);
+            if (split != null) {
+                text.append("\nЦе ~")
+                        .append(money(split))
+                        .append(" грн з людини, якщо ділити на ")
+                        .append(headcount)
+                        .append(" порівну — просто арифметика, платить організатор.");
+            }
+        } else if (!proposal.priced()) {
+            text.append("\n\nБез цін: у організатора ще не підключено «Сільпо». Ціни з'являться, щойно підключить.");
+        }
+        text.append("\nКількості орієнтовні під компанію, не точний розрахунок.");
+        if (proposal.note() != null && !proposal.note().isBlank()) {
+            text.append("\n\n").append(proposal.note().strip());
+        }
+        String mention = botUsername.map(name -> "@" + name).orElse("мене");
+        text.append("\n\nЗгоден — тисни 👍. Щоб змінити — тегни: «")
+                .append(mention)
+                .append(" менше пива, більше вина». Будь-яка правка обнуляє всі 👍.");
+        return text.toString();
+    }
+
+    public List<TelegramButton> proposalButtons(UUID eventId, int version) {
+        return List.of(TelegramButton.callback("👍 Погоджуюсь", CALLBACK_APPROVE_PREFIX + eventId + ":" + version));
+    }
+
+    public String proposalFailed(Optional<String> botUsername) {
+        return "Не зміг скласти пропозицію. Тегни %s «спробуй ще» — перерахую."
+                .formatted(botUsername.map(name -> "@" + name).orElse("мене"));
+    }
+
+    public String revising(String name) {
+        return "Прийняв правку від %s. Перераховую — усі 👍 обнулено.".formatted(name);
+    }
+
+    public String approvalToast(long approved, long total) {
+        return "Погодились: %d з %d.".formatted(approved, total);
+    }
+
+    public String alreadyApproved(long approved, long total) {
+        return "Ти вже погодився. Погодились: %d з %d.".formatted(approved, total);
+    }
+
+    public String notCounted() {
+        return "Ти не у списку цього раунду — відповідь прийшла після закриття.";
+    }
+
+    public String staleProposal() {
+        return "Це стара пропозиція — нижче є новіша.";
+    }
+
+    public String consensus(GroupProposal proposal, String organizerName, long headcount) {
+        StringBuilder text = new StringBuilder();
+        text.append("✅ Усі ")
+                .append(headcount)
+                .append(" погодились. Поклав у кошик «Сільпо» ")
+                .append(organizerName)
+                .append(':');
+        for (GroupProposalLine line : proposal.resolvedLines()) {
+            text.append("\n— ").append(line.catalogName());
+            if (line.quantity() != null) {
+                text.append(" — ").append(amount(line.quantity()));
+                if (line.unit() != null) {
+                    text.append(' ').append(line.unit());
+                }
+            }
+        }
+        if (proposal.estimatedTotal() != null) {
+            text.append("\n\nРазом ~").append(money(proposal.estimatedTotal())).append(" грн");
+            BigDecimal split = GroupProposalService.perHead(proposal.estimatedTotal(), (int) headcount);
+            if (split != null) {
+                text.append(" — це ~")
+                        .append(money(split))
+                        .append(" грн з людини, якщо ділити на ")
+                        .append(headcount)
+                        .append(" порівну. Просто арифметика: платить організатор, я нічого не збираю.");
+            }
+        }
+        text.append("\n\n").append(organizerName).append(", кошик і оплата — у нас у приваті.");
+        return text.toString();
+    }
+
+    public String cartFailed(String organizerName, Optional<String> botUsername) {
+        return ("✅ Усі погодились, але кошик не зібрався — %s, деталі у приваті зі мною. "
+                        + "Спробувати ще: тегни %s «збери кошик».")
+                .formatted(organizerName, botUsername.map(name -> "@" + name).orElse("мене"));
+    }
+
+    public String nothingResolved(String organizerName) {
+        return "✅ Усі погодились, але жодної позиції не знайшлось у «Сільпо» — %s, напиши мені у приваті, що взяти."
+                .formatted(organizerName);
+    }
+
+    public String ordered(String organizerName) {
+        return "🎉 %s підтвердив замовлення в «Сільпо». Напої їдуть.".formatted(organizerName);
+    }
+
+    public String noActiveRound() {
+        return "Зараз немає відкритого збору. Почати новий — /drinks.";
+    }
+
+    public String alreadyAgreed(String organizerName) {
+        return "Усе вже погоджено — %s оформлює замовлення у приваті зі мною. Новий збір — /drinks."
+                .formatted(organizerName);
+    }
+
+    /** What /start or /help in a group gets while a round is open: where it is and what to do. */
+    public String alreadyClosedOrOpen(GroupEvent event) {
+        return switch (event.getStatus()) {
+            case COLLECTING_REPLIES ->
+                "Збір іде: відповідай реплаєм на моє перше повідомлення, що п'єш. Новий збір — /drinks.";
+            case PROPOSED ->
+                "Пропозиція вже на столі: тисни 👍 під нею або тегни мене з правкою. Новий збір — /drinks.";
+            default ->
+                alreadyAgreed(
+                        event.getOrganizerDisplayName() == null ? "організатор" : event.getOrganizerDisplayName());
+        };
+    }
+
+    private static String people(long n) {
+        long tail = n % 10;
+        long hundred = n % 100;
+        if (hundred >= 11 && hundred <= 14) {
+            return "людей";
+        }
+        if (tail == 1) {
+            return "людину";
+        }
+        if (tail >= 2 && tail <= 4) {
+            return "людини";
+        }
+        return "людей";
+    }
+
+    private static String money(BigDecimal value) {
+        return (value == null ? BigDecimal.ZERO : value)
+                .setScale(2, RoundingMode.HALF_UP)
+                .toPlainString();
+    }
+
+    private static String amount(BigDecimal value) {
+        if (value == null) {
+            return "0";
+        }
+        BigDecimal stripped = value.stripTrailingZeros();
+        return (stripped.scale() < 0 ? stripped.setScale(0, RoundingMode.UNNECESSARY) : stripped).toPlainString();
+    }
+}
