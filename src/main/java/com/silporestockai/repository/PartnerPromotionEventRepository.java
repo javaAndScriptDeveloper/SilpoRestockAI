@@ -14,6 +14,9 @@ public interface PartnerPromotionEventRepository extends JpaRepository<PartnerPr
 
     List<PartnerPromotionEvent> findByPromotionId(UUID promotionId);
 
+    /** Every event of one kind, for the money attribution that needs the {@code order_id} each one carries. */
+    List<PartnerPromotionEvent> findByEventType(PartnerPromotionEventType eventType);
+
     /**
      * The whole placement funnel in one grouped pass, named by partner and product rather than promotion id (task 54).
      *
