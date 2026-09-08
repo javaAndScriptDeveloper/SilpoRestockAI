@@ -13,6 +13,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -85,18 +86,19 @@ public class ShoppingListPriceEstimateService {
      * «Куряче філе» does not find «Філе курчати-бройлера» — one word short is no match, because an estimate built
      * out of near-misses is worse than one that admits it priced 5 lines of 12.
      */
-    private static BasketItem baselineMatch(
+    private static Match baselineMatch(
             ShoppingListItem item,
             Map<String, BasketItem> byRequestedName,
             Map<String, BasketItem> byCatalogName,
             List<BasketItem> priceable) {
         String name = normalise(item.getName());
-        BasketItem exact = byRequestedName.get(name);
-        if (exact == null) {
-            exact = byCatalogName.get(name);
+        BasketItem named = byRequestedName.get(name);
+        if (named != null) {
+            return new Match(named, true);
         }
+        BasketItem exact = byCatalogName.get(name);
         if (exact != null) {
-            return exact;
+            return new Match(exact, true);
         }
         List<String> asked = words(item.getName());
         if (asked.isEmpty()) {
@@ -113,8 +115,14 @@ public class ShoppingListPriceEstimateService {
                 bestWords = catalog.size();
             }
         }
-        return best;
+        return best == null ? null : new Match(best, false);
     }
+
+    /**
+     * A baseline line and whether it is this list line's own product ({@code exact}) or a name that merely reads
+     * like it. Only the first kind can have its quantity scaled by a count — see {@link #linePrice}.
+     */
+    private record Match(BasketItem line, boolean exact) {}
 
     /**
      * Words of three letters or more, case-folded. Splitting on everything that is not a letter is what keeps
@@ -129,18 +137,26 @@ public class ShoppingListPriceEstimateService {
                 .toList();
     }
 
-    private static BigDecimal linePrice(ShoppingListItem item, BasketItem baseline) {
+    private static BigDecimal linePrice(ShoppingListItem item, Match match) {
         if (item.getEstimatedPrice() != null) {
             BigDecimal quantity = item.getQuantity() == null ? BigDecimal.ONE : item.getQuantity();
             return item.getEstimatedPrice().multiply(quantity);
         }
-        if (baseline == null) {
+        if (match == null) {
             return null;
         }
+        BasketItem baseline = match.line();
         // A baseline line holds a line price for the quantity that was ordered. Scale it only when the two are
         // genuinely comparable; «2 шт» against «200 г» is a different question, and the old line price as-is is
         // closer to right than a made-up conversion.
-        boolean comparable = item.getQuantity() != null
+        //
+        // A shared «шт» is not enough on its own. Live on 2026-09-08 a list asking «Яйця — 20 шт» met a baseline
+        // pack of eggs at ₴129.80 for «1 шт» and came out at ₴2596 — the household counts eggs, the catalog counts
+        // packs, and the word for both is «шт». A count is only scaled when the match is this line's own product;
+        // a weight or a volume divides honestly however the name was found.
+        boolean sameThingCounted = match.exact() || MEASURES.contains(normalise(item.getUnit()));
+        boolean comparable = sameThingCounted
+                && item.getQuantity() != null
                 && baseline.quantity() != null
                 && baseline.quantity().signum() > 0
                 && normalise(item.getUnit()).equals(normalise(baseline.unit()));
@@ -149,6 +165,9 @@ public class ShoppingListPriceEstimateService {
         }
         return baseline.price().multiply(item.getQuantity()).divide(baseline.quantity(), 2, RoundingMode.HALF_UP);
     }
+
+    /** Units that measure the thing itself, so a quantity in them divides a price honestly. */
+    private static final Set<String> MEASURES = Set.of("кг", "г", "л", "мл");
 
     private static String normalise(String value) {
         return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);

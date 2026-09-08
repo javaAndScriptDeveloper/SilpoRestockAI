@@ -130,6 +130,41 @@ class ShoppingListPriceEstimateServiceTest {
         assertThat(estimate.total()).isEqualByComparingTo("37.00");
     }
 
+    @Test
+    void doesNotMultiplyAPackagePriceByAHouseholdsCountOfWhatIsInside() {
+        // Live, 2026-09-08: a list asking for «Яйця — 20 шт» against a baseline pack of eggs at ₴129.80 for
+        // «1 шт» produced ₴2596 — two thirds of the whole estimate, from one line. Both units read «шт» and
+        // neither counts the same thing: the household counts eggs, the catalog counts packs.
+        BasketItem eggs = new BasketItem(
+                "p-eggs",
+                "Яйця курячі «Ясенсвіт» «Для духмяних пирогів» 1 категорії",
+                "шт",
+                new BigDecimal("1"),
+                new BigDecimal("129.80"));
+
+        PriceEstimate estimate =
+                ShoppingListPriceEstimateService.estimate(List.of(item("Яйця", "20", "шт")), List.of(eggs));
+
+        assertThat(estimate.total()).isEqualByComparingTo("129.80");
+    }
+
+    @Test
+    void stillScalesACountWhenTheHouseholdsOwnRequestIsWhatMatched() {
+        // The pairing was recorded when this very line was bought, so «шт» means the same thing on both sides.
+        BasketItem bread = new BasketItem(
+                "p-bread",
+                "Хліб «Премія»® Фітнес тостовий",
+                "шт",
+                new BigDecimal("1"),
+                new BigDecimal("34.99"),
+                "Хліб");
+
+        PriceEstimate estimate =
+                ShoppingListPriceEstimateService.estimate(List.of(item("Хліб", "2", "шт")), List.of(bread));
+
+        assertThat(estimate.total()).isEqualByComparingTo("69.98");
+    }
+
     private static ShoppingListItem item(String name, String quantity, String unit) {
         return ShoppingListItem.builder()
                 .id(UUID.randomUUID())
