@@ -129,7 +129,8 @@ public class MealPlanHandoffService {
                             .append(": ")
                             .append(meals.stream().map(PlannedMeal::name).collect(Collectors.joining(" / "))));
         }
-        String message = text.append("\nСписок покупок: %d позицій.".formatted(shoppingListSize))
+        String message = text.append("\nСписок покупок: %d %s."
+                        .formatted(shoppingListSize, ShoppingListMessageService.positions(shoppingListSize)))
                 .toString();
         if (estimate.hasPrices()) {
             message += "\n" + shoppingListMessageService.estimateLine(estimate);

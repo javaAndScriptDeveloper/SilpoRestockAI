@@ -119,12 +119,12 @@ public class ShoppingListMessageService {
                 .append(money(estimate.total()))
                 .append(" грн");
         if (estimate.isPartial()) {
+            // «з 23 позицій» — genitive plural after «з», whatever the number; positions() declines a nominative.
             line.append(" за ")
                     .append(estimate.pricedCount())
                     .append(" з ")
                     .append(estimate.lineCount())
-                    .append(' ')
-                    .append(positions(estimate.lineCount()));
+                    .append(" позицій");
         }
         return line.append(" — точну суму покажу в кошику.").toString();
     }
@@ -264,7 +264,8 @@ public class ShoppingListMessageService {
     }
 
     /** «1 позиція», «3 позиції», «12 позицій» — the wrong one reads like a machine wrote it. */
-    private static String positions(int count) {
+    /** «23 позиції», «11 позицій», «1 позиція» — the nominative that follows a bare count. */
+    public static String positions(int count) {
         int lastTwo = count % 100;
         int last = count % 10;
         if (lastTwo >= 11 && lastTwo <= 14) {

@@ -480,10 +480,18 @@ public class OnboardingFlowService {
         askNext(chatId, OnboardingStep.ASK_BUDGET, context, user);
     }
 
+    /**
+     * What the enrichment actually read from the account, in the household's words. Named on screen on purpose:
+     * four MCP calls that answer «nothing here» leave no trace in the chat otherwise, and the chat is what a
+     * person — or a jury — sees, not the console.
+     */
+    static final String LOOKED_AT =
+            "Зазирнув у твій акаунт «Сільпо» — сім'я, обмеження, історія замовлень, улюблені товари.";
+
     private void enrichThenConfirm(User user, long chatId, Map<String, Object> context) {
         SilpoProfileSnapshot snapshot = profileEnrichmentService.enrich(user.getId());
         if (snapshot.isEmpty()) {
-            telegramOutboundService.sendMessage(chatId, "Нічого не знайшов у профілі «Сільпо». Запитаю сам.");
+            telegramOutboundService.sendMessage(chatId, LOOKED_AT + "\nТам поки порожньо, тож запитаю сам.");
             presentWebAppForm(chatId, context, user);
             return;
         }
@@ -498,14 +506,14 @@ public class OnboardingFlowService {
             // called the snapshot non-empty on their account alone. Nothing usable for a person to confirm reached
             // context, so this is the same outcome as an empty snapshot: say so, and ask instead of showing a
             // "Ось що знайшов:" with nothing under it.
-            telegramOutboundService.sendMessage(chatId, "Нічого не знайшов у профілі «Сільпо». Запитаю сам.");
+            telegramOutboundService.sendMessage(chatId, LOOKED_AT + "\nТам поки порожньо, тож запитаю сам.");
             presentWebAppForm(chatId, context, user);
             return;
         }
 
         telegramOutboundService.sendMessageWithButtons(
                 chatId,
-                "Ось що знайшов:\n" + found + "\nВсе вірно?",
+                LOOKED_AT + "\nОсь що знайшов:\n" + found + "\nВсе вірно?",
                 List.of(
                         TelegramButton.callback("Все вірно", CALLBACK_CONFIRM),
                         TelegramButton.callback("Виправлю", CALLBACK_CORRECT)));

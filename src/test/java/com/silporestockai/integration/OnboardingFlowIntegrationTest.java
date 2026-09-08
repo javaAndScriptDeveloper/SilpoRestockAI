@@ -456,7 +456,7 @@ class OnboardingFlowIntegrationTest extends AbstractIntegrationTest {
         tapButton(2, "onb:connected");
 
         assertThat(TELEGRAM.sentMessages().stream().map(m -> m.path("text").asText()))
-                .anyMatch(text -> text.contains("Нічого не знайшов"));
+                .anyMatch(text -> text.contains("запитаю сам"));
         assertThat(conversationStateService.load(CHAT_ID).getCurrentStep())
                 .isEqualTo(OnboardingStep.AWAITING_WEBAPP_FORM.name());
 
