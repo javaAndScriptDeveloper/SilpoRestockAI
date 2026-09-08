@@ -1046,3 +1046,58 @@ a kilogram on both sides. Same list, honest number: ₴1357.23.
   what the household will pay. An as-is price for a mismatched unit may deserve to be dropped instead,
   taking the honest «за 12 з 25 позицій» rather than a bad number inside a good-looking one.
 - Nothing shows the household *which* lines the estimate could not price. The count is honest but blind.
+
+## Session 15 — 2026-09-08 (evening): the group drinks round — where the build differs from the task text
+
+Task 68 was built as written in nine of ten places. The places where it is not, and why:
+
+1. **Price before approval comes from the catalog, not from task 39's baseline estimate.** The task says
+   "reuse #39's price aggregation". That code prices a list from the household's baseline basket, and a
+   baseline is a week of groceries with no drinks in it — for this flow it would answer «—» for every line and
+   the whole point of "total against the budget before approval" would be lost. So the model's lines are
+   resolved through `CartBuildingService.resolve` for the organizer *before* the proposal is posted: one
+   `silpo_find_products_batch` batch and one fast-model matcher call, the same price every other cart already
+   pays. In return the group approves real SKUs at real prices, and consensus adds exactly those ids
+   (`buildCart` skips the search for a line carrying a UUID product id — task 22's path). The search is
+   therefore not run twice, which is the thing that would have made two matcher calls pick two different
+   products.
+
+2. **Consensus goes through the organizer's private cart confirmation, not a group-posted cart.** Step 9 says
+   "add to the organizer's cart and post confirmation in the group". Both happen — but the cart message with
+   «Підтвердити / Інший час», the ₴799 top-up, the bonus question and the checkout button go to the organizer's
+   private chat, because that is `CartConfirmationService.present` unchanged (zero new cart code, as required)
+   and because a checkout link is bound to the organizer's Silpo account and does not belong in a group. The
+   group gets the summary, the split, and later «підтвердив замовлення» when the order is confirmed.
+
+3. **`/drinks` starts a round whose organizer is the sender.** The task identifies the organizer only from the
+   add event. A group orders more than once and the bot is added once; the second round needs a trigger, and
+   the person who typed it is the organizer for the same reason the adder was: Telegram says who did it.
+
+4. **Extra columns beyond the task's four-table sketch**, all named in the spec: `organizer_display_name`,
+   `organizer_user_id` (null until the organizer is a Komora user), `proposal_version`, `proposal_json`,
+   `revision_notes`, `greeting_message_id` / `proposal_message_id` (how a late reply is told from a revision),
+   `frozen_at`, `approved_at`, `display_name` and `preference_summary` on the participant, catalog name /
+   unit / unit price on the item. No new tables beyond the four.
+
+5. **Tier 3 reads a stored summary, not past raw text.** The task asks that «сьогодні не п'ю віскі» change
+   this event without altering the person's long-term preference. The clean way to make that a property of
+   the data rather than of the prompt is to store, per round, the durable part the model extracted
+   («віскі») on *that round's* row only, and have later rounds read summaries. Older rows are never rewritten,
+   and `GroupEventIntegrationTest.exceptionDoesNotTouchHistory` asserts it.
+
+6. **Privacy mode is embraced, not fought.** A Telegram bot in a group receives only replies to itself,
+   mentions and commands unless made an admin. The design uses exactly those three as "addressed to the bot",
+   so behaviour is identical whether or not the bot is an admin — and acceptance criterion five (no reaction
+   to ordinary messages) holds in code, not only by Telegram's filtering.
+
+### Still worth a decision
+
+- **Late repliers are excluded from the proposal, not only from the vote.** The task says "logged but not
+  counted"; I read "not counted" as "not in this round" — their preference does not feed the synthesis
+  either. The alternative (feed it, don't count it) gives a person influence without a vote. Either is
+  defensible; the current one is simpler to explain in the group.
+- **Anyone may revise, including people who were not counted.** The task says "anyone can @-tag". A late
+  replier can therefore reset the vote. If that turns out to be abused, restricting revisions to counted
+  participants is a one-line change in `GroupEventService.revise`.
+- **A new `/drinks` cancels an open round in the same chat.** No confirmation. A round that has reached
+  `APPROVED` is left alone.
