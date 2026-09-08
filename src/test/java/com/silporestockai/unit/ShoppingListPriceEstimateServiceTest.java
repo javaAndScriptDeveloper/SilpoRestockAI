@@ -65,6 +65,71 @@ class ShoppingListPriceEstimateServiceTest {
         assertThat(nothing.hasPrices()).isFalse();
     }
 
+    @Test
+    void pricesAListLineFromTheProductTheSameLineBoughtLastTime() {
+        BasketItem lastTime = new BasketItem(
+                "p-milk", "Молоко «Яготинське» 2,6% п/е", "шт", new BigDecimal("2"), new BigDecimal("74.00"), "молоко");
+
+        PriceEstimate estimate =
+                ShoppingListPriceEstimateService.estimate(List.of(item("Молоко", "1", "шт")), List.of(lastTime));
+
+        assertThat(estimate.total()).isEqualByComparingTo("37.00");
+        assertThat(estimate.pricedCount()).isEqualTo(1);
+    }
+
+    @Test
+    void fallsBackToTheCatalogNameContainingEveryWordOfTheListLine() {
+        // What the live baselines actually hold: Silpo's catalog names against household words.
+        BasketItem onion =
+                new BasketItem("p-onion", "Цибуля ріпчаста жовта", "кг", new BigDecimal("1"), new BigDecimal("21.99"));
+        BasketItem potato = new BasketItem(
+                "p-potato",
+                "Картопля Сенсейшн універсальна, для смаження та варіння",
+                "кг",
+                new BigDecimal("2"),
+                new BigDecimal("47.98"));
+
+        PriceEstimate estimate = ShoppingListPriceEstimateService.estimate(
+                List.of(item("Цибуля", "1", "кг"), item("Картопля", "1", "кг")), List.of(onion, potato));
+
+        assertThat(estimate.total()).isEqualByComparingTo("45.98");
+        assertThat(estimate.pricedCount()).isEqualTo(2);
+    }
+
+    @Test
+    void refusesAMatchThatIsMissingAWordOrIsOnlyPartOfOne() {
+        BasketItem chicken = new BasketItem(
+                "p-chicken",
+                "Філе курчати-бройлера мале охолоджене",
+                "кг",
+                new BigDecimal("1"),
+                new BigDecimal("270.41"));
+        BasketItem loaf = new BasketItem(
+                "p-loaf", "Батон «Київхліб» нарізний", "шт", new BigDecimal("1"), new BigDecimal("32.90"));
+
+        // «куряче» is nowhere in the catalog name, and «хліб» is inside «Київхліб» rather than a word of its own.
+        // Both stay unpriced: a number the household reads as real must not be built out of near-misses.
+        PriceEstimate estimate = ShoppingListPriceEstimateService.estimate(
+                List.of(item("Куряче філе", "1", "кг"), item("Хліб", "2", "шт")), List.of(chicken, loaf));
+
+        assertThat(estimate.hasPrices()).isFalse();
+        assertThat(estimate.unpricedCount()).isEqualTo(2);
+    }
+
+    @Test
+    void prefersTheLineThatNamesTheRequestOverAnEarlierOneThatMerelyContainsTheWord() {
+        BasketItem baked = new BasketItem(
+                "p-baked", "Молоко згущене варене", "шт", new BigDecimal("1"), new BigDecimal("89.00"), null);
+        BasketItem milk = new BasketItem(
+                "p-milk", "Молоко «Яготинське» 2,6% п/е", "шт", new BigDecimal("1"), new BigDecimal("37.00"), "молоко");
+
+        // Baseline order would have handed this to the condensed milk; the recorded request outranks it.
+        PriceEstimate estimate =
+                ShoppingListPriceEstimateService.estimate(List.of(item("Молоко", "1", "шт")), List.of(baked, milk));
+
+        assertThat(estimate.total()).isEqualByComparingTo("37.00");
+    }
+
     private static ShoppingListItem item(String name, String quantity, String unit) {
         return ShoppingListItem.builder()
                 .id(UUID.randomUUID())

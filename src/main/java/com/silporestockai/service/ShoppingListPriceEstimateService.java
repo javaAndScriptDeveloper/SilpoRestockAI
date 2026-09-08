@@ -7,6 +7,8 @@ import com.silporestockai.model.PriceEstimate;
 import com.silporestockai.repository.BaselineBasketRepository;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -19,9 +21,10 @@ import org.springframework.stereotype.Service;
  * Prices a shopping list from what the system already knows, without asking Silpo (task 39).
  *
  * <p>Two sources, in order. A line the {@code READY_MEALS_ONLY} fork produced carries the catalog unit price it was
- * curated with ({@code shopping_list_item.estimated_price}). Any other line is looked up by name in the household's
- * current baseline basket — the last cart they confirmed, prices included. A line neither source knows stays
- * unpriced and is counted as such; the number shown is never padded with a guess.
+ * curated with ({@code shopping_list_item.estimated_price}). Any other line is looked up in the household's current
+ * baseline basket — the last cart they confirmed, prices included — see {@link #baselineMatch} for the three ways a
+ * household's word is read against Silpo's catalog name. A line neither source knows stays unpriced and is counted
+ * as such; the number shown is never padded with a guess.
  *
  * <p>The cart itself, built later by {@code CartBuildingService}, is the real price. This exists so somebody can say
  * «дорого, прибери X» before a cart is built, not after.
@@ -42,17 +45,26 @@ public class ShoppingListPriceEstimateService {
 
     /** The pure rule, kept static so a test needs no repository. */
     public static PriceEstimate estimate(List<ShoppingListItem> items, List<BasketItem> baseline) {
-        Map<String, BasketItem> baselineByName = new HashMap<>();
+        List<BasketItem> priceable = new ArrayList<>();
+        Map<String, BasketItem> byRequestedName = new HashMap<>();
+        Map<String, BasketItem> byCatalogName = new HashMap<>();
         for (BasketItem line : baseline == null ? List.<BasketItem>of() : baseline) {
-            if (line != null && line.name() != null && line.price() != null) {
-                baselineByName.putIfAbsent(normalise(line.name()), line);
+            if (line == null || line.price() == null) {
+                continue;
+            }
+            priceable.add(line);
+            if (line.requestedName() != null) {
+                byRequestedName.putIfAbsent(normalise(line.requestedName()), line);
+            }
+            if (line.name() != null) {
+                byCatalogName.putIfAbsent(normalise(line.name()), line);
             }
         }
         BigDecimal total = BigDecimal.ZERO;
         int priced = 0;
         int unpriced = 0;
         for (ShoppingListItem item : items) {
-            BigDecimal line = linePrice(item, baselineByName.get(normalise(item.getName())));
+            BigDecimal line = linePrice(item, baselineMatch(item, byRequestedName, byCatalogName, priceable));
             if (line == null) {
                 unpriced++;
             } else {
@@ -61,6 +73,60 @@ public class ShoppingListPriceEstimateService {
             }
         }
         return new PriceEstimate(total.setScale(2, RoundingMode.HALF_UP), priced, unpriced);
+    }
+
+    /**
+     * The baseline line this list line last came as, if any of three readings finds it.
+     *
+     * <p>First the request the household actually made last time ({@code BasketItem.requestedName}) — an exact
+     * pairing, recorded when the cart was built, and the only one that needs no judgement. Then the catalog name
+     * itself, which is what a ready-meals line matches on. Only then the reading that has to guess: a catalog name
+     * that contains every word of what the list asks for. «Молоко» finds «Молоко «Яготинське» 2,6% п/е», and
+     * «Куряче філе» does not find «Філе курчати-бройлера» — one word short is no match, because an estimate built
+     * out of near-misses is worse than one that admits it priced 5 lines of 12.
+     */
+    private static BasketItem baselineMatch(
+            ShoppingListItem item,
+            Map<String, BasketItem> byRequestedName,
+            Map<String, BasketItem> byCatalogName,
+            List<BasketItem> priceable) {
+        String name = normalise(item.getName());
+        BasketItem exact = byRequestedName.get(name);
+        if (exact == null) {
+            exact = byCatalogName.get(name);
+        }
+        if (exact != null) {
+            return exact;
+        }
+        List<String> asked = words(item.getName());
+        if (asked.isEmpty()) {
+            return null;
+        }
+        // Fewest words wins: «Молоко» is the plain milk before it is the condensed milk, whatever order the
+        // baseline happens to be in.
+        BasketItem best = null;
+        int bestWords = Integer.MAX_VALUE;
+        for (BasketItem line : priceable) {
+            List<String> catalog = words(line.name());
+            if (catalog.size() < bestWords && catalog.containsAll(asked)) {
+                best = line;
+                bestWords = catalog.size();
+            }
+        }
+        return best;
+    }
+
+    /**
+     * Words of three letters or more, case-folded. Splitting on everything that is not a letter is what keeps
+     * «Київхліб» from answering for «хліб»: the catalog name has to carry the word itself, not merely the letters.
+     */
+    private static List<String> words(String value) {
+        if (value == null) {
+            return List.of();
+        }
+        return Arrays.stream(value.toLowerCase(Locale.ROOT).split("[^\\p{L}]+"))
+                .filter(word -> word.length() > 2)
+                .toList();
     }
 
     private static BigDecimal linePrice(ShoppingListItem item, BasketItem baseline) {
