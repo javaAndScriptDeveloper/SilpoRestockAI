@@ -265,8 +265,19 @@ public class TelegramOutboundService {
      * correct price for that; losing the order is not.
      */
     public void answerCallback(String callbackQueryId) {
-        AnswerCallbackQuery answer =
-                AnswerCallbackQuery.builder().callbackQueryId(callbackQueryId).build();
+        answerCallback(callbackQueryId, null);
+    }
+
+    /**
+     * Acknowledges the tap and, when {@code text} is given, shows it as a toast to the person who tapped — the
+     * one channel in a group chat that reaches exactly that person and nobody else (task 68).
+     */
+    public void answerCallback(String callbackQueryId, String text) {
+        var builder = AnswerCallbackQuery.builder().callbackQueryId(callbackQueryId);
+        if (text != null && !text.isBlank()) {
+            builder.text(text);
+        }
+        AnswerCallbackQuery answer = builder.build();
         try {
             client.execute(answer);
         } catch (TelegramApiException e) {

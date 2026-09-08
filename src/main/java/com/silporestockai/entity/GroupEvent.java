@@ -55,6 +55,10 @@ public class GroupEvent {
     @Column(name = "organizer_telegram_user_id", nullable = false)
     private Long organizerTelegramUserId;
 
+    /** «@olena» or «Олена» — what the group already calls the organizer, for every message that names them. */
+    @Column(name = "organizer_display_name", length = 128)
+    private String organizerDisplayName;
+
     @Column(name = "organizer_user_id")
     private UUID organizerUserId;
 
