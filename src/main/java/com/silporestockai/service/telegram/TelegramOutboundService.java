@@ -159,12 +159,15 @@ public class TelegramOutboundService {
      */
     public int sendMessageWithButtons(long chatId, String text, List<TelegramButton> buttons) {
         logOutbound(chatId, text, buttons.stream().map(TelegramButton::label).toList());
-        InlineKeyboardRow row = new InlineKeyboardRow(
-                buttons.stream().map(TelegramOutboundService::toInlineButton).toList());
+        List<InlineKeyboardRow> rows = layoutRows(buttons).stream()
+                .map(row -> new InlineKeyboardRow(row.stream()
+                        .map(TelegramOutboundService::toInlineButton)
+                        .toList()))
+                .toList();
         SendMessage message = SendMessage.builder()
                 .chatId(chatId)
                 .text(text)
-                .replyMarkup(InlineKeyboardMarkup.builder().keyboardRow(row).build())
+                .replyMarkup(InlineKeyboardMarkup.builder().keyboard(rows).build())
                 .build();
         try {
             Message sent = client.execute(message);
@@ -356,6 +359,42 @@ public class TelegramOutboundService {
                 chatId,
                 buttonLabels.isEmpty() ? "" : " buttons=" + buttonLabels,
                 SecretRedactor.truncate(text, 3000));
+    }
+
+    /** A label longer than this cannot share a row with another one on a phone without being cut to «…». */
+    private static final int LONGEST_LABEL_FOR_A_SHARED_ROW = 24;
+
+    /** Up to this many short labels fit one row on a phone; more than that is split two per row. */
+    private static final int MOST_BUTTONS_IN_ONE_ROW = 3;
+
+    /** «Пн», «Вт», «1», «2» — a strip of these reads better whole than folded; seven of them still fit. */
+    private static final int TINY_LABEL = 4;
+
+    private static final int MOST_TINY_BUTTONS_IN_ONE_ROW = 7;
+
+    /**
+     * Wraps inline buttons into rows a phone can show whole.
+     *
+     * <p>Telegram lays out every button of a row in equal columns, so eight delivery windows in one row read as
+     * «ср, 9 в…» eight times and «Змінити вручну» beside three other list buttons loses its second word. The
+     * rule: any label that is long on its own gets a row of its own; up to three short labels share one row (a
+     * cart's Підтвердити / Інший час / Скасувати, a question's Так / Ні); anything longer than that is two per
+     * row (the list's four buttons become 2×2, eight windows become four rows of two).
+     */
+    static List<List<TelegramButton>> layoutRows(List<TelegramButton> buttons) {
+        boolean anyLong = buttons.stream().anyMatch(b -> b.label().length() > LONGEST_LABEL_FOR_A_SHARED_ROW);
+        if (anyLong) {
+            return buttons.stream().map(List::of).toList();
+        }
+        boolean allTiny = buttons.stream().allMatch(b -> b.label().length() <= TINY_LABEL);
+        if (buttons.size() <= MOST_BUTTONS_IN_ONE_ROW || (allTiny && buttons.size() <= MOST_TINY_BUTTONS_IN_ONE_ROW)) {
+            return List.of(buttons);
+        }
+        List<List<TelegramButton>> rows = new java.util.ArrayList<>();
+        for (int i = 0; i < buttons.size(); i += 2) {
+            rows.add(buttons.subList(i, Math.min(i + 2, buttons.size())));
+        }
+        return rows;
     }
 
     private static InlineKeyboardButton toInlineButton(TelegramButton button) {

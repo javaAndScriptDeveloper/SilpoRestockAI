@@ -333,16 +333,15 @@ class CartConfirmationIntegrationTest extends AbstractIntegrationTest {
         presentedCart();
 
         assertThat(lastMessageText()).contains("Доставка:");
-        var buttons = TELEGRAM.sentMessages()
-                .getLast()
-                .path("reply_markup")
-                .path("inline_keyboard")
-                .get(0);
+        // Four buttons (a bonus variant of Підтвердити is offered) wrap into two rows on a phone; look in all of them.
+        var keyboard = TELEGRAM.sentMessages().getLast().path("reply_markup").path("inline_keyboard");
         boolean hasSlotMenuButton = false;
-        for (JsonNode button : buttons) {
-            if (CartMessageService.CALLBACK_SLOT_MENU.equals(
-                    button.path("callback_data").asText())) {
-                hasSlotMenuButton = true;
+        for (JsonNode row : keyboard) {
+            for (JsonNode button : row) {
+                if (CartMessageService.CALLBACK_SLOT_MENU.equals(
+                        button.path("callback_data").asText())) {
+                    hasSlotMenuButton = true;
+                }
             }
         }
         assertThat(hasSlotMenuButton).isTrue();

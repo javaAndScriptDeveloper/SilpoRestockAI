@@ -73,6 +73,41 @@ class TelegramOutboundServiceIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void wrapsFourShortInlineButtonsIntoTwoRows() {
+        telegramOutboundService.sendMessageWithButtons(
+                777L,
+                "Ось що пропоную взяти:",
+                List.of(
+                        TelegramButton.callback("Замовити", "list:order"),
+                        TelegramButton.callback("Змінити", "list:edit"),
+                        TelegramButton.callback("Змінити вручну", "list:manual"),
+                        TelegramButton.callback("Скасувати", "list:cancel")));
+
+        var keyboard = STUB.sentMessages().getFirst().path("reply_markup").path("inline_keyboard");
+        assertThat(keyboard).hasSize(2);
+        assertThat(keyboard.get(0)).hasSize(2);
+        assertThat(keyboard.get(1)).hasSize(2);
+        assertThat(keyboard.get(1).get(0).path("text").asText()).isEqualTo("Змінити вручну");
+    }
+
+    @Test
+    void givesEveryLongInlineLabelItsOwnRow() {
+        // Three cooking-time options: the longest is 32 characters and would be cut to «…» beside another one.
+        telegramOutboundService.sendMessageWithButtons(
+                777L,
+                "Спершу головне: як у тебе з готуванням?",
+                List.of(
+                        TelegramButton.callback("Готую потроху щодня", "onb:cook:DAILY"),
+                        TelegramButton.callback("Готую наперед, раз на кілька днів", "onb:cook:BATCH"),
+                        TelegramButton.callback("Не готую — лише готова їжа", "onb:cook:READY")));
+
+        var keyboard = STUB.sentMessages().getFirst().path("reply_markup").path("inline_keyboard");
+        assertThat(keyboard).hasSize(3);
+        assertThat(keyboard.get(0)).hasSize(1);
+        assertThat(keyboard.get(2).get(0).path("text").asText()).isEqualTo("Не готую — лише готова їжа");
+    }
+
+    @Test
     void sendsThePersistentMainMenuKeyboard() {
         telegramOutboundService.sendMessageWithMainMenu(777L, "Записав. Готую перший план на тиждень.");
 
