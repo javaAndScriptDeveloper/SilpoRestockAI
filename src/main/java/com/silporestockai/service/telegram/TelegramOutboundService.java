@@ -240,6 +240,36 @@ public class TelegramOutboundService {
         return cached;
     }
 
+    /** Null until the first lookup; then what getMe said about privacy mode, for the rest of the process. */
+    private volatile Boolean lookedUpCanReadAllGroupMessages;
+
+    /**
+     * Whether this bot sees every message in a group it belongs to.
+     *
+     * <p>Telegram's privacy mode — on by default for every bot — delivers a bot only commands addressed to it,
+     * replies to its own messages and service messages. A plain «@bot збери напої» never reaches it, which is
+     * exactly the sentence that opens a group round (task 68). Found live on 2026-09-09: the tag went out, the
+     * webhook stayed silent, {@code getWebhookInfo} showed nothing pending. Two things lift the restriction — the
+     * bot being a group administrator, or privacy mode switched off in BotFather — and the group intro says so
+     * whenever this answers false. {@code true} when getMe cannot be asked: better to say nothing than to nag on a
+     * guess.
+     */
+    public boolean canReadAllGroupMessages() {
+        Boolean cached = lookedUpCanReadAllGroupMessages;
+        if (cached != null) {
+            return cached;
+        }
+        try {
+            org.telegram.telegrambots.meta.api.objects.User me = client.execute(new GetMe());
+            cached = me == null || !Boolean.FALSE.equals(me.getCanReadAllGroupMessages());
+        } catch (TelegramApiException | RuntimeException e) {
+            log.warn("could not look up the bot's privacy mode with getMe: {}", e.getMessage());
+            cached = true;
+        }
+        lookedUpCanReadAllGroupMessages = cached;
+        return cached;
+    }
+
     /**
      * Sends a message with a reply-keyboard WebApp button plus a plain-text fallback row.
      *

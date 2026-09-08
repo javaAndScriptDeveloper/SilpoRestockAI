@@ -81,12 +81,25 @@ public class GroupEventService {
             case TelegramIncomingUpdate.BotAddedToGroup added ->
                 // Being added opens nothing: the round starts when somebody tags the bot and asks (product
                 // decision) — that person is the organizer, and the tag is the one mention the bot ever reads.
-                telegramOutboundService.sendMessage(added.chatId(), messages.intro());
+                telegramOutboundService.sendMessage(
+                        added.chatId(), messages.intro(telegramOutboundService.canReadAllGroupMessages()));
             case TelegramIncomingUpdate.BotRemovedFromGroup removed -> cancelOpenRounds(removed.chatId());
             case TelegramIncomingUpdate.GroupText text -> onText(text);
             case TelegramIncomingUpdate.GroupButtonTap tap -> onTap(tap);
             default -> log.debug("ignoring a private-chat shape in the group handler: {}", incoming);
         }
+    }
+
+    /**
+     * What a group can do after the bot failed on it — named for the state the round is actually in. With a round
+     * open a tag is chatter, so «тегни ще раз» would be a dead end; a reply «спробуй ще» on the proposal (or on the
+     * greeting, before there is one) is what regenerates.
+     */
+    public String recoveryHint(long chatId) {
+        boolean roundOpen = eventRepository
+                .findFirstByTelegramGroupChatIdAndStatusInOrderByCreatedAtDesc(chatId, BEFORE_AGREEMENT)
+                .isPresent();
+        return messages.recovery(roundOpen);
     }
 
     // ---- starting a round ------------------------------------------------------------------------------------

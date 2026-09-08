@@ -1128,6 +1128,13 @@ messages and taps on its own buttons — a further mention or a `/command` is ig
 
 ### Set-up
 
+- **Privacy mode.** Telegram delivers a bot in privacy mode (every bot's default) only commands addressed to it,
+  replies to its own messages and service messages — **a plain «@bot збери напої…» never reaches the webhook**
+  (found live 2026-09-09: the tag went out, `getWebhookInfo` showed nothing pending, the log stayed silent). Either
+  make the bot a **group administrator** (the intro asks the person who added it to do exactly that when
+  `getMe` reports privacy mode on) or, for the production bot, **BotFather → /setprivacy → Disable**. The app
+  logs a WARN at boot while privacy mode is on. The code drops every unaddressed message either way, so an
+  admin bot behaves the same as one in privacy mode — it just also sees the tag.
 - `TELEGRAM_BOT_USERNAME` in `.env` (without the `@`) — used only for the `t.me/` link in the «підключи
   «Сільпо»» hint. Blank works too (one `getMe`).
 - The organizer must be a Komora user with Silpo connected **in their private chat** — a private chat's id is
@@ -1138,7 +1145,7 @@ messages and taps on its own buttons — a further mention or a `/command` is ig
 
 | Do this | Expect |
 |---|---|
-| Add the bot to a group | A one-line intro («тегни мене…»), no round, no `group_event` row |
+| Add the bot to a group | A one-line intro («тегни мене…»), no round, no `group_event` row. With privacy mode on, the intro opens with «Спершу зроби мене адміністратором групи» — until then the tag below never arrives |
 | «@bot збери напої на п'ятницю, бюджет 2000» (or tap «🔄 Новий збір» under the last round's summary) | A greeting with the rules and one button «✅ Всі відповіли»; `group_event` row in `COLLECTING_REPLIES`, `organizer_telegram_user_id` = whoever tagged/tapped, budget/tag/date already parsed from the tag text |
 | Reply to the greeting: «вино червоне», «пиво світле, це на ДР», «.» | Each gets «Записав, {ім'я}. Відповіли: N.» as a reply; one row per person, a second reply overwrites the text |
 | Write anything in the group without replying to the bot — including a second `@bot …` while the round is open, and `/anything` | Nothing. `logs/app.log` at DEBUG: `ignoring an unaddressed message in group …`; no Claude call, no MCP call |

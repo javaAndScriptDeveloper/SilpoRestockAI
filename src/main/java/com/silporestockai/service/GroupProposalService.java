@@ -107,7 +107,10 @@ public class GroupProposalService {
                     "group event {}: could not price the proposal in the catalog, posting it unpriced",
                     event.getId(),
                     e);
-            return unpriced(event.getProposalVersion(), lines, note, preferences);
+            // Live, a network blip here printed «у організатора ще не підключено «Сільпо»» to a group whose
+            // organizer had been connected all evening. Say what actually happened.
+            return unpriced(event.getProposalVersion(), lines, note, preferences)
+                    .withCatalogUnavailable();
         }
     }
 

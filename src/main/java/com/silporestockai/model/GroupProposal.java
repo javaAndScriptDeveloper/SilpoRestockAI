@@ -21,7 +21,26 @@ public record GroupProposal(
         BigDecimal estimatedTotal,
         boolean priced,
         String note,
-        List<ParticipantPreference> preferences) {
+        List<ParticipantPreference> preferences,
+        /** Unpriced because the catalog could not be asked just now — not because nobody is connected to it. */
+        boolean catalogUnavailable) {
+
+    /** The shape everything priced, or unpriced for want of a connected organizer, has always used. */
+    public GroupProposal(
+            int version,
+            List<GroupProposalLine> lines,
+            List<String> unresolved,
+            BigDecimal estimatedTotal,
+            boolean priced,
+            String note,
+            List<ParticipantPreference> preferences) {
+        this(version, lines, unresolved, estimatedTotal, priced, note, preferences, false);
+    }
+
+    /** The same proposal, marked as unpriced because the catalog was unreachable rather than unconnected. */
+    public GroupProposal withCatalogUnavailable() {
+        return new GroupProposal(version, lines, unresolved, estimatedTotal, priced, note, preferences, true);
+    }
 
     /** Lines a cart can actually be built from. */
     public List<GroupProposalLine> resolvedLines() {

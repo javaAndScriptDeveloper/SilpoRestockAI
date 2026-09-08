@@ -98,8 +98,11 @@ public class TelegramRoutingService {
                 groupEventService.handle(incoming);
             } catch (RuntimeException e) {
                 log.error("failed to handle a group update in chat {}", incoming.chatId(), e);
+                // Live, a network blip mid-recalculation left the group with «тегни мене ще раз» — and a tag
+                // while a round is open is chatter by design, so the advice pointed at a dead end. The hint names
+                // the one thing that works in the state the round is actually in.
                 telegramOutboundService.sendMessage(
-                        incoming.chatId(), "Щось пішло не так на моєму боці. Тегни мене ще раз за хвилину.");
+                        incoming.chatId(), groupEventService.recoveryHint(incoming.chatId()));
             }
             return;
         }

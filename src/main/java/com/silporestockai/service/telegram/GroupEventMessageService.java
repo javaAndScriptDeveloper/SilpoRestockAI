@@ -31,10 +31,35 @@ public class GroupEventMessageService {
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("dd.MM.yyyy");
 
     /** Said once, when the bot is added. Opens nothing: the round starts on the first tag. */
-    public String intro() {
-        return "Привіт! Коли треба зібрати напої на компанію — тегни мене й попроси: «@бот збери напої на п'ятницю, "
+    /**
+     * Said once, when the bot is added.
+     *
+     * @param seesEveryMessage whether Telegram will show this bot a plain mention at all — with privacy mode on
+     *     (the default) it will not, and the one thing the person who just added the bot can do about it is
+     *     make it an administrator, so the intro asks for exactly that
+     */
+    public String intro(boolean seesEveryMessage) {
+        String tag = "Коли треба зібрати напої на компанію — тегни мене й попроси: «@бот збери напої на п'ятницю, "
                 + "бюджет 2000». Хто попросить, той і організатор. Далі читаю лише реплаї на свої повідомлення й "
                 + "свої кнопки.";
+        if (seesEveryMessage) {
+            return "Привіт! " + tag;
+        }
+        return "Привіт! Спершу зроби мене адміністратором групи — інакше Telegram не показує мені повідомлення з "
+                + "тегом, і я не побачу прохання. " + tag;
+    }
+
+    public String intro() {
+        return intro(true);
+    }
+
+    /** After an unhandled failure: the one action that works in this state, not a generic «try again». */
+    public String recovery(boolean roundOpen) {
+        if (roundOpen) {
+            return "Щось пішло не так на моєму боці. Відповідай реплаєм на мою останню пропозицію (або на "
+                    + "привітання, якщо пропозиції ще нема) «спробуй ще» — перерахую.";
+        }
+        return "Щось пішло не так на моєму боці. Тегни мене ще раз за хвилину.";
     }
 
     public String greeting(String organizerName) {
@@ -147,6 +172,9 @@ public class GroupEventMessageService {
                                 ? "на " + money(over) + " грн більше за бюджет — скажи, що прибрати"
                                 : "вкладаємось");
             }
+        } else if (!proposal.priced() && proposal.catalogUnavailable()) {
+            text.append("\n\nБез цін: «Сільпо» щойно не відповів. Відповідай реплаєм «спробуй ще» — перерахую з ")
+                    .append("цінами, або погоджуйся так: ціни будуть у кошику організатора.");
         } else if (!proposal.priced()) {
             text.append("\n\nБез цін: у організатора ще не підключено «Сільпо». Ціни з'являться, щойно підключить.");
         }

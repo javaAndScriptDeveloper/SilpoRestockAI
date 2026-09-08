@@ -31,6 +31,13 @@ public class TelegramWebhookRegistrationService {
         try {
             telegramOutboundService.setWebhook(properties.webhookUrl(), properties.webhookSecret());
             log.info("registered the Telegram webhook at {}", properties.webhookUrl());
+            if (!telegramOutboundService.canReadAllGroupMessages()) {
+                // The group round (task 68) opens on «@bot збери напої…», and privacy mode never delivers that
+                // sentence. Said once at boot so the recording does not find out in the group.
+                log.warn("privacy mode is on for this bot: a plain @mention in a group never reaches it, so a "
+                        + "group round opens only where the bot is an administrator — disable privacy mode in "
+                        + "BotFather (/setprivacy) for the production bot");
+            }
         } catch (RuntimeException e) {
             // Deliberately not fatal: a Telegram outage at boot must not stop the app from serving, and a
             // previously registered webhook keeps delivering. Re-register by restarting or by calling setWebhook.
