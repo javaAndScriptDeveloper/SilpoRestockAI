@@ -169,6 +169,8 @@ class PromotionMetricsIntegrationTest extends AbstractIntegrationTest {
         assertThat(report.indexOf("Сільпо власна марка")).isGreaterThan(ownHeading);
         // 1 of 2 tea resolutions, and the method is never left off a baseline.
         assertThat(report).contains("50 %").contains("наближення (1/N кандидатів)");
+        // The funnel is not strictly nested — a rate above 100 % is possible and the report says why.
+        assertThat(report).contains("може перевищити 100 %");
     }
 
     @Test
