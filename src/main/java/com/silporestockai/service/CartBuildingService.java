@@ -262,7 +262,23 @@ public class CartBuildingService {
         // it was the household's first sight of the top-up, and «тут забагато лишнього» was the verdict. The
         // decision — add from the baseline, or go and add something in the Silpo app — is asked, see
         // CartConfirmationService; only a reorder, which is restocking staples anyway, takes {@link #topUp} unasked.
-        return getVerifiedCart(userId, context, deliverySlot, unresolved, promoted, resolution.skipped());
+        return getVerifiedCart(userId, context, deliverySlot, unresolved, promoted, resolution.skipped())
+                .withRequestedNames(requestedNames(resolved));
+    }
+
+    /**
+     * Which list line each product was resolved for, kept for the basket lines (task 39). Two lines can resolve to
+     * the same product — «Курка (ціла)» and «Курка (гомілка)» did — and the first one to ask for it wins, the same
+     * way the quantities are merged.
+     */
+    private static Map<String, String> requestedNames(List<ResolvedProduct> resolved) {
+        Map<String, String> names = new LinkedHashMap<>();
+        resolved.forEach(product -> {
+            if (product.productId() != null && product.requestedName() != null) {
+                names.putIfAbsent(product.productId(), product.requestedName());
+            }
+        });
+        return names;
     }
 
     /**
@@ -292,13 +308,16 @@ public class CartBuildingService {
         observabilityService.recordTopUp("applied");
         addProductsToCart(userId, context, topUp);
         return getVerifiedCart(
-                userId,
-                context,
-                deliverySlot,
-                cart.unresolved(),
-                cart.promotedProductIds(),
-                cart.skippedLines(),
-                topUp.stream().map(CartBuildingService::describeTopUp).toList());
+                        userId,
+                        context,
+                        deliverySlot,
+                        cart.unresolved(),
+                        cart.promotedProductIds(),
+                        cart.skippedLines(),
+                        topUp.stream().map(CartBuildingService::describeTopUp).toList())
+                // The cart is read back whole, so the lines that were already in it would otherwise lose the list
+                // line they were bought for. The top-up lines get none: nobody asked for them by name.
+                .withRequestedNames(BasketItem.requestedNamesByProductId(cart.items()));
     }
 
     /** Whether there is a confirmed baseline to top a small cart up from — decides whether to offer it. */

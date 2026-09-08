@@ -3,6 +3,7 @@ package com.silporestockai.model;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
 /**
  * The verified cart as read back from Silpo after everything was added, plus the household-facing facts around it.
@@ -201,6 +202,46 @@ public record CartSummary(
                 unresolved,
                 List.of(),
                 List.of());
+    }
+
+    /**
+     * The same cart, with each line paired to the shopping list line it was bought for where that is known (task
+     * 39). Silpo's cart read-back carries only its own catalog names, and the pairing is what lets the baseline
+     * this cart becomes price a later list without asking Silpo anything. A line already carrying a name keeps it.
+     */
+    public CartSummary withRequestedNames(Map<String, String> requestedNameByProductId) {
+        if (requestedNameByProductId == null || requestedNameByProductId.isEmpty() || items == null) {
+            return this;
+        }
+        List<BasketItem> named = items.stream()
+                .map(line -> line.requestedName() != null || line.silpoProductId() == null
+                        ? line
+                        : new BasketItem(
+                                line.silpoProductId(),
+                                line.name(),
+                                line.unit(),
+                                line.quantity(),
+                                line.price(),
+                                requestedNameByProductId.get(line.silpoProductId())))
+                .toList();
+        return new CartSummary(
+                cartId,
+                deliverySlot,
+                deliverySlotStartsAt,
+                named,
+                total,
+                validations,
+                bonusAvailable,
+                bonusDecisionPending,
+                checkoutWebLink,
+                checkoutMobileLink,
+                unresolved,
+                promotedProductIds,
+                skipped,
+                toppedUp,
+                savings,
+                goodsTotal,
+                minimumOrder);
     }
 
     public boolean isPromoted(String productId) {

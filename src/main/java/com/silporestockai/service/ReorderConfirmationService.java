@@ -10,6 +10,7 @@ import com.silporestockai.entity.ConversationState;
 import com.silporestockai.entity.CustomerOrder;
 import com.silporestockai.entity.TrustLevel;
 import com.silporestockai.entity.User;
+import com.silporestockai.model.BasketItem;
 import com.silporestockai.model.CartContext;
 import com.silporestockai.model.CartSummary;
 import com.silporestockai.model.ConversationFlow;
@@ -261,7 +262,11 @@ public class ReorderConfirmationService {
 
         addAcceptedReplacements(user.getId(), context, delta, decisions);
         boolean slotFixed = slot != null && cartBuildingService.bookSlot(user.getId(), context.cartId(), slot);
-        CartSummary cart = cartBuildingService.getVerifiedCart(user.getId(), context, slot, List.of());
+        // Read back whole, so the pairing of list line to product (task 39) has to be carried over from the cart
+        // this one was built from, or the baseline this order becomes cannot price a later list.
+        CartSummary cart = cartBuildingService
+                .getVerifiedCart(user.getId(), context, slot, List.of())
+                .withRequestedNames(BasketItem.requestedNamesByProductId(order.getItems()));
 
         // Refusing a substitute is an edit; accepting one is agreeing with the suggestion.
         boolean edited = decisions.containsValue(false);

@@ -373,6 +373,26 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
         assertThat(added.path("products").get(0).path("quantity").asInt()).isEqualTo(12);
     }
 
+    /**
+     * The basket line has to remember which list line bought it. Silpo's cart read-back knows only its own catalog
+     * name — «Цибуля ріпчаста жовта» — and the household wrote «цибуля»; without the pairing recorded here, the
+     * baseline this cart becomes cannot price next week's list (task 39).
+     */
+    @Test
+    void keepsTheListLineEachBasketLineWasBoughtFor() {
+        UUID userId = connectedUser(8431L);
+        scriptCartTools();
+        scriptProductTools();
+        scriptVerifiedCart();
+
+        CartSummary summary =
+                cartBuildingService.buildCart(userId, List.of(item("цибуля", "0.5", "кг"), item("гречка", "1", "кг")));
+
+        assertThat(summary.items())
+                .extracting(item -> item.silpoProductId() + " ← " + item.requestedName())
+                .containsExactly("p-1 ← цибуля", "p-2 ← гречка");
+    }
+
     private static ShoppingListItem readyMealItem(String name, String productId) {
         return ShoppingListItem.builder()
                 .id(UUID.randomUUID())
