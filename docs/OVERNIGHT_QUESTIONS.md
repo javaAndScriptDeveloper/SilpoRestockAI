@@ -996,3 +996,45 @@ is a session tool, not the default. cloudflared quick tunnels time out from this
   (session 3's note). Live: editing the theme works and shows; the time text is ignored.
 - Weekly cart vs budget: the first cart for a 2500 budget came out at 3089 before the matcher fixes and
   2253 after. The planner does not see prices; whether it should is open.
+
+## Session 11 — 2026-09-08 (day)
+
+### Task 39's price estimate was shipped and half of it had never run
+
+Task 39 went in on 2026-09-06. Its ready-meals half works: a `READY_MEALS_ONLY` week carries catalog
+prices from generation, so the plan summary can name the total before a cart exists — live today it said
+₴1977.56 and the cart's own `productsTotal` came back ₴1977.56.
+
+The other half — a cooking household priced from its own baseline basket — had never produced a number
+for anybody, and would not have. The estimate matched a list line to a baseline line by exact name, but a
+baseline stores what Silpo calls a product («Молоко «Яготинське» 2,6% п/е») and a list stores what the
+household calls it («Молоко»). The two never compare equal. Nothing failed, nothing logged; the price line
+was simply absent, which reads exactly like «this household has no baseline yet».
+
+### Why the pairing is recorded rather than guessed at harder
+
+The obvious patch is a cleverer name match. That is a permanent heuristic over a problem that has an exact
+answer sitting in memory: `CartBuildingService` knows which list line it resolved each product for. That
+pairing is now written onto the basket line (`BasketItem.requestedName`), so from the next confirmed cart
+on, a household's own words are what the baseline is matched by — no judgement involved.
+
+A narrow word-containment match stays as the fallback, for the baselines already in the database and for
+lines nobody asked for by name. It is deliberately strict — every word of the list line must appear as a
+whole word in the catalog name — so «Куряче філе» takes no price from «Філе курчати-бройлера» and «Хліб»
+takes none from «Батон «Київхліб»». Live that priced 13 of 25 lines, and the message says so.
+
+### The estimate was wrong by ₴2466 for one line, and the unit said it was fine
+
+The first live number after the matching fix was ₴3811.77, and ₴2596 of it was eggs: a list asking «Яйця —
+20 шт» against a baseline pack at ₴129.80 for «1 шт». Both units read «шт»; the household counts eggs and
+the catalog counts packs. A count is now scaled only when the baseline line is that list line's own product
+(recorded request, or the catalog name itself); a weight or a volume still divides, since a kilogram means
+a kilogram on both sides. Same list, honest number: ₴1357.23.
+
+**Open, for the product owner.** Two things I would not decide alone:
+
+- «Вівсяні пластівці — 500 г» is priced at ₴399 from a baseline line of Mornflake bought by the pack. The
+  units differ, so the old line price is used as-is — the documented fallback, and here it is four times
+  what the household will pay. An as-is price for a mismatched unit may deserve to be dropped instead,
+  taking the honest «за 12 з 25 позицій» rather than a bad number inside a good-looking one.
+- Nothing shows the household *which* lines the estimate could not price. The count is honest but blind.

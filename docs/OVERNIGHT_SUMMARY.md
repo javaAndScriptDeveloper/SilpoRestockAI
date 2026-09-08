@@ -747,3 +747,56 @@ session-10 changelog entry.
 - The account (chat 218196255) is onboarded as a cooking household of two with a fresh recipe plan on
   screen, four confirmed orders in the DB (INITIAL, SCHEDULED_REORDER, two AD_HOC), the partner milk
   placement ACTIVE, cheese PAUSED.
+
+# Session 11 — the half of task 39 that had never run, 2026-09-08 (day)
+
+**Mode:** one task from the backlog — 39, «Show price estimate in shopping list preview before cart
+confirmation» — brainstormed, planned and executed, then checked against the live app with synthetic
+webhooks on the owner's real account. Three code commits plus docs, on `main`, unpushed.
+
+## What was already there
+
+Task 39 shipped on 2026-09-06 (`94eb538`); the Notion row still said «Not started». All three acceptance
+criteria were in the code and had survived the 48–53 refactors:
+
+- the cart confirmation prints «Разом» (`CartMessageService`), unchanged since task 10;
+- a `READY_MEALS_ONLY` week carries `CatalogCandidate.price` through `PlannedIngredient.price`,
+  `ShoppingListService.aggregate` and `ShoppingListItemMapper` into `shopping_list_item.estimated_price`,
+  and `MealPlanHandoffService.summarise` prints «Орієнтовно ~X грн» at the plan-summary stage, before any
+  cart exists;
+- the estimate reads two database tables and calls Silpo not at all.
+
+## What the live run found
+
+Re-presenting the owner's current 25-line cooking list produced **no price line at all**, with a current
+20-line baseline sitting in the database. The estimate matched list lines to baseline lines by exact name,
+and a baseline holds Silpo's catalog names («Цибуля ріпчаста жовта») against a list's household names
+(«Цибуля»). For every household that cooks, half the feature had never produced a number — silently.
+
+## The three commits
+
+| Commit | What |
+|---|---|
+| `62ddb65` | `BasketItem.requestedName` — the list line each basket line was bought for, recorded where a verified cart is read back whole (first build, top-up, reorder confirmation). Nullable, back-compat constructor, old JSON still reads. |
+| `1591930` | The estimate matches on the recorded request, then the catalog name, then a catalog name carrying every word of the list line (fewest words first). «Куряче філе» takes nothing from «Філе курчати-бройлера»; «Хліб» nothing from «Батон «Київхліб»». |
+| `d149ac2` | A count is scaled only when the baseline line is that list line's own product. Found by hand-checking the first live number — see below. |
+
+## Live verification
+
+| Check | Result |
+|---|---|
+| Cooking list, before | «Всього 25 позицій.» and nothing else |
+| Cooking list, after matching | «Орієнтовно ~3811.77 грн за 13 з 25 позицій» — hand-checked line by line, and **₴2596 of it was one line**: «Яйця — 20 шт» against a baseline pack at ₴129.80 for «1 шт» |
+| Cooking list, after the scaling fix | «Орієнтовно ~1357.23 грн за 13 з 25 позицій» — reconciled exactly: 3811.77 − 2596.00 + 129.80 (eggs as-is) + 11.66 (bread as-is) |
+| `READY_MEALS_ONLY` plan summary | «Список покупок: 14 позицій. / Орієнтовно ~1977.56 грн» before the cart was built; `SUM(quantity × estimated_price)` over the list = 1977.56 |
+| The cart that followed | «Разом: 2046.56 грн», Silpo's own `productsTotal` = **1977.56** — the estimate named the goods total to the kopeck |
+| `requestedName` end to end | All 14 lines of the draft order carry it |
+| New MCP calls | None. `mcp_tool_call` held at 706 across three list re-renders; the 13 it grew by came from plan generation and the cart build |
+
+`make test` green (full suite). Two questions left for the product owner in `OVERNIGHT_QUESTIONS.md` →
+Session 11: an as-is price for a mismatched unit (₴399 oatmeal), and whether the household should be told
+*which* lines went unpriced.
+
+**Live state left behind:** the account's active list is the ready-meals one this session generated, with a
+draft order and a real (unconfirmed, un-checked-out) Silpo cart of ₴2046.56 behind it; the profile is back
+on `COOKS_DAILY`.

@@ -264,8 +264,15 @@ itself, grouped by category, ending in «Всього N позицій.» and, w
       this account — say so, the stub can't prove that either way.
 - [ ] Cooking profile, first week: **no** «Орієнтовно» line (nothing to price from yet — honest, not a bug).
 - [ ] Cooking profile after the first confirmed order: tap «Список» (or regenerate) — the line appears, with
-      «за K з N позицій» when the new list has items the baseline never had.
-- [ ] The number is in the same ballpark as the cart's «Разом» that follows «Замовити».
+      «за K з N позицій» when the new list has items the baseline never had. Expect a partial count: the baseline
+      is matched by the request recorded on each basket line, then by catalog name, then by a catalog name that
+      carries every word of the list line. «Куряче філе» finding nothing in «Філе курчати-бройлера» is the rule
+      working, not a bug — 13 of 25 was the live figure on 2026-09-08.
+- [ ] The number is in the same ballpark as the cart's «Разом» that follows «Замовити». For a `READY_MEALS_ONLY`
+      week it is exact: live on 2026-09-08 the estimate said ₴1977.56 and the cart's own `productsTotal` was
+      ₴1977.56, with «Разом» ₴2046.56 once delivery was added.
+- [ ] Nothing above may add a Silpo call. `SELECT count(*) FROM mcp_tool_call` before and after a list re-render
+      («Показати весь список») must be the same number.
 
 **Verify:**
 
