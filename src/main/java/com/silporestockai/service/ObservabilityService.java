@@ -1,6 +1,7 @@
 package com.silporestockai.service;
 
 import com.silporestockai.config.ObservabilityProperties;
+import com.silporestockai.entity.PartnerPromotion;
 import com.silporestockai.model.FirstOrderDelay;
 import com.silporestockai.model.ObservabilitySnapshot;
 import com.silporestockai.model.OnboardingCompletedEvent;
@@ -8,6 +9,8 @@ import com.silporestockai.model.OrderStatus;
 import com.silporestockai.model.OrderTotals;
 import com.silporestockai.model.OrderType;
 import com.silporestockai.model.PromotionEventCount;
+import com.silporestockai.model.PromotionMetrics;
+import com.silporestockai.model.PromotionRollup;
 import com.silporestockai.repository.ConversationStateRepository;
 import com.silporestockai.repository.CustomerOrderRepository;
 import com.silporestockai.repository.PartnerPromotionEventRepository;
@@ -28,6 +31,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 import java.util.function.ToDoubleFunction;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -60,6 +64,7 @@ public class ObservabilityService {
     private final CustomerOrderRepository customerOrderRepository;
     private final ConversationStateRepository conversationStateRepository;
     private final PartnerPromotionEventRepository partnerPromotionEventRepository;
+    private final PromotionMetricsService promotionMetricsService;
     private final Clock clock;
 
     private final AtomicReference<ObservabilitySnapshot> snapshot =
@@ -67,6 +72,16 @@ public class ObservabilityService {
 
     /** Registered lazily because its tag values — partner and product names — only exist once there are placements. */
     private MultiGauge promotionGauge;
+
+    /** Task 64's sellable numbers, per placement and per value pool. Same reason for being multi-gauges. */
+    private MultiGauge shareGauge;
+
+    private MultiGauge baselineGauge;
+    private MultiGauge liftGauge;
+    private MultiGauge revenueGauge;
+    private MultiGauge overallShareGauge;
+    private MultiGauge overallRevenueGauge;
+    private MultiGauge categoriesGauge;
 
     /**
      * Registers every gauge against the snapshot holder. No database access here on purpose: bean ordering relative to
@@ -106,6 +121,29 @@ public class ObservabilityService {
 
         promotionGauge = MultiGauge.builder(MeterNames.PROMOTION_EVENTS)
                 .description("Partner placement funnel, by event")
+                .register(meterRegistry);
+        shareGauge = MultiGauge.builder(MeterNames.PROMOTION_SHARE)
+                .description("Featured Share Rate: this placement's share of its category")
+                .register(meterRegistry);
+        baselineGauge = MultiGauge.builder(MeterNames.PROMOTION_BASELINE)
+                .description("Organic baseline share, tagged with how it was derived")
+                .register(meterRegistry);
+        liftGauge = MultiGauge.builder(MeterNames.PROMOTION_LIFT)
+                .description("Share the placement added over its organic baseline")
+                .register(meterRegistry);
+        revenueGauge = MultiGauge.builder(MeterNames.PROMOTION_REVENUE)
+                .description("Attributed Revenue: the promoted product's own order lines")
+                .baseUnit("uah")
+                .register(meterRegistry);
+        overallShareGauge = MultiGauge.builder(MeterNames.PROMOTION_SHARE_OVERALL)
+                .description("Featured Share Rate across a whole value pool")
+                .register(meterRegistry);
+        overallRevenueGauge = MultiGauge.builder(MeterNames.PROMOTION_REVENUE_OVERALL)
+                .description("Attributed Revenue across a whole value pool")
+                .baseUnit("uah")
+                .register(meterRegistry);
+        categoriesGauge = MultiGauge.builder(MeterNames.PROMOTION_CATEGORIES)
+                .description("Categories a value pool holds an active placement in")
                 .register(meterRegistry);
         log.debug("registered the observability gauges");
     }
@@ -147,10 +185,85 @@ public class ObservabilityService {
                                 Tags.of(
                                         MeterNames.TAG_PARTNER, p.partner(),
                                         MeterNames.TAG_PRODUCT, p.product(),
+                                        MeterNames.TAG_CATEGORY, p.category() == null ? "" : p.category(),
+                                        MeterNames.TAG_TYPE,
+                                                p.type() == null ? "" : p.type().name(),
                                         MeterNames.TAG_EVENT, p.eventType().name()),
                                 p.count()))
                         .toList(),
                 true);
+
+        refreshPlacementGauges();
+    }
+
+    /**
+     * The share, baseline, lift and money behind task 64's panels.
+     *
+     * <p>A row is emitted only where the number exists. A placement with no baseline publishes no lift series at all,
+     * and Grafana draws «No data» — which is the truth. A zero would render as a bar at the floor and read as «this
+     * placement achieved nothing», which is a different and false statement.
+     */
+    private void refreshPlacementGauges() {
+        List<PromotionMetrics> placements = promotionMetricsService.metrics();
+        shareGauge.register(placementRows(placements, PromotionMetrics::featuredShareRate, false), true);
+        baselineGauge.register(placementRows(placements, PromotionMetrics::baselineShare, true), true);
+        liftGauge.register(placementRows(placements, PromotionMetrics::lift, false), true);
+        revenueGauge.register(
+                placements.stream()
+                        .map(metrics -> MultiGauge.Row.of(
+                                placementTags(metrics, false),
+                                metrics.attributedRevenue().doubleValue()))
+                        .toList(),
+                true);
+
+        List<PromotionRollup> rollups = promotionMetricsService.rollups();
+        overallShareGauge.register(
+                rollups.stream()
+                        .filter(rollup -> rollup.featuredShareRate() != null)
+                        .map(rollup -> MultiGauge.Row.of(poolTags(rollup), rollup.featuredShareRate()))
+                        .toList(),
+                true);
+        overallRevenueGauge.register(
+                rollups.stream()
+                        .map(rollup -> MultiGauge.Row.of(
+                                poolTags(rollup), rollup.attributedRevenue().doubleValue()))
+                        .toList(),
+                true);
+        categoriesGauge.register(
+                rollups.stream()
+                        .map(rollup -> MultiGauge.Row.of(poolTags(rollup), rollup.activeCategories()))
+                        .toList(),
+                true);
+    }
+
+    private static List<MultiGauge.Row<Double>> placementRows(
+            List<PromotionMetrics> placements, Function<PromotionMetrics, Double> read, boolean withMethod) {
+        return placements.stream()
+                .filter(metrics -> read.apply(metrics) != null)
+                .map(metrics ->
+                        MultiGauge.Row.of(placementTags(metrics, withMethod), read.apply(metrics), value -> value))
+                .toList();
+    }
+
+    /** Names, not ids: these tags are read off a screen during a pitch. */
+    private static Tags placementTags(PromotionMetrics metrics, boolean withMethod) {
+        PartnerPromotion promotion = metrics.promotion();
+        Tags tags = Tags.of(
+                MeterNames.TAG_PARTNER, promotion.getPartnerName(),
+                MeterNames.TAG_PRODUCT, promotion.getProductName(),
+                MeterNames.TAG_CATEGORY, promotion.getCategoryOrQuery(),
+                MeterNames.TAG_TYPE, promotion.getPromotionType().name());
+        // How the baseline was derived travels with the baseline itself, so no panel can show an approximation
+        // as though it were measured.
+        return withMethod
+                ? tags.and(MeterNames.TAG_METHOD, metrics.baselineMethod().name())
+                : tags;
+    }
+
+    private static Tags poolTags(PromotionRollup rollup) {
+        return Tags.of(
+                MeterNames.TAG_TYPE,
+                rollup.type() == null ? MeterNames.POOL_ALL : rollup.type().name());
     }
 
     // --- What the flows call ---

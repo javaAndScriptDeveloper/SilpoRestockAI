@@ -25,10 +25,10 @@ public interface PartnerPromotionEventRepository extends JpaRepository<PartnerPr
      */
     @Query("""
             select new com.silporestockai.model.PromotionEventCount(
-                p.partnerName, p.productName, e.eventType, count(e))
+                p.partnerName, p.productName, p.categoryOrQuery, p.promotionType, e.eventType, count(e))
             from PartnerPromotionEvent e, PartnerPromotion p
             where p.id = e.promotionId
-            group by p.partnerName, p.productName, e.eventType
+            group by p.partnerName, p.productName, p.categoryOrQuery, p.promotionType, e.eventType
             """)
     List<PromotionEventCount> funnelCounts();
 }

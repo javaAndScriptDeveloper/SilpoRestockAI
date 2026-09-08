@@ -27,6 +27,13 @@ public final class MeterNames {
     public static final String ORDERS_LINES = "komora.orders.lines";
     public static final String ONBOARDING_FIRST_ORDER = "komora.onboarding.first.order";
     public static final String PROMOTION_EVENTS = "komora.promotion.events";
+    public static final String PROMOTION_SHARE = "komora.promotion.share";
+    public static final String PROMOTION_BASELINE = "komora.promotion.baseline";
+    public static final String PROMOTION_LIFT = "komora.promotion.lift";
+    public static final String PROMOTION_REVENUE = "komora.promotion.revenue";
+    public static final String PROMOTION_SHARE_OVERALL = "komora.promotion.share.overall";
+    public static final String PROMOTION_REVENUE_OVERALL = "komora.promotion.revenue.overall";
+    public static final String PROMOTION_CATEGORIES = "komora.promotion.categories";
 
     // --- Counters, timers and summaries, recorded at the call site ---
     public static final String ONBOARDING_STARTED = "komora.onboarding.started";
@@ -57,6 +64,11 @@ public final class MeterNames {
     public static final String TAG_PARTNER = "partner";
     public static final String TAG_PRODUCT = "product";
     public static final String TAG_EVENT = "event";
+    public static final String TAG_CATEGORY = "category";
+    public static final String TAG_METHOD = "method";
+
+    /** The tag value the combined («обидва пули») rollup series carries, so one panel can pick it out. */
+    public static final String POOL_ALL = "ALL";
 
     private MeterNames() {}
 }
