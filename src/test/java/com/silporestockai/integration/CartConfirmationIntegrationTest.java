@@ -278,8 +278,8 @@ class CartConfirmationIntegrationTest extends AbstractIntegrationTest {
         assertThat(MCP.callArguments("silpo_add_or_update_cart_products")).hasSize(2);
         JsonNode offered = TELEGRAM.sentMessages().getLast();
         assertThat(textOf(offered))
-                .contains("додав із твого звичайного набору")
-                .contains("+ Хліб — 1 шт, 28.00 грн")
+                .contains("доклав із твого звичайного набору")
+                .contains("+ Хліб — 1 шт — 28.00 грн")
                 .contains("893.50")
                 .doesNotContain("бракує");
         assertThat(offered.path("reply_markup").toString()).contains("Підтвердити");

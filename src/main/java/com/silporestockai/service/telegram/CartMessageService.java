@@ -47,40 +47,11 @@ public class CartMessageService {
     public String cartText(CartSummary summary, OfferedSlot slot, OrderType type) {
         StringBuilder text =
                 new StringBuilder(type == OrderType.AD_HOC ? "Зібрав кошик:\n" : "Зібрав кошик на тиждень:\n");
-        for (BasketItem item : summary.items()) {
-            text.append("\n— ").append(item.name());
-            if (item.quantity() != null) {
-                text.append(" — ").append(amount(item.quantity()));
-                if (item.unit() != null) {
-                    text.append(' ').append(item.unit());
-                }
-            }
-            if (item.price() != null) {
-                // What this line costs, not the price per kilogram beside a fraction of one: «0.1 — 1399.00 грн»
-                // read as a ₴1399 cheese to the person who complained about it, when the line was ₴139.90.
-                BigDecimal lineCost =
-                        item.quantity() == null ? item.price() : item.price().multiply(item.quantity());
-                text.append(" — ").append(money(lineCost)).append(" грн");
-            }
-        }
+        text.append(cartLinesText(summary));
         if (!summary.unresolved().isEmpty()) {
             text.append("\n\nНе знайшов: ")
                     .append(String.join(", ", summary.unresolved()))
                     .append(" — можеш додати вручну пізніше.");
-        }
-        if (!summary.toppedUpLines().isEmpty()) {
-            // Added on the household's behalf, so named line by line: the right to take one out is the whole
-            // difference between a helpful top-up and an upsell.
-            text.append(
-                    "\n\nЗамовлення було менше за мінімум доставки «Сільпо», тож додав із твого звичайного набору:");
-            summary.toppedUpLines().forEach(line -> text.append("\n+ ").append(line));
-            text.append("\nНе треба — скажи, що прибрати.");
-        }
-        if (!summary.skippedLines().isEmpty()) {
-            // Held back on purpose, and said so with the number: a line that would have cost a small fortune is
-            // worse in the cart than out of it, but hiding that it was dropped would be worse still.
-            text.append("\n\nНе поклав, бо виглядає неправильно:");
-            summary.skippedLines().forEach(line -> text.append("\n— ").append(line));
         }
         for (String validation : summary.validations()) {
             text.append("\n⚠ ").append(validation);
@@ -97,6 +68,65 @@ public class CartMessageService {
             text.append("\nНа рахунку ")
                     .append(amount(summary.bonusAvailable()))
                     .append(" бонусів — можу списати їх на це замовлення.");
+        }
+        return text.toString();
+    }
+
+    /**
+     * The lines of the cart, one per product, with what each costs — shared by the cart and the reorder messages.
+     *
+     * <p>A line the top-up added from the household's own baseline is marked «+» in place, and one sentence
+     * underneath says what «+» means. The top-up used to be listed a second time under the cart — on a live
+     * reorder that was thirteen lines the reader had just read, and a wall of text for a two-line delta. Every
+     * added line still stands out, and the right to take one out still ends the sentence: that right is the whole
+     * difference between a helpful top-up and an upsell.
+     */
+    public String cartLinesText(CartSummary summary) {
+        StringBuilder text = new StringBuilder();
+        java.util.Set<String> toppedUp = new java.util.HashSet<>();
+        for (String line : summary.toppedUpLines()) {
+            int cut = line.indexOf(" — ");
+            toppedUp.add(cut < 0 ? line : line.substring(0, cut));
+        }
+        java.util.Set<String> marked = new java.util.HashSet<>();
+        for (BasketItem item : summary.items()) {
+            boolean added = item.name() != null && toppedUp.contains(item.name());
+            if (added) {
+                marked.add(item.name());
+            }
+            text.append(added ? "\n+ " : "\n— ").append(item.name());
+            if (item.quantity() != null) {
+                text.append(" — ").append(amount(item.quantity()));
+                if (item.unit() != null) {
+                    text.append(' ').append(item.unit());
+                }
+            }
+            if (item.price() != null) {
+                // What this line costs, not the price per kilogram beside a fraction of one: «0.1 — 1399.00 грн»
+                // read as a ₴1399 cheese to the person who complained about it, when the line was ₴139.90.
+                BigDecimal lineCost =
+                        item.quantity() == null ? item.price() : item.price().multiply(item.quantity());
+                text.append(" — ").append(money(lineCost)).append(" грн");
+            }
+        }
+        if (!summary.toppedUpLines().isEmpty()) {
+            text.append("\n\nРядки з «+» доклав із твого звичайного набору — саме замовлення було менше за мінімум ")
+                    .append("доставки «Сільпо».");
+            // A top-up line the cart read-back does not carry under that name is still named, so nothing added
+            // on the household's behalf goes unsaid.
+            summary.toppedUpLines().stream()
+                    .filter(line -> {
+                        int cut = line.indexOf(" — ");
+                        return !marked.contains(cut < 0 ? line : line.substring(0, cut));
+                    })
+                    .forEach(line -> text.append("\n+ ").append(line));
+            text.append("\nНе треба — скажи, що прибрати.");
+        }
+        if (!summary.skippedLines().isEmpty()) {
+            // Held back on purpose, and said so with the number: a line that would have cost a small fortune is
+            // worse in the cart than out of it, but hiding that it was dropped would be worse still.
+            text.append("\n\nНе поклав, бо виглядає неправильно:");
+            summary.skippedLines().forEach(line -> text.append("\n— ").append(line));
         }
         return text.toString();
     }

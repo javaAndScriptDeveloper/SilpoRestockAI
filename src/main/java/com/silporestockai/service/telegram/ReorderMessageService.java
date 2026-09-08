@@ -1,6 +1,5 @@
 package com.silporestockai.service.telegram;
 
-import com.silporestockai.model.BasketItem;
 import com.silporestockai.model.CartSummary;
 import com.silporestockai.model.DeltaOrder;
 import com.silporestockai.model.OfferedSlot;
@@ -40,31 +39,9 @@ public class ReorderMessageService {
         StringBuilder text = new StringBuilder("Час докупити. Ось що зібрав:\n");
         if (order.cart() != null && !order.cart().items().isEmpty()) {
             // The cart's own lines, with quantity and what each costs — a reorder used to list bare names, and
-            // the person tapping «Підтвердити» had no idea what they were agreeing to pay.
-            for (BasketItem item : order.cart().items()) {
-                text.append("\n— ").append(item.name());
-                if (item.quantity() != null) {
-                    text.append(" — ").append(amount(item.quantity()));
-                    if (item.unit() != null) {
-                        text.append(' ').append(item.unit());
-                    }
-                }
-                if (item.price() != null) {
-                    BigDecimal lineCost = item.quantity() == null
-                            ? item.price()
-                            : item.price().multiply(item.quantity());
-                    text.append(" — ").append(money(lineCost)).append(" грн");
-                }
-            }
-            if (!order.cart().toppedUpLines().isEmpty()) {
-                text.append(
-                        "\n\nЗамовлення було менше за мінімум доставки «Сільпо», тож додав із твого звичайного набору:");
-                order.cart().toppedUpLines().forEach(line -> text.append("\n+ ").append(line));
-            }
-            if (!order.cart().skippedLines().isEmpty()) {
-                text.append("\n\nНе поклав, бо виглядає неправильно:");
-                order.cart().skippedLines().forEach(line -> text.append("\n— ").append(line));
-            }
+            // the person tapping «Підтвердити» had no idea what they were agreeing to pay. Same renderer as the
+            // cart message, so a topped-up line looks the same wherever it appears.
+            text.append(cartMessageService.cartLinesText(order.cart()));
         } else {
             for (String name : order.reordered()) {
                 text.append("\n— ").append(name);
@@ -129,8 +106,9 @@ public class ReorderMessageService {
             buttons.add(TelegramButton.callback("Взяти замість «%s»".formatted(name), CALLBACK_ACCEPT_PREFIX + i));
             buttons.add(TelegramButton.callback("Без «%s»".formatted(name), CALLBACK_REJECT_PREFIX + i));
         }
-        buttons.add(TelegramButton.callback("Інший час", CALLBACK_SLOT_MENU));
+        // Same order as the cart message: the thumb learns where «Підтвердити» is once.
         buttons.add(TelegramButton.callback("Підтвердити", CALLBACK_CONFIRM));
+        buttons.add(TelegramButton.callback("Інший час", CALLBACK_SLOT_MENU));
         buttons.add(TelegramButton.callback("Скасувати", CALLBACK_CANCEL));
         return buttons;
     }

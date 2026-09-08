@@ -1472,8 +1472,21 @@ public class CartBuildingService {
             if (healing.changedCart()) {
                 List<String> stillUnresolved = new ArrayList<>(unresolved == null ? List.of() : unresolved);
                 stillUnresolved.addAll(healing.gone());
+                // A top-up line the branch turned out not to have is no longer "added on your behalf".
+                List<String> stillToppedUp = (toppedUp == null ? List.<String>of() : toppedUp)
+                        .stream()
+                                .filter(line -> healing.removedNames().stream()
+                                        .noneMatch(name -> line.startsWith(name + " — ")))
+                                .toList();
                 return getVerifiedCart(
-                        userId, context, deliverySlot, stillUnresolved, promotedProductIds, skipped, toppedUp, true);
+                        userId,
+                        context,
+                        deliverySlot,
+                        stillUnresolved,
+                        promotedProductIds,
+                        skipped,
+                        stillToppedUp,
+                        true);
             }
         }
 
@@ -1668,6 +1681,7 @@ public class CartBuildingService {
         List<Map<String, Object>> toRemove = new ArrayList<>();
         List<Map<String, Object>> toCut = new ArrayList<>();
         List<String> gone = new ArrayList<>();
+        List<String> removedNames = new ArrayList<>();
         for (JsonNode validation : McpResponses.findArray(cart, McpResponses.VALIDATIONS)) {
             if (!"product.offer.stock.max".equals(validation.path("message").asText())) {
                 continue;
@@ -1685,6 +1699,7 @@ public class CartBuildingService {
             if (stock.signum() <= 0) {
                 toRemove.add(Map.of("productId", productId));
                 gone.add(name + " (немає на складі)");
+                removedNames.add(name);
                 log.info("taking «{}» out of cart {}: the branch has none left", name, context.cartId());
             } else {
                 toCut.add(Map.of(
@@ -1705,11 +1720,14 @@ public class CartBuildingService {
         if (!toCut.isEmpty()) {
             call(userId, TOOL_ADD_PRODUCTS, Map.of("shoppingCartId", context.cartId(), "products", toCut));
         }
-        return new StockHealing(!toRemove.isEmpty() || !toCut.isEmpty(), gone);
+        return new StockHealing(!toRemove.isEmpty() || !toCut.isEmpty(), gone, removedNames);
     }
 
-    /** What {@link #takeOutWhatTheBranchLacks} did: whether the cart changed at all, and the lines it lost. */
-    private record StockHealing(boolean changedCart, List<String> gone) {}
+    /**
+     * What {@link #takeOutWhatTheBranchLacks} did: whether the cart changed at all, the lines it lost as the
+     * household will read them, and their bare catalog names for matching other lists.
+     */
+    private record StockHealing(boolean changedCart, List<String> gone, List<String> removedNames) {}
 
     /**
      * A cart-level validation is an object ({@code level}, {@code type}, {@code message}, {@code context}), not the
