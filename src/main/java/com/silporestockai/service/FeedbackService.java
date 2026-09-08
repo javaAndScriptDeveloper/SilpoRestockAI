@@ -90,6 +90,8 @@ public class FeedbackService {
                 telegramOutboundService.sendMessage(chatId, "Напиши, будь ласка, текстом.");
             case TelegramIncomingUpdate.WebAppData ignored ->
                 telegramOutboundService.sendMessage(chatId, "Напиши, будь ласка, текстом.");
+            // The group-chat shapes (task 68) never reach a household flow; the router splits them off first.
+            default -> log.debug("ignoring a group update in a household flow for chat {}", incoming.chatId());
         }
     }
 

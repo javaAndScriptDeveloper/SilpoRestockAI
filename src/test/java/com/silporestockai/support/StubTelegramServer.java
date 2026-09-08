@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -43,6 +44,10 @@ public final class StubTelegramServer implements AutoCloseable {
     private final List<String> sentAudio = new ArrayList<>();
 
     private boolean rejectCallbackAnswers;
+    private final AtomicInteger nextMessageId = new AtomicInteger();
+
+    /** What {@code getMe} answers as the bot's username when a test does not configure one. */
+    public static final String GET_ME_USERNAME = "stub_bot";
 
     public StubTelegramServer(String botToken) throws IOException {
         this.botToken = botToken;
@@ -165,17 +170,30 @@ public final class StubTelegramServer implements AutoCloseable {
         return switch (method) {
             // sendAudio and sendDocument answer with a Message too; without one the SDK treats the call as failed
             // and the caller's fallback fires, which would look like a bug in the caller rather than in the stub.
+            // Ids count up like the real API's: a group round (task 68) tells a reply to its greeting from a reply
+            // to its proposal by exactly this number.
             case "sendmessage", "sendaudio", "senddocument" ->
                 Map.of(
                         "message_id",
-                        1,
+                        nextMessageId.incrementAndGet(),
                         "date",
                         1,
                         "chat",
                         Map.of("id", body.path("chat_id").asLong(), "type", "private"));
             case "getfile" -> Map.of("file_id", body.path("file_id").asText(), "file_path", "voice/stub.ogg");
+            case "getme" -> Map.of("id", botId(), "is_bot", true, "first_name", "Stub", "username", GET_ME_USERNAME);
             default -> Boolean.TRUE;
         };
+    }
+
+    /** The id of the last message this stub handed out — what the next reply-to-bot fixture should point at. */
+    public int lastMessageId() {
+        return nextMessageId.get();
+    }
+
+    private long botId() {
+        int colon = botToken.indexOf(':');
+        return colon <= 0 ? 0L : Long.parseLong(botToken.substring(0, colon));
     }
 
     private synchronized boolean rejectsCallbackAnswers() {
