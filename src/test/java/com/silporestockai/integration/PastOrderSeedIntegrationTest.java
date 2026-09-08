@@ -254,6 +254,8 @@ class PastOrderSeedIntegrationTest extends AbstractIntegrationTest {
         sendText(1, "почни з мого останнього замовлення");
 
         assertThat(lastMessageText()).contains("Не бачу минулих замовлень");
+        assertThat(TELEGRAM.sentMessages().stream().map(m -> m.path("text").asText()))
+                .anyMatch(text -> text.contains("Дивлюсь твої замовлення"));
         assertThat(conversationStateService.load(CHAT_ID).getCurrentFlow()).isEqualTo(ConversationFlow.NONE);
     }
 

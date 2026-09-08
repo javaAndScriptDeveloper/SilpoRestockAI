@@ -63,6 +63,10 @@ public class PastOrderSeedService {
                     chatId, "Спершу під'єднай акаунт «Сільпо» — без нього я не бачу твоїх замовлень.");
             return;
         }
+        // Said before the two history calls, not after: live, a slow «Сільпо» answer left this request hanging for
+        // a minute and a half with nothing on screen. Every other flow that waits on the catalog says what it is
+        // doing first; this one reads the account, and should say so.
+        telegramOutboundService.sendMessage(chatId, "Дивлюсь твої замовлення в «Сільпо» — секунду.");
         List<PastOrderSummary> orders = orderHistoryService.read(user.getId()).orders();
         if (orders.isEmpty()) {
             telegramOutboundService.sendMessage(
