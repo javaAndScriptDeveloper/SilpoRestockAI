@@ -101,6 +101,17 @@ public class GoogleAuthService {
     }
 
     /**
+     * Who started the login this state belongs to, without consuming it.
+     *
+     * <p>The callback needs the owner even when the login is about to fail — a declined consent screen carries no code
+     * to exchange, and a failed exchange has already removed the pending entry by the time anything can be reported.
+     * Peeking before {@link #completeLogin} is what lets the failure reach the person's chat rather than only the log.
+     */
+    public java.util.Optional<UUID> pendingUserId(String state) {
+        return java.util.Optional.ofNullable(pendingLogins.get(state)).map(GoogleLoginState::userId);
+    }
+
+    /**
      * A usable access token, refreshed when it is about to expire.
      *
      * <p>Empty rather than an exception when the user never connected: "no calendar" is the common case, and the

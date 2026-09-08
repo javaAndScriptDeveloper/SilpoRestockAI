@@ -11,6 +11,7 @@ import com.silporestockai.entity.User;
 import com.silporestockai.repository.SilpoOAuthTokenRepository;
 import com.silporestockai.repository.UserRepository;
 import com.silporestockai.support.StubOAuthServer;
+import com.silporestockai.support.StubTelegramServer;
 import com.silporestockai.utils.TokenCipher;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -21,6 +22,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -35,7 +38,9 @@ import org.springframework.test.web.servlet.MvcResult;
  */
 class SilpoOAuthIntegrationTest extends AbstractIntegrationTest {
 
+    private static final String BOT_TOKEN = "602:stub-bot-token";
     private static final StubOAuthServer STUB = startStub();
+    private static final StubTelegramServer TELEGRAM = startTelegram();
 
     @Autowired
     private MockMvc mockMvc;
@@ -52,6 +57,26 @@ class SilpoOAuthIntegrationTest extends AbstractIntegrationTest {
     @DynamicPropertySource
     static void oauthIssuer(DynamicPropertyRegistry registry) {
         registry.add("silpo.mcp.issuer", STUB::issuer);
+        registry.add("telegram.bot-token", () -> BOT_TOKEN);
+        registry.add("telegram.api-url", TELEGRAM::baseUrl);
+    }
+
+    @AfterAll
+    static void stopTelegramStub() {
+        TELEGRAM.close();
+    }
+
+    @BeforeEach
+    void resetTelegramStub() {
+        TELEGRAM.reset();
+    }
+
+    private static StubTelegramServer startTelegram() {
+        try {
+            return new StubTelegramServer(BOT_TOKEN);
+        } catch (IOException e) {
+            throw new IllegalStateException("could not start the Telegram stub", e);
+        }
     }
 
     private static StubOAuthServer startStub() {
@@ -159,6 +184,57 @@ class SilpoOAuthIntegrationTest extends AbstractIntegrationTest {
                 .andReturn();
 
         assertThat(result.getResponse().getStatus()).isEqualTo(400);
+        // A forged state has no pending login, so there is nobody to tell — and nothing to tell them.
+        assertThat(TELEGRAM.sentMessages()).isEmpty();
+    }
+
+    @Test
+    void aFinishedLoginRendersABrandedPageAndTellsTheChatWithoutBeingAsked() throws Exception {
+        UUID userId = persistedUser();
+        String state = startLogin(userId);
+
+        MvcResult callback = mockMvc.perform(get("/auth/silpo/callback")
+                        .param("code", "auth-code-123")
+                        .param("state", state))
+                .andReturn();
+
+        assertThat(callback.getResponse().getStatus()).isEqualTo(200);
+        String html = callback.getResponse().getContentAsString();
+        assertThat(html).contains("#FF8200").contains("Комора").contains("«Сільпо» підключено");
+
+        assertThat(TELEGRAM.sentMessages()).hasSize(1);
+        assertThat(TELEGRAM.sentMessages().getFirst().path("chat_id").asLong())
+                .isEqualTo(userRepository.findById(userId).orElseThrow().getTelegramChatId());
+        assertThat(TELEGRAM.sentMessages().getFirst().path("text").asText()).contains("«Сільпо» підключено");
+    }
+
+    @Test
+    void aDeclinedLoginRendersABrandedErrorPageAndSaysSoInTheChat() throws Exception {
+        UUID userId = persistedUser();
+        String state = startLogin(userId);
+
+        MvcResult callback = mockMvc.perform(get("/auth/silpo/callback")
+                        .param("error", "access_denied")
+                        .param("state", state))
+                .andReturn();
+
+        assertThat(callback.getResponse().getStatus()).isEqualTo(400);
+        assertThat(callback.getResponse().getContentType()).startsWith("text/html");
+        assertThat(callback.getResponse().getContentAsString())
+                .contains("Не вдалось підключити")
+                .doesNotContain("at com.silporestockai");
+
+        assertThat(tokenRepository.findByUserId(userId)).isEmpty();
+        assertThat(TELEGRAM.sentMessages()).hasSize(1);
+        assertThat(TELEGRAM.sentMessages().getFirst().path("text").asText()).contains("Не вдалось підключити");
+    }
+
+    private String startLogin(UUID userId) throws Exception {
+        return queryOf(mockMvc.perform(get("/auth/silpo/start").param("userId", userId.toString()))
+                        .andReturn()
+                        .getResponse()
+                        .getHeader("Location"))
+                .get("state");
     }
 
     private static Map<String, String> queryOf(String location) {
