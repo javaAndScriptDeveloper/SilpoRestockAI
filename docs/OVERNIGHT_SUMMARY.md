@@ -677,8 +677,7 @@ the yellow ❌ lines legible on screen for the first time, which was not the pla
 **Mode:** every step of the demo script walked in a real Telegram Web chat with «Батон Степанович» on the
 owner's account against the real Silpo MCP and the real Claude API, with `logs/mcp-calls.log` and
 `logs/app.log` read after every step and the Grafana Cloud dashboard checked where a step feeds it. The
-rule was to stop at the first thing wrong, fix it, run the same step again, then move on. Twelve commits
-of code, one per defect, all on `main`, unpushed. The account was reset for a fresh onboarding first (the
+rule was to stop at the first thing wrong, fix it, run the same step again, then move on. Eleven code commits, one per defect, plus tooling and docs — all on `main`, unpushed. The account was reset for a fresh onboarding first (the
 encrypted Silpo token carried over — see `OVERNIGHT_QUESTIONS.md` → Session 10).
 
 ## The demo script, step by step
@@ -746,5 +745,5 @@ session-10 changelog entry.
 - `.env` session knobs under the `# --- session-only test knobs (revert!) ---` marker were removed at the
   end of the session; `CHECKIN_SWEEP_CRON` etc. are back to defaults.
 - The account (chat 218196255) is onboarded as a cooking household of two with a fresh recipe plan on
-  screen, three confirmed orders in the DB (INITIAL, SCHEDULED_REORDER, two AD_HOC), the partner milk
+  screen, four confirmed orders in the DB (INITIAL, SCHEDULED_REORDER, two AD_HOC), the partner milk
   placement ACTIVE, cheese PAUSED.
