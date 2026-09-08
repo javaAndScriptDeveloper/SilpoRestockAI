@@ -59,6 +59,12 @@ public class TelegramFailureRecoveryService {
         // CartBuildException (and NoSilpoDeliveryAddressException, which extends it) is not a SilpoMcpException
         // itself — CartBuildingService raises it directly when a Silpo tool answers with its own error payload
         // rather than a transport failure — but it is exactly as much "Сільпо" as a network-level one is.
+        if (e instanceof CartBuildException refused && !refused.getValidations().isEmpty()) {
+            // Silpo answered, and said why. «Тимчасово не відповідає» for a stock or slot refusal sent people
+            // to retry something that would refuse again the same way.
+            return "Кошик зібрати не вдалось — «Сільпо» відхилив його: " + String.join("; ", refused.getValidations())
+                    + ". Зміни список і спробуй ще раз.";
+        }
         if (e instanceof SilpoMcpException || e instanceof CartBuildException) {
             return "«Сільпо» тимчасово не відповідає — спробуй за хвилину.";
         }

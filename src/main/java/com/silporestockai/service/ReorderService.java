@@ -93,12 +93,19 @@ public class ReorderService {
 
         List<String> reordered = new ArrayList<>();
         List<String> missing = new ArrayList<>();
-        for (String need : needs) {
-            boolean unresolved = cart.unresolved().stream().anyMatch(name -> name.equalsIgnoreCase(need));
+        // items and needs line up one to one; an item may carry the household's word rather than the need's
+        // catalog name, and the cart reports unresolved lines by the name it was asked for.
+        java.util.Iterator<String> needIterator = needs.iterator();
+        for (ShoppingListItem item : items) {
+            String need = needIterator.next();
+            String askedAs = item.getName();
+            boolean unresolved = cart.unresolved().stream()
+                    .anyMatch(name -> name.equalsIgnoreCase(askedAs) || name.equalsIgnoreCase(need));
             boolean heldBack = cart.skippedLines().stream()
-                    .anyMatch(line -> line.toLowerCase(Locale.ROOT).startsWith(need.toLowerCase(Locale.ROOT) + " — "));
+                    .anyMatch(
+                            line -> line.toLowerCase(Locale.ROOT).startsWith(askedAs.toLowerCase(Locale.ROOT) + " — "));
             if (unresolved || heldBack) {
-                missing.add(need);
+                missing.add(askedAs);
             } else {
                 reordered.add(need);
             }
@@ -135,10 +142,19 @@ public class ReorderService {
         return needs.stream()
                 .map(name -> {
                     BasketItem known = baseline.get(normalise(name));
+                    // Search by the household's own word for the line («Молоко»), not by the catalog name the
+                    // baseline stores («Молоко «Яготинське» 2,6% п/е»): the catalog name finds exactly that
+                    // product or nothing, and live it found it with zero stock and the reorder died. The word
+                    // finds the shelf; the matcher and any placement pick what is on it today.
+                    String searchAs = known != null
+                                    && known.requestedName() != null
+                                    && !known.requestedName().isBlank()
+                            ? known.requestedName()
+                            : name;
                     return ShoppingListItem.builder()
                             .id(UUID.randomUUID())
                             .userId(userId)
-                            .name(name)
+                            .name(searchAs)
                             .quantity(known == null || known.quantity() == null ? BigDecimal.ONE : known.quantity())
                             .unit(known == null ? null : known.unit())
                             .build();

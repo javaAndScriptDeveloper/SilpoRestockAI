@@ -74,7 +74,8 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
                     "silpo_get_my_delivery_addresses",
                     "silpo_get_available_delivery_types",
                     "silpo_list_branches",
-                    "silpo_create_shopping_cart"));
+                    "silpo_create_shopping_cart",
+                    "silpo_remove_cart_products"));
         } catch (IOException e) {
             throw new IllegalStateException("could not start the MCP stub", e);
         }
@@ -717,6 +718,57 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
         assertThat(summary.toppedUpLines()).hasSize(3).first().asString().isEqualTo("Хліб пшеничний — 1 шт, 28.00 грн");
         assertThat(summary.validations()).isEmpty();
         assertThat(summary.checkoutWebLink()).isNotNull();
+    }
+
+    /**
+     * A line that never went through a search — a baseline line in a reorder, a pre-resolved product id — carries
+     * no stock figure, and live a three-line reorder died on Silpo's {@code product.offer.stock.max} for a potato
+     * the branch had none of, reported as «Сільпо тимчасово не відповідає». Silpo's validation names the product
+     * and what is left, so the cart takes that line out itself, reads the cart once more, and names the line as
+     * missing rather than failing the whole order.
+     */
+    @Test
+    void aLineTheBranchHasNoneOfIsTakenOutAndNamedRatherThanFailingTheCart() {
+        UUID userId = connectedUser(8434L);
+        scriptCartTools();
+        MCP.respondToTool("silpo_find_products_batch", """
+                {"queries":[{"query":"спагеті","products":[{"name":"Спагеті La Pasta","productId":"p-1",\
+                "companyId":"company-3","branchId":"branch-7","step":1,"displayRatio":"400г","price":43}]},\
+                {"query":"картопля","products":[{"name":"Картопля Сенсейшн","productId":"p-2",\
+                "companyId":"company-3","branchId":"branch-7","step":1,"weighted":true,"price":30}]}]}""");
+        MCP.respondToTool("silpo_add_or_update_cart_products", "{\"ok\":true}");
+        MCP.respondToTool("silpo_remove_cart_products", "{\"ok\":true}");
+        String refused = """
+                {"cartId":"cart-1","branchId":"branch-7","companyId":"company-3","deliveryType":"delivery",\
+                "items":[{"productId":"p-1","name":"Спагеті La Pasta","unit":"шт","quantity":1,"price":43},\
+                {"productId":"p-2","name":"Картопля Сенсейшн","weighted":true,"quantity":1,"price":30}],\
+                "total":873,"productsTotal":873,"validations":[\
+                {"level":"error","type":"product","message":"product.offer.stock.max",\
+                "context":{"productId":"p-2","markdownGroup":"default","stock":0}}],\
+                "checkoutWebLink":null,"checkoutMobileLink":null}""";
+        MCP.respondToToolInOrder("silpo_get_shopping_cart_by_id", """
+                {"cartId":"cart-1","branchId":"branch-7","companyId":"company-3","deliveryType":"delivery",\
+                "items":[],"checkoutWebLink":"https://silpo.ua/checkout/cart-1","checkoutMobileLink":"silpo://checkout/cart-1"}""", refused, """
+                {"cartId":"cart-1","branchId":"branch-7","companyId":"company-3","deliveryType":"delivery",\
+                "items":[{"productId":"p-1","name":"Спагеті La Pasta","unit":"шт","quantity":1,"price":43}],\
+                "total":843,"productsTotal":843,"validations":[],\
+                "checkoutWebLink":"https://silpo.ua/checkout/cart-1","checkoutMobileLink":"silpo://checkout/cart-1"}""");
+
+        CartSummary summary = cartBuildingService.buildCart(
+                userId, List.of(item("спагеті", "400", "г"), item("картопля", "1", "кг")));
+
+        assertThat(MCP.callArguments("silpo_remove_cart_products")).hasSize(1);
+        assertThat(MCP.callArguments("silpo_remove_cart_products")
+                        .getFirst()
+                        .path("products")
+                        .get(0)
+                        .path("productId")
+                        .asText())
+                .isEqualTo("p-2");
+        assertThat(summary.checkoutWebLink()).isNotNull();
+        assertThat(summary.items()).hasSize(1);
+        assertThat(summary.unresolved()).containsExactly("Картопля Сенсейшн (немає на складі)");
+        assertThat(summary.validations()).isEmpty();
     }
 
     /** With no baseline to draw on, the build still comes back; the top-up is what refuses, naming the amounts. */

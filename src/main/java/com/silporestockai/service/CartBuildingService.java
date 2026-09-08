@@ -65,6 +65,7 @@ public class CartBuildingService {
     private static final String TOOL_FIND_PRODUCTS = "silpo_find_products_batch";
     private static final String TOOL_ADD_PRODUCTS = "silpo_add_or_update_cart_products";
     private static final String TOOL_CLEAR_CART = "silpo_clear_shopping_cart";
+    private static final String TOOL_REMOVE_PRODUCTS = "silpo_remove_cart_products";
     private static final String TOOL_MY_ADDRESSES = "silpo_get_my_delivery_addresses";
     private static final String TOOL_DELIVERY_TYPES = "silpo_get_available_delivery_types";
     private static final String TOOL_LIST_BRANCHES = "silpo_list_branches";
@@ -1444,7 +1445,37 @@ public class CartBuildingService {
             List<String> promotedProductIds,
             List<String> skipped,
             List<String> toppedUp) {
+        return getVerifiedCart(userId, context, deliverySlot, unresolved, promotedProductIds, skipped, toppedUp, false);
+    }
+
+    /**
+     * The one Silpo refusal the cart can fix by itself is stock. The search prefilter drops a candidate the branch
+     * is short of, but a line that never went through a search — a baseline line in a reorder or a top-up, a
+     * pre-resolved product id — arrives with no stock figure at all, and Silpo answers the whole cart with
+     * {@code product.offer.stock.max} and no checkout link. Live that turned a three-line reorder into «Сільпо
+     * тимчасово не відповідає». Silpo's validation names the product and how much is left, which is enough to
+     * take the line out (or cut it to what is there), read the cart once more, and tell the household which line
+     * went missing. Once only: a second refusal is reported, not chased.
+     */
+    private CartSummary getVerifiedCart(
+            UUID userId,
+            CartContext context,
+            OfferedSlot deliverySlot,
+            List<String> unresolved,
+            List<String> promotedProductIds,
+            List<String> skipped,
+            List<String> toppedUp,
+            boolean healedOnce) {
         JsonNode cart = call(userId, TOOL_CART_BY_ID, Map.of("shoppingCartId", context.cartId()));
+        if (!healedOnce) {
+            StockHealing healing = takeOutWhatTheBranchLacks(userId, context, cart);
+            if (healing.changedCart()) {
+                List<String> stillUnresolved = new ArrayList<>(unresolved == null ? List.of() : unresolved);
+                stillUnresolved.addAll(healing.gone());
+                return getVerifiedCart(
+                        userId, context, deliverySlot, stillUnresolved, promotedProductIds, skipped, toppedUp, true);
+            }
+        }
 
         List<BasketItem> items = McpResponses.findArray(cart, McpResponses.ITEMS).stream()
                 .map(node -> new BasketItem(
@@ -1624,6 +1655,61 @@ public class CartBuildingService {
             throw new CartBuildException("interrupted while waiting out a Silpo rate limit");
         }
     }
+
+    /**
+     * Removes every line Silpo says the branch has none of, cuts a line the branch has less of down to what is
+     * there, and returns the names taken out — each marked so the cart message can say why.
+     */
+    private StockHealing takeOutWhatTheBranchLacks(UUID userId, CartContext context, JsonNode cart) {
+        Map<String, JsonNode> lineByProductId = new LinkedHashMap<>();
+        McpResponses.findArray(cart, McpResponses.ITEMS)
+                .forEach(node -> McpResponses.findString(node, McpResponses.PRODUCT_ID)
+                        .ifPresent(id -> lineByProductId.put(id, node)));
+        List<Map<String, Object>> toRemove = new ArrayList<>();
+        List<Map<String, Object>> toCut = new ArrayList<>();
+        List<String> gone = new ArrayList<>();
+        for (JsonNode validation : McpResponses.findArray(cart, McpResponses.VALIDATIONS)) {
+            if (!"product.offer.stock.max".equals(validation.path("message").asText())) {
+                continue;
+            }
+            JsonNode validationContext = validation.path("context");
+            String productId =
+                    McpResponses.findString(validationContext, "productId").orElse(null);
+            JsonNode line = productId == null ? null : lineByProductId.get(productId);
+            if (line == null) {
+                continue;
+            }
+            String name = McpResponses.findString(line, McpResponses.NAME).orElse("товар");
+            BigDecimal stock =
+                    McpResponses.findNumber(validationContext, "stock").orElse(BigDecimal.ZERO);
+            if (stock.signum() <= 0) {
+                toRemove.add(Map.of("productId", productId));
+                gone.add(name + " (немає на складі)");
+                log.info("taking «{}» out of cart {}: the branch has none left", name, context.cartId());
+            } else {
+                toCut.add(Map.of(
+                        "productId",
+                        productId,
+                        "companyId",
+                        nullSafe(context.companyId()),
+                        "branchId",
+                        nullSafe(context.branchId()),
+                        "quantity",
+                        stock));
+                log.info("cutting «{}» in cart {} down to {}: all the branch has", name, context.cartId(), stock);
+            }
+        }
+        if (!toRemove.isEmpty()) {
+            call(userId, TOOL_REMOVE_PRODUCTS, Map.of("shoppingCartId", context.cartId(), "products", toRemove));
+        }
+        if (!toCut.isEmpty()) {
+            call(userId, TOOL_ADD_PRODUCTS, Map.of("shoppingCartId", context.cartId(), "products", toCut));
+        }
+        return new StockHealing(!toRemove.isEmpty() || !toCut.isEmpty(), gone);
+    }
+
+    /** What {@link #takeOutWhatTheBranchLacks} did: whether the cart changed at all, and the lines it lost. */
+    private record StockHealing(boolean changedCart, List<String> gone) {}
 
     /**
      * A cart-level validation is an object ({@code level}, {@code type}, {@code message}, {@code context}), not the
