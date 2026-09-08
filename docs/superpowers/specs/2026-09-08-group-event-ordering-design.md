@@ -17,17 +17,19 @@ Two platform facts shape everything below:
 1. **Telegram gives a bot no member list.** The bot knows only people who interacted with it. Every
    count in this design is a count of explicit replies, never of an assumed roster.
 2. **A bot in a group is, by default, in privacy mode:** it receives only commands, messages that
-   mention it, and replies to its own messages. The design leans on that instead of fighting it — a
-   preference is a *reply to the bot's greeting*, a revision is a *mention or a reply to the proposal*.
-   If privacy mode is off (bot made admin), the same rule is enforced in code: an unaddressed message
-   is dropped at debug level and never reaches a model.
+   mention it, and replies to its own messages. The design goes further (product decision after the live
+   run): the bot acts **only** on a reply to one of its own messages or a tap on one of its own buttons —
+   a mention or a command is ignored like chatter. A preference is a *reply to the greeting*, a revision
+   is a *reply to the proposal*. Whether or not the bot is an admin, the rule is enforced in code: an
+   unaddressed message is dropped at debug level and never reaches a model.
 
 ## Flow
 
 1. **Organizer adds the bot.** Telegram delivers `my_chat_member` (and, on some clients, a
    `new_chat_members` service message); `from` is the person who performed the add — the organizer,
-   read from the event, never guessed. A later `/drinks` in the same chat starts a *new* event whose
-   organizer is the sender (a group orders more than once, and the bot is added only once).
+   read from the event, never guessed. A later tap on «🔄 Новий збір» under a finished round's summary
+   starts a *new* event whose organizer is the tapper (a group orders more than once, and the bot is
+   added only once).
 2. **Greeting** in the group, with one inline button «✅ Всі відповіли» and the rules: reply to this
    message with what you drink, or «.» for "на розсуд бота"; optionally the organizer sets
    `бюджет 2000`, `привід: новий рік`, `дата 31.12`. The greeting's `message_id` is stored.
@@ -54,8 +56,8 @@ Two platform facts shape everything below:
    the **organizer's private chat**. The group gets a confirmation: what went in, the total, the
    informational split, and «організатор оформлює у приваті». Status → `APPROVED`; the lines are
    written to `group_event_item` — the history future events read.
-10. **Revision.** A mention or a reply to the proposal while `PROPOSED` («менше пива, більше вина»)
-    from anyone bumps `proposal_version`, appends the instruction to the event's revision notes,
+10. **Revision.** A reply to the proposal while `PROPOSED` («менше пива, більше вина») from a **counted**
+    participant bumps `proposal_version`, appends the instruction to the event's revision notes,
     regenerates, and posts a new proposal. All approvals belong to the old version and no longer count —
     the reset the task asks for falls out of the version key, with no deletion.
 11. **Ordered.** `CartConfirmationService` publishes `OrderConfirmedEvent` when the organizer confirms;
@@ -246,7 +248,8 @@ waits as long as it takes.
 - Proposal: «Пропозиція №v на N людей (кількості орієнтовні)» + lines «— {catalog name} — {qty} {unit} — {cost}
   грн» + «Не знайшов: …» + «Разом орієнтовно ~X грн» + budget line («бюджет 2000 — вкладаємось» / «на 300 грн
   більше за бюджет — скажи, що прибрати») + one line of rules «👍 — згоден. Змінити — тегни @bot і напиши, що
-  прибрати чи додати (усі 👍 обнуляться)» + «👍 Погоджуюсь». Deliberately short (product review after the live
+  прибрати чи додати (усі 👍 обнуляться)» + «👍 Погоджуюсь». An uncounted person's reply to the proposal
+  gets «Правки приймаю лише від тих, хто в цьому раунді». Deliberately short (product review after the live
   run): the per-head split is said once, in the consensus message, where it describes a real cart; the model's
   note goes to the log; the revision hint names no drink, so a non-alcoholic round reads the same.
 - Approval ack: toast «N з M погодились».

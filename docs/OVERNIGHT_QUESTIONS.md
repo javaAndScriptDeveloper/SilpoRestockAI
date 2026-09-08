@@ -1069,9 +1069,10 @@ Task 68 was built as written in nine of ten places. The places where it is not, 
    and because a checkout link is bound to the organizer's Silpo account and does not belong in a group. The
    group gets the summary, the split, and later «підтвердив замовлення» when the order is confirmed.
 
-3. **`/drinks` starts a round whose organizer is the sender.** The task identifies the organizer only from the
-   add event. A group orders more than once and the bot is added once; the second round needs a trigger, and
-   the person who typed it is the organizer for the same reason the adder was: Telegram says who did it.
+3. **«🔄 Новий збір» under a finished round starts the next one; the tapper is its organizer.** The task
+   identifies the organizer only from the add event. A group orders more than once and the bot is added once;
+   the second round needs a trigger, and the person who tapped is the organizer for the same reason the adder
+   was: Telegram says who did it. (First built as a `/drinks` command; replaced by the button in the review.)
 
 4. **Extra columns beyond the task's four-table sketch**, all named in the spec: `organizer_display_name`,
    `organizer_user_id` (null until the organizer is a Komora user), `proposal_version`, `proposal_json`,
@@ -1085,19 +1086,18 @@ Task 68 was built as written in nine of ten places. The places where it is not, 
    («віскі») on *that round's* row only, and have later rounds read summaries. Older rows are never rewritten,
    and `GroupEventIntegrationTest.exceptionDoesNotTouchHistory` asserts it.
 
-6. **Privacy mode is embraced, not fought.** A Telegram bot in a group receives only replies to itself,
-   mentions and commands unless made an admin. The design uses exactly those three as "addressed to the bot",
-   so behaviour is identical whether or not the bot is an admin — and acceptance criterion five (no reaction
-   to ordinary messages) holds in code, not only by Telegram's filtering.
+6. **Only replies to the bot and its buttons.** The task said «only to explicit @-mentions». The product
+   owner's review after the live run narrowed it further: the bot acts only on a reply to one of its own
+   messages or a tap on one of its own buttons; a mention or a `/command` is ignored like chatter. Privacy
+   mode delivers replies, mentions and commands, so the rule is enforced in code, not by Telegram.
 
 ### Still worth a decision
 
+- *(decided in review)* Revisions are accepted only from counted participants — «Правки приймаю лише від тих,
+  хто в цьому раунді». Mentions and commands are not addressing at all; `/drinks` is gone, «🔄 Новий збір» is a
+  button under the consensus / ordered / failed-cart messages.
 - **Late repliers are excluded from the proposal, not only from the vote.** The task says "logged but not
   counted"; I read "not counted" as "not in this round" — their preference does not feed the synthesis
   either. The alternative (feed it, don't count it) gives a person influence without a vote. Either is
   defensible; the current one is simpler to explain in the group.
-- **Anyone may revise, including people who were not counted.** The task says "anyone can @-tag". A late
-  replier can therefore reset the vote. If that turns out to be abused, restricting revisions to counted
-  participants is a one-line change in `GroupEventService.revise`.
-- **A new `/drinks` cancels an open round in the same chat.** No confirmation. A round that has reached
-  `APPROVED` is left alone.
+- **A tap on «🔄 Новий збір» cancels an open (not yet approved) round in the same chat.** No confirmation.
