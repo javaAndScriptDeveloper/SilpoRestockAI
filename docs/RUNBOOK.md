@@ -610,6 +610,42 @@ In `logs/app.log` the whole interaction is two tool calls and no more:
 SELECT telegram_chat_id, raw_text, source, created_at FROM feedback ORDER BY created_at DESC;
 ```
 
+### Task 63: own-brand featuring and share of category
+
+Needs the app running against the real account (`make run`), `METRICS_TOKEN` in `.env`, and a
+connected Silpo session for whoever's id goes in `verifyAsUserId`.
+
+1. Find a Silpo private label in a category the weekly list already has. Probe broadly first — task 46
+   learned that a composed query («Чай Премія чорний 100г») returns 422 and that a bare brand is not
+   deterministic. Search the plain category word, read the catalog's own `productName` back, and use
+   that exact string.
+2. Create the placement:
+
+   ```bash
+   curl -s -X POST "http://localhost:8080/internal/promotions" \
+     -H "X-Metrics-Token: $METRICS_TOKEN" -H 'Content-Type: application/json' \
+     -d '{"partnerName":"Сільпо власна марка","categoryOrQuery":"чай",
+          "productQuery":"<the catalog name, exactly>","promotionType":"OWN_BRAND_MARGIN_BOOST",
+          "verifyAsUserId":"<a connected user id>"}'
+   ```
+
+   The response echoes the real `silpoProductId` the catalog answered, and `promotionType`.
+3. Walk «📝 Список» → «Замовити» → «Підтвердити». The log line to watch for is
+   `partner placement <id> answered «Чай» with product <id>`.
+4. `make promotions`. Check: the own-brand row sits under «Власні марки», never under «Платні
+   розміщення»; FSR's denominator is the number of tea lines resolved, not the number the placement
+   won; the baseline carries «виміряно» or «наближення (1/N кандидатів)», and lift is «—» whenever the
+   baseline is.
+5. Count by hand once, against the DB, and compare:
+
+   ```sql
+   SELECT line_name, resolved_product_id, promotion_id, candidate_count
+   FROM category_resolution_log ORDER BY occurred_at;
+   ```
+
+A failed cart build leaves resolution rows behind the same way it leaves IMPRESSION events (task 46) —
+clear both by `occurred_at` before recording the demo.
+
 ### Task 33: verify the Заплановані view end-to-end
 
 The integration tests cover the dispatch logic against a stubbed Claude edit-slot response. Criterion 6
