@@ -123,12 +123,16 @@ public class CheckinPromptService {
 
     /** Sends the prompt, leaves the flag task 12 reads, and records that the agent spoke. */
     public void prompt(User user) {
-        telegramOutboundService.sendMessage(user.getTelegramChatId(), checkinMessageService.promptText());
-        conversationStateService.save(
-                user.getTelegramChatId(), ConversationFlow.CHECK_IN, STEP_AWAITING_REPORT, Map.of());
+        // Recorded before the send, not after. Live, a Telegram call timed out on this side after the message
+        // had already been delivered; nothing was recorded, and the next sweep asked the same household again a
+        // minute later. A prompt that genuinely never left costs one interval of silence, which is the cheaper
+        // mistake by far — the household is asked again, not nagged.
         user.setLastCheckinPromptSentAt(clock.instant());
         user.setCheckinPromptsSent(user.getCheckinPromptsSent() + 1);
         userRepository.save(user);
+        telegramOutboundService.sendMessage(user.getTelegramChatId(), checkinMessageService.promptText());
+        conversationStateService.save(
+                user.getTelegramChatId(), ConversationFlow.CHECK_IN, STEP_AWAITING_REPORT, Map.of());
         log.info("check-in prompt sent to user {}", user.getId());
     }
 }
