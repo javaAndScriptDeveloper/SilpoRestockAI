@@ -193,8 +193,9 @@ class SilpoOAuthIntegrationTest extends AbstractIntegrationTest {
         UUID userId = persistedUser();
         String state = startLogin(userId);
 
-        MvcResult callback = mockMvc.perform(
-                        get("/auth/silpo/callback").param("code", "auth-code-123").param("state", state))
+        MvcResult callback = mockMvc.perform(get("/auth/silpo/callback")
+                        .param("code", "auth-code-123")
+                        .param("state", state))
                 .andReturn();
 
         assertThat(callback.getResponse().getStatus()).isEqualTo(200);
@@ -212,8 +213,9 @@ class SilpoOAuthIntegrationTest extends AbstractIntegrationTest {
         UUID userId = persistedUser();
         String state = startLogin(userId);
 
-        MvcResult callback = mockMvc.perform(
-                        get("/auth/silpo/callback").param("error", "access_denied").param("state", state))
+        MvcResult callback = mockMvc.perform(get("/auth/silpo/callback")
+                        .param("error", "access_denied")
+                        .param("state", state))
                 .andReturn();
 
         assertThat(callback.getResponse().getStatus()).isEqualTo(400);

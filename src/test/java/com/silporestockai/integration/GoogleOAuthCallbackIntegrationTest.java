@@ -92,8 +92,9 @@ class GoogleOAuthCallbackIntegrationTest extends AbstractIntegrationTest {
     void aFinishedConsentRendersABrandedPageAndTellsTheChatWithoutBeingAsked() throws Exception {
         String state = startLogin();
 
-        MvcResult callback = mockMvc.perform(
-                        get("/auth/google/callback").param("code", "google-code").param("state", state))
+        MvcResult callback = mockMvc.perform(get("/auth/google/callback")
+                        .param("code", "google-code")
+                        .param("state", state))
                 .andReturn();
 
         assertThat(callback.getResponse().getStatus()).isEqualTo(200);
@@ -117,8 +118,9 @@ class GoogleOAuthCallbackIntegrationTest extends AbstractIntegrationTest {
     void aDeclinedConsentRendersABrandedErrorPageAndSaysSoInTheChat() throws Exception {
         String state = startLogin();
 
-        MvcResult callback = mockMvc.perform(
-                        get("/auth/google/callback").param("error", "access_denied").param("state", state))
+        MvcResult callback = mockMvc.perform(get("/auth/google/callback")
+                        .param("error", "access_denied")
+                        .param("state", state))
                 .andReturn();
 
         assertThat(callback.getResponse().getStatus()).isEqualTo(400);

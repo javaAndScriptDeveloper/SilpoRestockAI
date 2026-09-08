@@ -67,8 +67,7 @@ class ConnectNotificationIntegrationTest extends AbstractIntegrationTest {
 
         assertThat(TELEGRAM.sentMessages()).hasSize(1);
         assertThat(TELEGRAM.sentMessages().getFirst().path("chat_id").asLong()).isEqualTo(CHAT_ID);
-        assertThat(TELEGRAM.sentMessages().getFirst().path("text").asText())
-                .isEqualTo("✅ Акаунт «Сільпо» підключено.");
+        assertThat(TELEGRAM.sentMessages().getFirst().path("text").asText()).isEqualTo("✅ Акаунт «Сільпо» підключено.");
     }
 
     /**
