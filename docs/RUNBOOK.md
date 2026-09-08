@@ -1121,14 +1121,14 @@ task 55 parses for the unique-tool list instead of collecting the same data twic
 ## 18. A group drinks round (task 68)
 
 A group chat is not a household: it gets no `users` row, no onboarding, no intent router. Everything a group
-sends goes to `GroupEventService`, whose state is `group_event.status`. The bot reads only what is addressed
-to it — a reply to one of its own messages, an `@mention`, a `/command` — which is also all that Telegram
-delivers to a bot in the default privacy mode.
+sends goes to `GroupEventService`, whose state is `group_event.status`. The bot reads only replies to its own
+messages and taps on its own buttons — a mention or a `/command` is ignored like any other message (product
+decision, session 15 review).
 
 ### Set-up
 
-- `TELEGRAM_BOT_USERNAME` in `.env` (without the `@`). Blank works too: the first group message triggers one
-  `getMe`. Without a username, mentions are not recognised; replies and `/drinks` still are.
+- `TELEGRAM_BOT_USERNAME` in `.env` (without the `@`) — used only for the `t.me/` link in the «підключи
+  «Сільпо»» hint. Blank works too (one `getMe`).
 - The organizer must be a Komora user with Silpo connected **in their private chat** — a private chat's id is
   the person's Telegram id, which is how the group round finds their household row. Without it the proposal is
   posted unpriced with a «підключи «Сільпо»» hint, and consensus repeats the hint instead of building a cart.
@@ -1137,17 +1137,17 @@ delivers to a bot in the default privacy mode.
 
 | Do this | Expect |
 |---|---|
-| Add the bot to a group (or type `/drinks` in one it is already in) | A greeting with the rules and one button «✅ Всі відповіли»; `group_event` row in `COLLECTING_REPLIES` with `organizer_telegram_user_id` = whoever added it / typed the command, taken from `my_chat_member.from` |
+| Add the bot to a group (or tap «🔄 Новий збір» under the last round's summary) | A greeting with the rules and one button «✅ Всі відповіли»; `group_event` row in `COLLECTING_REPLIES` with `organizer_telegram_user_id` = whoever added it / typed the command, taken from `my_chat_member.from` |
 | Reply to the greeting: «вино червоне», «пиво світле, це на ДР», «.» | Each gets «Записав, {ім'я}. Відповіли: N.» as a reply; one row per person, a second reply overwrites the text |
-| Write anything in the group without replying or tagging | Nothing. `logs/app.log` at DEBUG: `ignoring an unaddressed message in group …`; no Claude call, no MCP call |
-| Organizer: «@bot бюджет 1500, привід: ДР, дата 20.09» | «Прийняв: бюджет 1500 грн · привід: ДР · дата 20.09.2026» |
+| Write anything in the group without replying to the bot — including `@bot …` and `/anything` | Nothing. `logs/app.log` at DEBUG: `ignoring an unaddressed message in group …`; no Claude call, no MCP call |
+| Organizer, as a reply to the greeting: «бюджет 1500, привід: ДР, дата 20.09» | «Прийняв: бюджет 1500 грн · привід: ДР · дата 20.09.2026» |
 | Someone other than the organizer taps «Всі відповіли» | A toast «Це кнопка організатора.», nothing else |
 | Organizer taps «Всі відповіли» | «Закрив список: N людей. Рахую пропозицію — хвилинку.», then within ~30 s the proposal: «Пропозиція №1 на N людей (кількості орієнтовні)», real catalog names, quantities, line costs, «Разом орієнтовно», the budget verdict, one line of rules («👍 — згоден. Змінити — тегни @bot і напиши, що прибрати чи додати»), and one «👍 Погоджуюсь» button. The per-head split appears only in the consensus message; the model's note is in the log. Every reply row now has `counted_in_denominator = true`, `frozen_at` set, status `PROPOSED` |
 | Reply to the greeting after that | «Записав, …, але цей раунд уже закрито» — the row exists with `counted_in_denominator = false` and the count above does not move |
 | Tap 👍 | Toasts «Погодились: 1 з N», «2 з N» …; a second tap says so; a tap from somebody who was not counted says «Ти не у списку цього раунду» |
-| «@bot менше пива, більше вина» (anyone) | «Прийняв правку від … усі 👍 обнулено.», then «Пропозиція №2»; `proposal_version` = 2, `group_event_approval` rows for version 1 stay, none for version 2; a tap on the old button says «стара пропозиція» |
+| Reply to the proposal «менше пива, більше вина» (anyone in the frozen set; an uncounted person gets «Правки приймаю лише від тих, хто в цьому раунді») | «Прийняв правку від … усі 👍 обнулено.», then «Пропозиція №2»; `proposal_version` = 2, `group_event_approval` rows for version 1 stay, none for version 2; a tap on the old button says «стара пропозиція» |
 | Everyone counted taps 👍 on the latest version | Group: «✅ Усі N погодились. Поклав у кошик «Сільпо» {організатор}: …» with the split. **Organizer's private chat:** the usual cart message with «Підтвердити / Інший час / Скасувати» and, after confirming, «Перейти до оплати». Status `APPROVED`, `group_event_item` holds the lines |
-| Organizer confirms in private | Group: «🎉 {організатор} підтвердив замовлення». Status `ORDERED` |
+| Organizer confirms in private | Group: «🎉 {організатор} підтвердив замовлення» with a «🔄 Новий збір» button. Status `ORDERED` |
 
 **What to read in the log:** `opened group round … for organizer …`, `frozen with N counted participants`,
 `gathered signals … same-group round …, N seasonal lines` (the tiers that fed the model), `the model proposed

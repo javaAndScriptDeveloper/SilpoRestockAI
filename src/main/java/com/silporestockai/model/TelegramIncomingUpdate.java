@@ -48,11 +48,11 @@ public sealed interface TelegramIncomingUpdate {
     /**
      * A text message in a group chat (task 68).
      *
-     * <p>A group is noisy and most of what is said there is not for the bot, so the record carries the three
-     * ways a message can be aimed at it — a reply to one of the bot's own messages, an {@code @mention}, a
-     * {@code /command} — and the handler ignores anything that is none of them. In privacy mode Telegram delivers
-     * only those anyway; when the bot is an admin it delivers everything, and this is the line that keeps the
-     * behaviour identical.
+     * <p>A group is noisy and most of what is said there is not for the bot. The record still carries whether the
+     * text mentions or commands the bot (the router can tell), but the only thing the handler acts on is a reply
+     * to one of the bot's own messages — see {@link #addressedToBot()}. In privacy mode Telegram delivers only
+     * replies, mentions and commands anyway; when the bot is an admin it delivers everything, and this is the
+     * line that keeps the behaviour identical.
      *
      * @param replyToBotMessageId the id of the bot message this one replies to, or null when it replies to
      *     nothing or to a person
@@ -71,8 +71,13 @@ public sealed interface TelegramIncomingUpdate {
             String command)
             implements TelegramIncomingUpdate {
 
+        /**
+         * Whether the bot should read this at all. Product decision (session 15 review): only a reply to one of
+         * the bot's own messages counts — not a mention, not a command. A group chat is theirs; the bot's
+         * messages are the only surface it owns, and the buttons under them the only other one.
+         */
         public boolean addressedToBot() {
-            return replyToBotMessageId != null || mentionsBot || command != null;
+            return replyToBotMessageId != null;
         }
 
         /** The words for the bot: the text with its {@code @bot} mention and {@code /command} token removed. */

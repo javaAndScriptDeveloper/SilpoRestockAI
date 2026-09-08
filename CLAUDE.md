@@ -64,8 +64,8 @@ fits; do not invent a parallel structure.
   for exactly this reason.
 - **A group chat is never a household.** `TelegramRoutingService` splits group/supergroup updates off before any
   `User` lookup and hands them to `GroupEventService`; the round's state lives in `group_event.status`, not in
-  `conversation_state`. The bot reacts in a group only to a reply to its own message, an `@mention` or a
-  `/command` — an unaddressed message is dropped at DEBUG and never reaches a model. Every count in that flow
+  `conversation_state`. The bot reacts in a group only to a reply to its own message or a tap on its own button — a mention, a
+  command or plain chatter is dropped at DEBUG and never reaches a model. Every count in that flow
   is a count of stored reply rows: the Bot API never lists a group's members.
 - `@Slf4j` for logging; no manual `LoggerFactory`.
 

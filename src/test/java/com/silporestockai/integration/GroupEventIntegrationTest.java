@@ -245,8 +245,13 @@ class GroupEventIntegrationTest extends AbstractIntegrationTest {
                 .isEqualTo("темне пиво");
         reply(42, "Ігор", null, "пиво світле, це на ДР", greetingId);
 
-        // 3. The organizer sets a budget by mention; a non-organizer cannot freeze.
-        mention(41, "Олена", "olena", "бюджет 1500");
+        // 3. The organizer sets a budget by replying; a mention is not addressed to the bot; a non-organizer cannot
+        // freeze.
+        before = TELEGRAM.sentMessages().size();
+        mention(41, "Олена", "olena", "бюджет 9999");
+        assertThat(TELEGRAM.sentMessages()).hasSize(before);
+        assertThat(events.findById(event.getId()).orElseThrow().getBudget()).isNull();
+        reply(41, "Олена", "olena", "бюджет 1500", greetingId);
         assertThat(lastText()).isEqualTo("Прийняв: бюджет 1500 грн");
         assertThat(events.findById(event.getId()).orElseThrow().getBudget()).isEqualByComparingTo("1500");
         tap(42, "grp:freeze:" + event.getId(), greetingId);
@@ -279,7 +284,7 @@ class GroupEventIntegrationTest extends AbstractIntegrationTest {
                 .contains("Пиво Львівське світле 0.5 — 6 шт — 252.00 грн")
                 .contains("Разом орієнтовно ~910.00 грн")
                 .contains("бюджет 1500 грн, вкладаємось")
-                .contains("тегни @" + BOT_USERNAME + " і напиши, що прибрати чи додати")
+                .contains("відповідай реплаєм на це повідомлення, що прибрати чи додати")
                 // Short on purpose: no split, no model note, no drink-specific example in the group message.
                 .doesNotContain("з людини")
                 .doesNotContain("Пиво порахував")
@@ -318,8 +323,15 @@ class GroupEventIntegrationTest extends AbstractIntegrationTest {
         assertThat(MCP.callArguments("silpo_add_or_update_cart_products").size())
                 .isZero();
 
-        // 7. A revision from anyone resets every approval and posts a new version.
+        // 7. A revision from an uncounted person is refused; from a counted one it resets every approval.
+        reply(44, "Настя", null, "додай сидр", proposalId);
+        assertThat(lastText()).contains("Правки приймаю лише від тих, хто в цьому раунді");
+        assertThat(events.findById(event.getId()).orElseThrow().getProposalVersion())
+                .isEqualTo(1);
         mention(43, "Марко", null, "менше пива, більше вина");
+        assertThat(events.findById(event.getId()).orElseThrow().getProposalVersion())
+                .isEqualTo(1);
+        reply(43, "Марко", null, "менше пива, більше вина", proposalId);
         event = events.findById(event.getId()).orElseThrow();
         assertThat(event.getProposalVersion()).isEqualTo(2);
         assertThat(event.getRevisionNotes()).containsExactly("менше пива, більше вина");
@@ -369,11 +381,26 @@ class GroupEventIntegrationTest extends AbstractIntegrationTest {
                 .extracting(item -> item.getResolvedSilpoProductId())
                 .containsExactlyInAnyOrder(WINE_ID, BEER_ID);
         assertThat(customerOrderRepository.findAll()).hasSize(1);
+        assertThat(callbackOf(groupDone)).isEqualTo("grp:new");
 
         // 9. The organizer confirms in private: the group hears about it and the round is closed.
         publisher.publishEvent(new OrderConfirmedEvent(organizer.getId(), UUID.randomUUID(), null, "сб", 2));
         assertThat(events.findById(event.getId()).orElseThrow().getStatus()).isEqualTo(GroupEventStatus.ORDERED);
         assertThat(lastText()).contains("@olena підтвердив замовлення");
+        int orderedId = TELEGRAM.lastMessageId();
+
+        // 10. «Новий збір» under the summary opens the next round; whoever tapped is its organizer.
+        tap(43, "grp:new", orderedId);
+        UUID finishedId = event.getId();
+        List<GroupEvent> all = events.findAll();
+        assertThat(all).hasSize(2);
+        GroupEvent next = all.stream()
+                .filter(e -> !e.getId().equals(finishedId))
+                .findFirst()
+                .orElseThrow();
+        assertThat(next.getOrganizerTelegramUserId()).isEqualTo(43L);
+        assertThat(next.getStatus()).isEqualTo(GroupEventStatus.COLLECTING_REPLIES);
+        assertThat(lastText()).contains("u43, ти організатор");
     }
 
     @Test
@@ -466,24 +493,6 @@ class GroupEventIntegrationTest extends AbstractIntegrationTest {
                 .isEqualTo("червоне вино");
     }
 
-    @Test
-    @DisplayName("/drinks starts a new round whose organizer is the sender, and cancels the open one")
-    void drinksCommandStartsANewRound() throws Exception {
-        addBot();
-        GroupEvent first = events.findAll().getFirst();
-        command(43, "Марко", "/drinks");
-        List<GroupEvent> all = events.findAll();
-        assertThat(all).hasSize(2);
-        assertThat(events.findById(first.getId()).orElseThrow().getStatus()).isEqualTo(GroupEventStatus.CANCELLED);
-        GroupEvent second = all.stream()
-                .filter(e -> !e.getId().equals(first.getId()))
-                .findFirst()
-                .orElseThrow();
-        assertThat(second.getOrganizerTelegramUserId()).isEqualTo(43L);
-        assertThat(second.getStatus()).isEqualTo(GroupEventStatus.COLLECTING_REPLIES);
-        assertThat(lastText()).contains("Марко, ти організатор");
-    }
-
     // ---- webhook fixtures -----------------------------------------------------------------------------------
 
     private void addBot() throws Exception {
@@ -532,13 +541,6 @@ class GroupEventIntegrationTest extends AbstractIntegrationTest {
                         usernameJson(username),
                         text,
                         BOT_USERNAME.length() + 1));
-    }
-
-    private void command(long fromId, String firstName, String command) throws Exception {
-        send("""
-                {"update_id":%d,"message":{"message_id":%d,"date":1,"chat":{"id":%d,"type":"supergroup","title":"x"},\
-                "from":{"id":%d,"is_bot":false,"first_name":"%s"},"text":"%s",\
-                "entities":[{"type":"bot_command","offset":0,"length":%d}]}}""".formatted(updateId, 500 + updateId++, GROUP, fromId, firstName, command, command.length()));
     }
 
     private void tap(long fromId, String data, int messageId) throws Exception {

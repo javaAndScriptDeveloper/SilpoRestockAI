@@ -123,9 +123,7 @@ public class GroupEventService {
                 .build();
         eventRepository.save(event);
         int greetingId = telegramOutboundService.sendMessageWithButtons(
-                chatId,
-                messages.greeting(organizerName, telegramOutboundService.botUsername()),
-                messages.greetingButtons(event.getId()));
+                chatId, messages.greeting(organizerName), messages.greetingButtons(event.getId()));
         event.setGreetingMessageId(greetingId);
         eventRepository.save(event);
         log.info("opened group round {} in chat {} for organizer {}", event.getId(), chatId, organizerId);
@@ -145,27 +143,15 @@ public class GroupEventService {
 
     private void onText(TelegramIncomingUpdate.GroupText text) {
         if (!text.addressedToBot()) {
-            // The rule that makes the bot bearable in a group: unaddressed chatter is never read, never parsed.
+            // The rule that makes the bot bearable in a group: anything that is not a reply to one of its own
+            // messages is never read, never parsed — a mention and a command included.
             log.debug("ignoring an unaddressed message in group {}", text.chatId());
             return;
         }
-        Optional<String> username = telegramOutboundService.botUsername();
-        String body = text.bodyWithoutAddress(username.orElse(null));
-        if ("/drinks".equals(text.command())) {
-            startRound(text.chatId(), null, text.telegramUserId(), text.displayName(), false);
-            return;
-        }
+        String body =
+                text.bodyWithoutAddress(telegramOutboundService.botUsername().orElse(null));
         Optional<GroupEvent> current =
                 eventRepository.findFirstByTelegramGroupChatIdAndStatusInOrderByCreatedAtDesc(text.chatId(), OPEN);
-        if ("/start".equals(text.command()) || "/help".equals(text.command())) {
-            if (current.isEmpty()) {
-                startRound(text.chatId(), null, text.telegramUserId(), text.displayName(), false);
-            } else {
-                telegramOutboundService.sendReply(
-                        text.chatId(), text.messageId(), messages.alreadyClosedOrOpen(current.get()));
-            }
-            return;
-        }
         if (current.isEmpty()) {
             telegramOutboundService.sendReply(text.chatId(), text.messageId(), messages.noActiveRound());
             return;
@@ -235,9 +221,21 @@ public class GroupEventService {
         participantRepository.save(row);
     }
 
-    /** A revision from anyone: note it, bump the version, regenerate. «спробуй ще» regenerates without a note. */
+    /**
+     * A revision: note it, bump the version, regenerate. «спробуй ще» regenerates without a note. Only somebody in
+     * the frozen set may revise (product decision): a vote that can be reset by a person who has no vote is not a
+     * vote.
+     */
     private void revise(GroupEvent event, TelegramIncomingUpdate.GroupText text, String body) {
         if (body == null || body.isBlank()) {
+            return;
+        }
+        boolean counted = participantRepository
+                .findByGroupEventIdAndTelegramUserId(event.getId(), text.telegramUserId())
+                .map(GroupEventParticipant::isCountedInDenominator)
+                .orElse(false);
+        if (!counted) {
+            telegramOutboundService.sendReply(text.chatId(), text.messageId(), messages.revisionNotCounted());
             return;
         }
         boolean retry = body.toLowerCase(Locale.ROOT).contains("спробуй ще") || event.getProposalJson() == null;
@@ -263,6 +261,11 @@ public class GroupEventService {
         }
         if (data.startsWith(GroupEventMessageService.CALLBACK_APPROVE_PREFIX)) {
             approve(tap, data.substring(GroupEventMessageService.CALLBACK_APPROVE_PREFIX.length()));
+            return;
+        }
+        if (GroupEventMessageService.CALLBACK_NEW_ROUND.equals(data)) {
+            telegramOutboundService.answerCallback(tap.callbackQueryId());
+            startRound(tap.chatId(), null, tap.telegramUserId(), tap.displayName(), false);
             return;
         }
         telegramOutboundService.answerCallback(tap.callbackQueryId());
@@ -391,8 +394,7 @@ public class GroupEventService {
             proposal = groupProposalService.propose(event, counted, organizer);
         } catch (RuntimeException e) {
             log.error("could not propose for group round {}", event.getId(), e);
-            telegramOutboundService.sendMessage(
-                    event.getTelegramGroupChatId(), messages.proposalFailed(telegramOutboundService.botUsername()));
+            telegramOutboundService.sendMessage(event.getTelegramGroupChatId(), messages.proposalFailed());
             return;
         }
         event.setProposalJson(MAPPER.convertValue(
@@ -483,11 +485,12 @@ public class GroupEventService {
                 .toList();
         boolean presented = cartConfirmationService.present(organizer.get(), items, OrderType.AD_HOC);
         long headcount = participantRepository.countByGroupEventIdAndCountedInDenominatorTrue(event.getId());
-        telegramOutboundService.sendMessage(
+        telegramOutboundService.sendMessageWithButtons(
                 chatId,
                 presented
                         ? messages.consensus(proposal, organizerName(event), headcount)
-                        : messages.cartFailed(organizerName(event), username));
+                        : messages.cartFailed(organizerName(event)),
+                messages.newRoundButtons());
     }
 
     /** The organizer confirmed in private: say so in the group and close the round. */
@@ -500,8 +503,10 @@ public class GroupEventService {
                     .ifPresent(event -> {
                         event.setStatus(GroupEventStatus.ORDERED);
                         eventRepository.save(event);
-                        telegramOutboundService.sendMessage(
-                                event.getTelegramGroupChatId(), messages.ordered(organizerName(event)));
+                        telegramOutboundService.sendMessageWithButtons(
+                                event.getTelegramGroupChatId(),
+                                messages.ordered(organizerName(event)),
+                                messages.newRoundButtons());
                         log.info("group round {} ordered by organizer {}", event.getId(), confirmed.userId());
                     });
         } catch (RuntimeException e) {

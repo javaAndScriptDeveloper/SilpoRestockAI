@@ -25,21 +25,22 @@ public class GroupEventMessageService {
 
     public static final String CALLBACK_FREEZE_PREFIX = "grp:freeze:";
     public static final String CALLBACK_APPROVE_PREFIX = "grp:ok:";
+    /** «🔄 Новий збір» under a finished round — the only way to open the next one without re-adding the bot. */
+    public static final String CALLBACK_NEW_ROUND = "grp:new";
 
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("dd.MM.yyyy");
 
-    public String greeting(String organizerName, Optional<String> botUsername) {
-        String mention = botUsername.map(name -> "@" + name).orElse("мене");
+    public String greeting(String organizerName) {
         return """
                 Привіт! Я зберу напої на компанію — в кошик «Сільпо» організатора, оплата як зазвичай.
 
                 Кожен — відповідай реплаєм на це повідомлення, що п'єш: «пиво світле», «червоне вино», «не п'ю — сік». \
                 Можна з поясненням: «сьогодні за кермом», «це на ДР». Крапка «.» — на мій розсуд.
 
-                %s, ти організатор: коли всі відповіли — тисни кнопку нижче. Бюджет і привід (не обов'язково): \
-                «%s бюджет 2000, привід: новий рік, дата 31.12».
+                %s, ти організатор: коли всі відповіли — тисни кнопку нижче. Бюджет і привід (не обов'язково) — теж \
+                реплаєм: «бюджет 2000, привід: новий рік, дата 31.12».
 
-                Читаю тільки те, що адресовано мені — реплаї, теги, команди. Решту розмови не чіпаю.""".formatted(organizerName, mention);
+                Читаю тільки реплаї на свої повідомлення й свої кнопки. Решту розмови не чіпаю.""".formatted(organizerName);
     }
 
     public List<TelegramButton> greetingButtons(UUID eventId) {
@@ -51,9 +52,7 @@ public class GroupEventMessageService {
     }
 
     public String lateReplyAck(String name) {
-        return ("Записав, %s, але цей раунд уже закрито — у підрахунок не потрапить. "
-                        + "Новий збір — командою /drinks.")
-                .formatted(name);
+        return "Записав, %s, але цей раунд уже закрито — у підрахунок не потрапить.".formatted(name);
     }
 
     public String settingsAck(GroupEvent event) {
@@ -92,7 +91,7 @@ public class GroupEventMessageService {
         String where = botUsername
                 .map(name -> "у приваті зі мною: https://t.me/" + name)
                 .orElse("у приваті зі мною");
-        return "%s, щоб я зібрав кошик, підключи «Сільпо» %s — потім тегни мене «збери кошик»."
+        return "%s, щоб я зібрав кошик, підключи «Сільпо» %s — потім відповідай реплаєм на це повідомлення «збери кошик»."
                 .formatted(organizerName, where);
     }
 
@@ -144,10 +143,8 @@ public class GroupEventMessageService {
         } else if (!proposal.priced()) {
             text.append("\n\nБез цін: у організатора ще не підключено «Сільпо». Ціни з'являться, щойно підключить.");
         }
-        String mention = botUsername.map(name -> "@" + name).orElse("мене");
-        text.append("\n\n👍 — згоден. Змінити — тегни ")
-                .append(mention)
-                .append(" і напиши, що прибрати чи додати (усі 👍 обнуляться).");
+        text.append("\n\n👍 — згоден. Змінити — відповідай реплаєм на це повідомлення, що прибрати чи додати ")
+                .append("(усі 👍 обнуляться).");
         return text.toString();
     }
 
@@ -155,9 +152,13 @@ public class GroupEventMessageService {
         return List.of(TelegramButton.callback("👍 Погоджуюсь", CALLBACK_APPROVE_PREFIX + eventId + ":" + version));
     }
 
-    public String proposalFailed(Optional<String> botUsername) {
-        return "Не зміг скласти пропозицію. Тегни %s «спробуй ще» — перерахую."
-                .formatted(botUsername.map(name -> "@" + name).orElse("мене"));
+    public String proposalFailed() {
+        return "Не зміг скласти пропозицію. Відповідай реплаєм на це повідомлення «спробуй ще» — перерахую.";
+    }
+
+    /** A reply to the proposal from somebody outside the frozen set. */
+    public String revisionNotCounted() {
+        return "Правки приймаю лише від тих, хто в цьому раунді — ти відповів після закриття списку.";
     }
 
     public String revising(String name) {
@@ -211,10 +212,15 @@ public class GroupEventMessageService {
         return text.toString();
     }
 
-    public String cartFailed(String organizerName, Optional<String> botUsername) {
+    public String cartFailed(String organizerName) {
         return ("✅ Усі погодились, але кошик не зібрався — %s, деталі у приваті зі мною. "
-                        + "Спробувати ще: тегни %s «збери кошик».")
-                .formatted(organizerName, botUsername.map(name -> "@" + name).orElse("мене"));
+                        + "Спробувати ще: відповідай реплаєм на це повідомлення «збери кошик».")
+                .formatted(organizerName);
+    }
+
+    /** Under the consensus, the ordered and the failed-cart messages: the next round is one tap away. */
+    public List<TelegramButton> newRoundButtons() {
+        return List.of(TelegramButton.callback("🔄 Новий збір", CALLBACK_NEW_ROUND));
     }
 
     public String nothingResolved(String organizerName) {
@@ -227,25 +233,11 @@ public class GroupEventMessageService {
     }
 
     public String noActiveRound() {
-        return "Зараз немає відкритого збору. Почати новий — /drinks.";
+        return "Зараз немає відкритого збору — тисни «🔄 Новий збір» під останнім підсумком або додай мене заново.";
     }
 
     public String alreadyAgreed(String organizerName) {
-        return "Усе вже погоджено — %s оформлює замовлення у приваті зі мною. Новий збір — /drinks."
-                .formatted(organizerName);
-    }
-
-    /** What /start or /help in a group gets while a round is open: where it is and what to do. */
-    public String alreadyClosedOrOpen(GroupEvent event) {
-        return switch (event.getStatus()) {
-            case COLLECTING_REPLIES ->
-                "Збір іде: відповідай реплаєм на моє перше повідомлення, що п'єш. Новий збір — /drinks.";
-            case PROPOSED ->
-                "Пропозиція вже на столі: тисни 👍 під нею або тегни мене з правкою. Новий збір — /drinks.";
-            default ->
-                alreadyAgreed(
-                        event.getOrganizerDisplayName() == null ? "організатор" : event.getOrganizerDisplayName());
-        };
+        return "Усе вже погоджено — %s оформлює замовлення у приваті зі мною.".formatted(organizerName);
     }
 
     private static String people(long n) {
