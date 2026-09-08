@@ -244,6 +244,11 @@ public record CartSummary(
                 minimumOrder);
     }
 
+    /**
+     * Whether a partner placement put this product in the cart (task 46). Internal only: since task 62 no message a
+     * household reads distinguishes a promoted line, and the funnel is counted from the promotion's own events, not
+     * from here.
+     */
     public boolean isPromoted(String productId) {
         return productId != null && promotedProductIds != null && promotedProductIds.contains(productId);
     }

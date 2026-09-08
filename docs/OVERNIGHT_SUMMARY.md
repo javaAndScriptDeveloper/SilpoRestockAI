@@ -800,3 +800,47 @@ Session 11: an as-is price for a mismatched unit (₴399 oatmeal), and whether t
 **Live state left behind:** the account's active list is the ready-meals one this session generated, with a
 draft order and a real (unconfirmed, un-checked-out) Silpo cart of ₴2046.56 behind it; the profile is back
 on `COOKS_DAILY`.
+
+# Session 12 — the partner marker comes out of the cart, 2026-09-08 (day)
+
+One task: **62 — remove the customer-facing partner marker, keep the tracking.** Product reversal of a call
+I made in session 4 and flagged as open in `OVERNIGHT_QUESTIONS.md`; the user has now answered it.
+
+**What the change actually is.** The whole customer-visible marker lived in one method,
+`CartMessageService.cartText(...)` — a `" ★"` appended per promoted line and a footer paragraph appended
+once when any line was promoted. Both gone, along with the `anyPromoted` flag that drove them. Nothing else
+in `src/main` rendered a ★, so this is the entire presentation change.
+
+**What was deliberately not touched.** `PartnerPromotionService.findActivePromotion(...)`, the IMPRESSION
+call at `CartBuildingService:909`, the ADDED_TO_CART call at `:1391`, and `onOrderConfirmed`. Worth writing
+down because it is the thing that makes the change safe: CONFIRMED_ORDER is derived from the stored
+`CustomerOrder`'s product ids, not from `CartSummary.promotedProductIds` — the funnel never depended on the
+rendering at all.
+
+**Deviation: `promotedProductIds` stays.** The task allowed deleting it. It stays because `CartSummary`
+round-trips through `conversation_state.context_json` between webhook calls (`CartConfirmationService:464`),
+so dropping a record component would break every cart in flight at deploy time — and because task 64's
+Grafana partner panel is the natural next consumer. `isPromoted(...)` keeps a comment saying it is internal
+and no longer rendered, so nobody "restores" the marker by accident.
+
+**Evidence.** New unit test asserts the rendered cart with a promoted line is *character-for-character*
+equal to the same cart without one, plus `doesNotContain("★")`. `PartnerPromotionIntegrationTest` had
+exactly one line changed (the ★/footer assertion, inverted); every resolution, funnel, restriction and
+CONFIRMED_ORDER assertion is untouched and green. Full suite: 553 tests, 0 failures. `make promotions`
+before and after the change is identical output (Яготинське 4/4/5, Пирятин 1/1/0) — the proof the tracking
+was not disturbed.
+
+**What is left for live eyes.** The live cart replay did not reach a message: the Silpo account returned
+`timeslot.not_found` on two attempts and both matched products reported `на складі лишилось 0` at the
+branch, so the cart never got a checkout link. That is live-account state, not the change — the partner
+product was still searched in the same single batch («Молоко «Яготинське» 2,6% п/е» rode alongside «Молоко
+2.5%»), the branch simply did not return it live, and the code logged the honest fallback. Task 62 is
+therefore **In review**, not Done, with the remaining check written on its Notion page.
+
+**Notion edits:** task 62 → In review with a status note; «Сценарій демо-запису» step 13.5 updated (62 is
+code-complete, the step still waits on 63/64) plus a changelog entry.
+
+**Also a note on the test suite:** the first full run showed five failures, all of them
+`FeedbackIntegrationTest` failing to load its context with `could not read the voice style prompt`. That is
+the known `make run` / `./gradlew test` shared-`build/` flake, not a regression — the class passes alone and
+the suite passes clean once the app is stopped.

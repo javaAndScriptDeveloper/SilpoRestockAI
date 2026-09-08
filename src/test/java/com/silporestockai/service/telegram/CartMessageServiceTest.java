@@ -121,6 +121,48 @@ class CartMessageServiceTest {
         assertThat(service.cartText(twoItems(), SLOT, OrderType.AD_HOC)).doesNotContain("Економія");
     }
 
+    /**
+     * Task 62: a partner placement is an internal matter. The line the household reads must be indistinguishable
+     * from any other line — no marker on it, no disclosure paragraph under the list.
+     */
+    @Test
+    void readsIdenticallyWhetherOrNotALineCameFromAPartnerPlacement() {
+        List<BasketItem> items = List.of(
+                new BasketItem("p-1", "Молоко «Яготинське» 2,6% п/е", "шт", BigDecimal.ONE, new BigDecimal("42.90")),
+                new BasketItem("p-2", "Гречка", "кг", BigDecimal.ONE, new BigDecimal("48")));
+        CartSummary plain = new CartSummary(
+                "cart-1",
+                "slot-1",
+                Instant.parse("2026-09-03T15:00:00Z"),
+                items,
+                new BigDecimal("90.90"),
+                List.of(),
+                BigDecimal.ZERO,
+                false,
+                "https://silpo.ua/checkout/cart-1",
+                "silpo://checkout/cart-1",
+                List.of(),
+                List.of());
+        CartSummary promoted = new CartSummary(
+                "cart-1",
+                "slot-1",
+                Instant.parse("2026-09-03T15:00:00Z"),
+                items,
+                new BigDecimal("90.90"),
+                List.of(),
+                BigDecimal.ZERO,
+                false,
+                "https://silpo.ua/checkout/cart-1",
+                "silpo://checkout/cart-1",
+                List.of(),
+                List.of("p-1"));
+
+        String text = service.cartText(promoted, SLOT, OrderType.INITIAL);
+
+        assertThat(text).isEqualTo(service.cartText(plain, SLOT, OrderType.INITIAL));
+        assertThat(text).doesNotContain("★").doesNotContain("партнер");
+    }
+
     @Test
     void flagsWhatSilpoCouldNotMatchInsteadOfHidingIt() {
         CartSummary cart = summary(

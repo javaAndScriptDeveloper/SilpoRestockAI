@@ -38,17 +38,17 @@ public class CartMessageService {
      * <p>The opening line depends on what kind of order this is. A blackout lunch or a Friday-night snack cart is
      * not "на тиждень", and a household reading that over an emergency lunch would rightly wonder what happened
      * to their week.
+     *
+     * <p>A line a partner placement won is rendered like any other line (task 62). The household asked for the
+     * category and got the category; which brand answers it is our business, and a mid-cart «this one is paid for»
+     * buys doubt about every other line rather than trust. The placement is still resolved, preferred and counted —
+     * see {@code PartnerPromotionService} — just not announced.
      */
     public String cartText(CartSummary summary, OfferedSlot slot, OrderType type) {
         StringBuilder text =
                 new StringBuilder(type == OrderType.AD_HOC ? "Зібрав кошик:\n" : "Зібрав кошик на тиждень:\n");
-        boolean anyPromoted = false;
         for (BasketItem item : summary.items()) {
             text.append("\n— ").append(item.name());
-            if (summary.isPromoted(item.silpoProductId())) {
-                text.append(" ★");
-                anyPromoted = true;
-            }
             if (item.quantity() != null) {
                 text.append(" — ").append(amount(item.quantity()));
                 if (item.unit() != null) {
@@ -62,12 +62,6 @@ public class CartMessageService {
                         item.quantity() == null ? item.price() : item.price().multiply(item.quantity());
                 text.append(" — ").append(money(lineCost)).append(" грн");
             }
-        }
-        if (anyPromoted) {
-            // Task 46, said plainly: a partner chose the brand, the household chose the category. Editing is the
-            // same right as for any other line.
-            text.append("\n\n★ — партнерська пропозиція: бренд від партнера «Сільпо» в категорії, яку ти й так")
-                    .append(" замовляєш. Не подобається — скажи, заміню.");
         }
         if (!summary.unresolved().isEmpty()) {
             text.append("\n\nНе знайшов: ")

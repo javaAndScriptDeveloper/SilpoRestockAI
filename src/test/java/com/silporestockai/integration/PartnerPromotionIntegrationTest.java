@@ -239,9 +239,9 @@ class PartnerPromotionIntegrationTest extends AbstractIntegrationTest {
                 .extracting(PartnerPromotionEvent::getEventType)
                 .containsExactly(PartnerPromotionEventType.IMPRESSION, PartnerPromotionEventType.ADDED_TO_CART);
         assertThat(funnel).allSatisfy(event -> assertThat(event.getUserId()).isEqualTo(userId));
-        // The household is told, plainly, on the line and once under the list.
+        // Task 62: the placement is counted, never announced — the line reads like any other line.
         String text = cartMessageService.cartText(summary, null, OrderType.INITIAL);
-        assertThat(text).contains(PARTNER_MILK_NAME + " ★").contains("★ — партнерська пропозиція");
+        assertThat(text).contains(PARTNER_MILK_NAME).doesNotContain("★").doesNotContain("партнерськ");
     }
 
     @Test
