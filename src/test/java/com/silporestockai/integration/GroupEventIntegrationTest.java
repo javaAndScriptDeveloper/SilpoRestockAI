@@ -214,23 +214,32 @@ class GroupEventIntegrationTest extends AbstractIntegrationTest {
         User organizer = connectedOrganizer();
         CLAUDE.respondWithTexts(PROPOSAL_V1, MATCH_BOTH, PROPOSAL_V2, MATCH_BOTH);
 
-        // 1. The organizer adds the bot.
+        // 1. Somebody adds the bot: an intro, no round. Then the organizer tags it and asks: the round opens.
         addBot();
+        assertThat(events.findAll()).isEmpty();
+        assertThat(lastText()).contains("тегни мене");
+        mention(41, "Олена", "olena", "збери напої на п'ятницю, привід: ДР");
         GroupEvent event = events.findAll().getFirst();
         int greetingId = TELEGRAM.lastMessageId();
         assertThat(event.getOrganizerTelegramUserId()).isEqualTo(ORGANIZER);
         assertThat(event.getOrganizerUserId()).isEqualTo(organizer.getId());
         assertThat(event.getGreetingMessageId()).isEqualTo(greetingId);
+        assertThat(event.getEventTag()).isEqualTo("ДР");
         JsonNode greeting = TELEGRAM.sentMessages().getLast();
         assertThat(greeting.path("chat_id").asLong()).isEqualTo(GROUP);
         assertThat(greeting.path("text").asText()).contains("«.»").contains("@olena");
+        // A second mention while the round is open is chatter.
+        int before = TELEGRAM.sentMessages().size();
+        mention(42, "Ігор", null, "збери напої");
+        assertThat(TELEGRAM.sentMessages()).hasSize(before);
+        assertThat(events.findAll()).hasSize(1);
         assertThat(callbackOf(greeting)).isEqualTo("grp:freeze:" + event.getId());
         assertThat(userRepository.findByTelegramChatId(GROUP)).isEmpty();
 
         // 2. Replies to the greeting; an unaddressed message; a second reply from the same person.
         reply(41, "Олена", "olena", "вино червоне", greetingId);
         reply(42, "Ігор", null, "пиво світле, це на ДР", greetingId);
-        int before = TELEGRAM.sentMessages().size();
+        before = TELEGRAM.sentMessages().size();
         plain(43, "Марко", "хто бере торт?");
         assertThat(TELEGRAM.sentMessages()).hasSize(before);
         assertThat(CLAUDE.callCount()).isZero();
@@ -252,7 +261,7 @@ class GroupEventIntegrationTest extends AbstractIntegrationTest {
         assertThat(TELEGRAM.sentMessages()).hasSize(before);
         assertThat(events.findById(event.getId()).orElseThrow().getBudget()).isNull();
         reply(41, "Олена", "olena", "бюджет 1500", greetingId);
-        assertThat(lastText()).isEqualTo("Прийняв: бюджет 1500 грн");
+        assertThat(lastText()).isEqualTo("Прийняв: бюджет 1500 грн · привід: ДР");
         assertThat(events.findById(event.getId()).orElseThrow().getBudget()).isEqualByComparingTo("1500");
         tap(42, "grp:freeze:" + event.getId(), greetingId);
         assertThat(lastToast()).isEqualTo("Це кнопка організатора.");
@@ -408,6 +417,7 @@ class GroupEventIntegrationTest extends AbstractIntegrationTest {
     void organizerWithoutSilpo() throws Exception {
         CLAUDE.respondWithTexts(PROPOSAL_V1);
         addBot();
+        mention(41, "Олена", "olena", "збери напої");
         GroupEvent event = events.findAll().getFirst();
         int greetingId = TELEGRAM.lastMessageId();
         reply(41, "Олена", "olena", "вино", greetingId);
@@ -467,6 +477,7 @@ class GroupEventIntegrationTest extends AbstractIntegrationTest {
         CLAUDE.respondWithTexts(PROPOSAL_V1, MATCH_BOTH);
 
         addBot();
+        mention(41, "Олена", "olena", "збери напої");
         GroupEvent event = events.findAll().stream()
                 .filter(e -> e.getTelegramGroupChatId() == GROUP)
                 .findFirst()

@@ -1087,8 +1087,9 @@ Task 68 was built as written in nine of ten places. The places where it is not, 
    and `GroupEventIntegrationTest.exceptionDoesNotTouchHistory` asserts it.
 
 6. **Only replies to the bot and its buttons.** The task said «only to explicit @-mentions». The product
-   owner's review after the live run narrowed it further: the bot acts only on a reply to one of its own
-   messages or a tap on one of its own buttons; a mention or a `/command` is ignored like chatter. Privacy
+   owner's review after the live run narrowed it: one mention — «@bot збери напої…» with no round open —
+   starts a round and names its organizer; after that the bot acts only on a reply to one of its own
+   messages or a tap on one of its own buttons, and a further mention or a `/command` is chatter. Privacy
    mode delivers replies, mentions and commands, so the rule is enforced in code, not by Telegram.
 
 ### Still worth a decision

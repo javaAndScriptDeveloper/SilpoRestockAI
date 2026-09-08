@@ -22,7 +22,6 @@ import com.silporestockai.repository.UserRepository;
 import com.silporestockai.service.telegram.GroupEventMessageService;
 import com.silporestockai.service.telegram.TelegramOutboundService;
 import com.silporestockai.utils.GroupEventSettings;
-import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -60,9 +59,6 @@ public class GroupEventService {
             List.of(GroupEventStatus.COLLECTING_REPLIES, GroupEventStatus.PROPOSED, GroupEventStatus.APPROVED);
     private static final List<GroupEventStatus> BEFORE_AGREEMENT =
             List.of(GroupEventStatus.COLLECTING_REPLIES, GroupEventStatus.PROPOSED);
-    /** A second «added» event for the same round inside this window is Telegram delivering it twice. */
-    private static final Duration DUPLICATE_ADD_WINDOW = Duration.ofMinutes(2);
-
     private static final String CATEGORY = "Напої";
 
     /** Own mapper, as elsewhere in the app: Boot 4 carries both Jackson 2 and Jackson 3. */
@@ -83,7 +79,9 @@ public class GroupEventService {
     public void handle(TelegramIncomingUpdate incoming) {
         switch (incoming) {
             case TelegramIncomingUpdate.BotAddedToGroup added ->
-                startRound(added.chatId(), added.chatTitle(), added.byTelegramUserId(), added.byDisplayName(), true);
+                // Being added opens nothing: the round starts when somebody tags the bot and asks (product
+                // decision) — that person is the organizer, and the tag is the one mention the bot ever reads.
+                telegramOutboundService.sendMessage(added.chatId(), messages.intro());
             case TelegramIncomingUpdate.BotRemovedFromGroup removed -> cancelOpenRounds(removed.chatId());
             case TelegramIncomingUpdate.GroupText text -> onText(text);
             case TelegramIncomingUpdate.GroupButtonTap tap -> onTap(tap);
@@ -93,17 +91,10 @@ public class GroupEventService {
 
     // ---- starting a round ------------------------------------------------------------------------------------
 
-    private void startRound(long chatId, String chatTitle, long organizerId, String organizerName, boolean fromAdd) {
+    private void startRound(
+            long chatId, String chatTitle, long organizerId, String organizerName, String openingWords) {
         Optional<GroupEvent> open =
                 eventRepository.findFirstByTelegramGroupChatIdAndStatusInOrderByCreatedAtDesc(chatId, BEFORE_AGREEMENT);
-        if (fromAdd
-                && open.isPresent()
-                && open.get().getOrganizerTelegramUserId() == organizerId
-                && open.get().getStatus() == GroupEventStatus.COLLECTING_REPLIES
-                && open.get().getCreatedAt().isAfter(Instant.now().minus(DUPLICATE_ADD_WINDOW))) {
-            log.debug("ignoring a repeated add of the bot to chat {} — the round is already open", chatId);
-            return;
-        }
         open.ifPresent(previous -> {
             previous.setStatus(GroupEventStatus.CANCELLED);
             eventRepository.save(previous);
@@ -121,6 +112,12 @@ public class GroupEventService {
                 .status(GroupEventStatus.COLLECTING_REPLIES)
                 .createdAt(Instant.now())
                 .build();
+        // «@bot збери напої на п'ятницю, бюджет 2000» — the opening words may already carry the settings.
+        GroupEventSettings.parse(openingWords, LocalDate.now(KYIV)).ifPresent(parsed -> {
+            event.setBudget(parsed.budget());
+            event.setEventTag(parsed.eventTag());
+            event.setEventDate(parsed.eventDate());
+        });
         eventRepository.save(event);
         int greetingId = telegramOutboundService.sendMessageWithButtons(
                 chatId, messages.greeting(organizerName), messages.greetingButtons(event.getId()));
@@ -142,6 +139,21 @@ public class GroupEventService {
     // ---- text ------------------------------------------------------------------------------------------------
 
     private void onText(TelegramIncomingUpdate.GroupText text) {
+        if (text.mentionsBot() && !text.addressedToBot()) {
+            // The one mention the bot reads: «@bot збери напої» with no round open starts one, and the person
+            // who asked is the organizer. A mention while a round is open is chatter like any other.
+            boolean roundOpen = eventRepository
+                    .findFirstByTelegramGroupChatIdAndStatusInOrderByCreatedAtDesc(text.chatId(), BEFORE_AGREEMENT)
+                    .isPresent();
+            if (roundOpen) {
+                log.debug("ignoring a mention in group {}: a round is already open", text.chatId());
+                return;
+            }
+            String opening = text.bodyWithoutAddress(
+                    telegramOutboundService.botUsername().orElse(null));
+            startRound(text.chatId(), null, text.telegramUserId(), text.displayName(), opening);
+            return;
+        }
         if (!text.addressedToBot()) {
             // The rule that makes the bot bearable in a group: anything that is not a reply to one of its own
             // messages is never read, never parsed — a mention and a command included.
@@ -265,7 +277,7 @@ public class GroupEventService {
         }
         if (GroupEventMessageService.CALLBACK_NEW_ROUND.equals(data)) {
             telegramOutboundService.answerCallback(tap.callbackQueryId());
-            startRound(tap.chatId(), null, tap.telegramUserId(), tap.displayName(), false);
+            startRound(tap.chatId(), null, tap.telegramUserId(), tap.displayName(), "");
             return;
         }
         telegramOutboundService.answerCallback(tap.callbackQueryId());

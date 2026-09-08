@@ -1121,9 +1121,10 @@ task 55 parses for the unique-tool list instead of collecting the same data twic
 ## 18. A group drinks round (task 68)
 
 A group chat is not a household: it gets no `users` row, no onboarding, no intent router. Everything a group
-sends goes to `GroupEventService`, whose state is `group_event.status`. The bot reads only replies to its own
-messages and taps on its own buttons — a mention or a `/command` is ignored like any other message (product
-decision, session 15 review).
+sends goes to `GroupEventService`, whose state is `group_event.status`. A round starts when somebody tags the
+bot and asks («@bot збери напої на п'ятницю, бюджет 2000»); from then on the bot reads only replies to its own
+messages and taps on its own buttons — a further mention or a `/command` is ignored like any other message
+(product decision, session 15 review).
 
 ### Set-up
 
@@ -1137,9 +1138,10 @@ decision, session 15 review).
 
 | Do this | Expect |
 |---|---|
-| Add the bot to a group (or tap «🔄 Новий збір» under the last round's summary) | A greeting with the rules and one button «✅ Всі відповіли»; `group_event` row in `COLLECTING_REPLIES` with `organizer_telegram_user_id` = whoever added it / typed the command, taken from `my_chat_member.from` |
+| Add the bot to a group | A one-line intro («тегни мене…»), no round, no `group_event` row |
+| «@bot збери напої на п'ятницю, бюджет 2000» (or tap «🔄 Новий збір» under the last round's summary) | A greeting with the rules and one button «✅ Всі відповіли»; `group_event` row in `COLLECTING_REPLIES`, `organizer_telegram_user_id` = whoever tagged/tapped, budget/tag/date already parsed from the tag text |
 | Reply to the greeting: «вино червоне», «пиво світле, це на ДР», «.» | Each gets «Записав, {ім'я}. Відповіли: N.» as a reply; one row per person, a second reply overwrites the text |
-| Write anything in the group without replying to the bot — including `@bot …` and `/anything` | Nothing. `logs/app.log` at DEBUG: `ignoring an unaddressed message in group …`; no Claude call, no MCP call |
+| Write anything in the group without replying to the bot — including a second `@bot …` while the round is open, and `/anything` | Nothing. `logs/app.log` at DEBUG: `ignoring an unaddressed message in group …`; no Claude call, no MCP call |
 | Organizer, as a reply to the greeting: «бюджет 1500, привід: ДР, дата 20.09» | «Прийняв: бюджет 1500 грн · привід: ДР · дата 20.09.2026» |
 | Someone other than the organizer taps «Всі відповіли» | A toast «Це кнопка організатора.», nothing else |
 | Organizer taps «Всі відповіли» | «Закрив список: N людей. Рахую пропозицію — хвилинку.», then within ~30 s the proposal: «Пропозиція №1 на N людей (кількості орієнтовні)», real catalog names, quantities, line costs, «Разом орієнтовно», the budget verdict, one line of rules («👍 — згоден. Змінити — тегни @bot і напиши, що прибрати чи додати»), and one «👍 Погоджуюсь» button. The per-head split appears only in the consensus message; the model's note is in the log. Every reply row now has `counted_in_denominator = true`, `frozen_at` set, status `PROPOSED` |

@@ -30,9 +30,16 @@ public class GroupEventMessageService {
 
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("dd.MM.yyyy");
 
+    /** Said once, when the bot is added. Opens nothing: the round starts on the first tag. */
+    public String intro() {
+        return "Привіт! Коли треба зібрати напої на компанію — тегни мене й попроси: «@бот збери напої на п'ятницю, "
+                + "бюджет 2000». Хто попросить, той і організатор. Далі читаю лише реплаї на свої повідомлення й "
+                + "свої кнопки.";
+    }
+
     public String greeting(String organizerName) {
         return """
-                Привіт! Я зберу напої на компанію — в кошик «Сільпо» організатора, оплата як зазвичай.
+                Збираю напої на компанію — в кошик «Сільпо» організатора, оплата як зазвичай.
 
                 Кожен — відповідай реплаєм на це повідомлення, що п'єш: «пиво світле», «червоне вино», «не п'ю — сік». \
                 Можна з поясненням: «сьогодні за кермом», «це на ДР». Крапка «.» — на мій розсуд.
@@ -233,7 +240,7 @@ public class GroupEventMessageService {
     }
 
     public String noActiveRound() {
-        return "Зараз немає відкритого збору — тисни «🔄 Новий збір» під останнім підсумком або додай мене заново.";
+        return "Зараз немає відкритого збору — тегни мене й попроси, або тисни «🔄 Новий збір» під останнім підсумком.";
     }
 
     public String alreadyAgreed(String organizerName) {

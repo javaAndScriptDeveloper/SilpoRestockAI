@@ -18,16 +18,17 @@ Two platform facts shape everything below:
    count in this design is a count of explicit replies, never of an assumed roster.
 2. **A bot in a group is, by default, in privacy mode:** it receives only commands, messages that
    mention it, and replies to its own messages. The design goes further (product decision after the live
-   run): the bot acts **only** on a reply to one of its own messages or a tap on one of its own buttons —
-   a mention or a command is ignored like chatter. A preference is a *reply to the greeting*, a revision
+   run): after the opening tag the bot acts **only** on a reply to one of its own messages or a tap on
+   one of its own buttons — a further mention or a command is ignored like chatter. A preference is a *reply to the greeting*, a revision
    is a *reply to the proposal*. Whether or not the bot is an admin, the rule is enforced in code: an
    unaddressed message is dropped at debug level and never reaches a model.
 
 ## Flow
 
-1. **Organizer adds the bot.** Telegram delivers `my_chat_member` (and, on some clients, a
-   `new_chat_members` service message); `from` is the person who performed the add — the organizer,
-   read from the event, never guessed. A later tap on «🔄 Новий збір» under a finished round's summary
+1. **Somebody tags the bot and asks.** Being added to the group only earns a one-line intro; the round
+   opens on «@bot збери напої на п'ятницю, бюджет 2000» with no round open, and the person who asked is
+   the organizer — read from the message's `from`, never guessed (the opening words may carry the
+   budget, occasion and date). A mention while a round is open is chatter. A later tap on «🔄 Новий збір» under a finished round's summary
    starts a *new* event whose organizer is the tapper (a group orders more than once, and the bot is
    added only once).
 2. **Greeting** in the group, with one inline button «✅ Всі відповіли» and the rules: reply to this
