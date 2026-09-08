@@ -19,6 +19,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
@@ -113,6 +114,17 @@ public class SilpoAuthService implements SilpoAccessTokenProvider {
         // callback for a URL button, so nothing else would ever tell the conversation to carry on.
         events.publishEvent(new SilpoConnectedEvent(login.userId()));
         return login.userId();
+    }
+
+    /**
+     * Who started the login this state belongs to, without consuming it.
+     *
+     * <p>The callback needs the owner even when the login is about to fail — a declined authorization carries no code
+     * to exchange, and a failed exchange has already removed the pending entry by the time anything can be reported.
+     * Peeking before {@link #completeLogin} is what lets the failure reach the person's chat rather than only the log.
+     */
+    public Optional<UUID> pendingUserId(String state) {
+        return Optional.ofNullable(pendingLogins.get(state)).map(SilpoLoginState::userId);
     }
 
     @Override
