@@ -271,6 +271,26 @@ class ShoppingListBuilderIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void aRequestTypedOverTheOpeningQuestionWinsAndTheQuestionStepsAside() throws Exception {
+        sendText(1, "/list");
+        assertThat(conversationStateService.load(CHAT_ID).getCurrentFlow()).isEqualTo(ConversationFlow.LIST_BUILDING);
+        // The classifier reads the sentence as a calendar request; no list JSON is scripted, so a list build
+        // would have failed loudly.
+        CLAUDE.respondWithText("""
+                {"intent":"CALENDAR_VIEW","confidence":0.95,"themeDescription":"середа","targetDateTimeIso":null}""");
+
+        sendText(2, "що їмо в середу?");
+
+        assertThat(CLAUDE.callCount()).isEqualTo(1);
+        assertThat(shoppingListItemRepository.findByUserIdAndStatus(
+                        user.getId(), com.silporestockai.model.ShoppingListStatus.ACTIVE))
+                .isEmpty();
+        assertThat(conversationStateService.load(CHAT_ID).getCurrentFlow())
+                .isNotEqualTo(ConversationFlow.LIST_BUILDING);
+        assertThat(lastMessageText()).doesNotContain("Щось пішло не так");
+    }
+
+    @Test
     void thePersonsOwnWordsGoToTheModelUnsplit() throws Exception {
         sendText(1, "/list");
         CLAUDE.respondWithText(list("{\"name\":\"Гречка\",\"quantity\":1,\"unit\":\"кг\"}"));

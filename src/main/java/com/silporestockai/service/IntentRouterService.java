@@ -186,6 +186,16 @@ public class IntentRouterService {
      * asks here first; a confident intent wins, and the fridge question waits for the next sweep.
      */
     public boolean tryRoute(User user, String text) {
+        return tryRoute(user, text, java.util.Set.of());
+    }
+
+    /**
+     * {@link #tryRoute(User, String)}, except that an intent named in {@code unlessIntents} counts as «not for
+     * me». The open «Що беремо на цей тиждень?» question uses this: a sentence the classifier reads as a list
+     * request or a list edit is exactly the description that question asked for, so it goes to the list builder
+     * rather than looping back through the router.
+     */
+    public boolean tryRoute(User user, String text, java.util.Set<String> unlessIntents) {
         ClassifiedIntent classified;
         try {
             classified = claudeApiClient.completeStructured(systemPrompt, withToday(text), ClassifiedIntent.class);
@@ -199,6 +209,9 @@ public class IntentRouterService {
             // Deliberately no per-intent tag: which intents fire is task 55's artefact, a plain list rather than a
             // Grafana panel, and keeping IntentType private is what stops the two from drifting into each other.
             observabilityService.recordIntent("unclassified");
+            return false;
+        }
+        if (unlessIntents.contains(intent.name())) {
             return false;
         }
         observabilityService.recordIntent("routed");

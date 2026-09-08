@@ -27,6 +27,7 @@ import com.silporestockai.service.onboarding.OnboardingFlowService;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
@@ -329,6 +330,23 @@ public class TelegramRoutingService {
         return Optional.empty();
     }
 
+    /**
+     * «Список» with nothing on the table asks «Що беремо на цей тиждень?» and then owned every sentence: typed
+     * over it, «що їмо в середу?» became a shopping list built from those words. Same rule as the open check-in
+     * prompt (task 53): the sentence is offered to the intent router first, a confident request wins and the
+     * question steps aside, and only a sentence that is not a request — or is itself a list request — is the
+     * description the question asked for.
+     */
+    private boolean aRequestWinsOverTheListQuestion(User user, long chatId, String text) {
+        shoppingListBuilderService.stepAsideForARequest(chatId);
+        if (intentRouterService.tryRoute(user, text, Set.of("LIST_VIEW", "LIST_MODIFY"))) {
+            log.info("the list question in chat {} stepped aside for a request typed over it", chatId);
+            return true;
+        }
+        shoppingListBuilderService.reopenQuestion(chatId);
+        return false;
+    }
+
     private void handle(TelegramIncomingUpdate incoming) {
         User user = userAccountService.findOrCreate(incoming.chatId());
         // Feedback (task 47) sits above the onboarding gate on purpose: somebody stuck on the first screen is
@@ -440,6 +458,11 @@ public class TelegramRoutingService {
         // clears the state. Claiming every update in it meant the classifier was unreachable from the moment a
         // household saw their first weekly plan. Only the two steps that actually asked something claim input.
         if (flow == ConversationFlow.LIST_BUILDING && shoppingListBuilderService.awaitsAnAnswer(incoming.chatId())) {
+            if (incoming instanceof TelegramIncomingUpdate.Text typed
+                    && shoppingListBuilderService.awaitsFirstInput(incoming.chatId())
+                    && aRequestWinsOverTheListQuestion(user, incoming.chatId(), typed.text())) {
+                return;
+            }
             shoppingListBuilderService.handle(user, incoming);
             return;
         }

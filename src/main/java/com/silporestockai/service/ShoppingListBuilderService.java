@@ -205,6 +205,27 @@ public class ShoppingListBuilderService {
     }
 
     /**
+     * The opening question only — «Що беремо на цей тиждень?» — as opposed to the «Змінити» prompt.
+     *
+     * <p>The two differ in how sure the chat is about the next sentence. After a tap on «Змінити» the sentence is
+     * the edit. After the opener, typed in answer to a button that merely offered to build a list, «що їмо в
+     * середу?» or «замов усе для карбонари» are requests, not descriptions, and the routing layer offers them to
+     * the intent router first (see {@link #stepAsideForARequest}).
+     */
+    public boolean awaitsFirstInput(long chatId) {
+        return STEP_AWAITING_INPUT.equals(stepOf(chatId));
+    }
+
+    /** Closes the opening question so a request typed over it can own the chat; {@link #reopenQuestion} undoes it. */
+    public void stepAsideForARequest(long chatId) {
+        conversationStateService.save(chatId, ConversationFlow.NONE, null, Map.of());
+    }
+
+    public void reopenQuestion(long chatId) {
+        conversationStateService.save(chatId, ConversationFlow.LIST_BUILDING, STEP_AWAITING_INPUT, Map.of());
+    }
+
+    /**
      * A tap on a list keyboard, from wherever the chat currently is.
      *
      * <p>Separate from {@link #handle} because these taps carry everything they need (see
