@@ -901,3 +901,46 @@ reader to assume a division bug.
 **Also worth writing down:** the same `timeslot.not_found` + `на складі лишилось 0` that stopped session 12's
 replay stopped these carts too, and it did not matter — resolutions and impressions are recorded before the
 cart call, so the metric this task is about was measurable anyway.
+
+# Session 14 — the partner panel becomes a funnel, 2026-09-08 (evening)
+
+**Task 64, In review.** Branch `feature/own-brand-featuring`, four commits on top of session 13, full suite
+green (581 tests).
+
+**The task called itself visualization-only; it was not.** Grafana here reads Prometheus and nothing else,
+and task 63's numbers lived only in the `make promotions` text report — no panel could reach them. Attributed
+Revenue, which #64 requires as a headline number, had never been computed at all. So the work was three
+layers, not one.
+
+**Attributed Revenue.** The promoted product's own order lines in the orders that fired a CONFIRMED_ORDER —
+`price × quantity`, deduplicated by order id, never the basket total, which would credit a placement for the
+bread that happened to be in the same cart. A line with no stored price is counted in `ordersMissingPrice`
+rather than added as zero: a sum that quietly under-reports while looking exact is worse than one that says
+what it is missing. Live figure: **₴239.96** for Яготинське, from five real confirmed orders.
+
+**Pool rollups.** Overall FSR per pool needs a denominator, and «every resolution ever logged» is the wrong
+one — it counts bread nobody bids on and sinks towards zero as households add lines, describing the shopping
+list instead of the placements. It counts only the categories that pool holds a placement in, and a category
+with two placements counts once. Live: **ALL 50 %**, own brand 67 %, paid 17 % (the paid pool holds three
+categories and only won in one of them).
+
+**Seven new gauges**, all multi-gauges over the existing snapshot refresh, tagged partner/product/category/
+type. A placement with no baseline publishes no lift series at all; the baseline carries the method it was
+derived by as a tag, so no panel can show an approximation as a measurement.
+
+**The panel.** The old section led with a table of raw event rows repeating IMPRESSION down a column. It now
+opens with two big numbers (overall FSR, overall ₴), splits them by pool, and gives each pool a band of four
+panels: descending stage bars per brand, «Conversion Rate між стадіями», «Featured Share Rate і lift за
+брендом», «Attributed Revenue за брендом». A text panel carries the two subtitles that make the numbers
+recognisable to anyone who has bought retail media — Share of Shelf, Attributed Sales — and the non-nested
+funnel note. The raw table survives in a collapsed row.
+
+**The 125 % case from session 13 is handled, not hidden:** the bar is capped at 100 so nothing renders
+broken, the printed value stays 125 %, the threshold turns that bar amber, and both the panel description and
+the section legend say why a stage can exceed the one above it.
+
+**What could not be verified from here.** Grafana renders panels lazily, so every screenshot through a
+background browser tab came back blank — including for a one-panel dashboard written by hand to test it, and
+including the *previous* committed dashboard. The panels' data was verified instead by running each panel's
+PromQL against the local Prometheus: all sixteen queries return the expected live values. The picture itself
+needs a human pair of eyes, which is why the task is In review rather than Done.

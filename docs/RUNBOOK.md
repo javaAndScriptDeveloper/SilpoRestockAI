@@ -646,6 +646,30 @@ connected Silpo session for whoever's id goes in `verifyAsUserId`.
 A failed cart build leaves resolution rows behind the same way it leaves IMPRESSION events (task 46) —
 clear both by `occurred_at` before recording the demo.
 
+### Task 64: the partner section of the dashboard
+
+Needs the app running (`make run`) and the local observability harness (`make observability-local-up`,
+Grafana on `http://localhost:3000/d/komora-observability`, anonymous admin). Grafana Cloud gets the same
+file through `make dashboard`.
+
+1. `curl -s localhost:8080/actuator/prometheus | grep ^komora_promotion` — every placement should have a
+   `komora_promotion_share`, and `komora_promotion_share_overall{type="ALL"}` should exist. A placement with
+   no baseline has **no** `komora_promotion_lift` line at all; that absence is the honest answer, not a bug.
+2. Open the dashboard and scroll to «Партнерські розміщення — зведення». The ten-second read: the two big
+   numbers at the top (частка категорії, ₴ атрибутовано), then one band per pool below them.
+3. Check the three things a screenshot has to show:
+   - the funnel bars descend per brand (Показ → У кошику → Підтверджено), it is not a table of repeated rows;
+   - «Conversion Rate між стадіями» prints Яготинське at **125 %** with the bar stopped at 100 — the number
+     is real, the clamp is deliberate, and the panel description plus the section legend say the funnel is
+     not strictly nested;
+   - PAID_PARTNER and OWN_BRAND_MARGIN_BOOST are separate bands with their own row headers.
+4. The raw event table is inside the collapsed «Події розміщень (деталізація)» row. Expand it only when
+   somebody wants to check the arithmetic.
+
+Note for whoever automates this: Grafana renders its panels lazily, so a screenshot taken through a
+background browser tab comes back blank — including for a one-panel dashboard written by hand. Verify the
+numbers with the Prometheus API (`localhost:9090/api/v1/query?query=…`) and the picture with your own eyes.
+
 ### Task 33: verify the Заплановані view end-to-end
 
 The integration tests cover the dispatch logic against a stubbed Claude edit-slot response. Criterion 6
