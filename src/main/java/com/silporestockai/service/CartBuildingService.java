@@ -311,18 +311,69 @@ public class CartBuildingService {
         // counter that only saw the button tap would miss half the population.
         observabilityService.recordTopUp("applied");
         addProductsToCart(userId, context, topUp);
-        return getVerifiedCart(
-                        userId,
-                        context,
-                        deliverySlot,
-                        cart.unresolved(),
-                        cart.promotedProductIds(),
-                        cart.skippedLines(),
-                        topUp.stream().map(CartBuildingService::describeTopUp).toList())
-                // The cart is read back whole, so the lines that were already in it would otherwise lose the list
-                // line they were bought for. The top-up lines get none: nobody asked for them by name.
-                .withRequestedNames(BasketItem.requestedNamesByProductId(cart.items()));
+        List<String> toppedUpLines = new ArrayList<>(
+                topUp.stream().map(CartBuildingService::describeTopUp).toList());
+        CartSummary verified = getVerifiedCart(
+                userId,
+                context,
+                deliverySlot,
+                cart.unresolved(),
+                cart.promotedProductIds(),
+                cart.skippedLines(),
+                toppedUpLines);
+        // A baseline line the branch has run out of is taken out by the read-back, and the cheapest baseline lines
+        // are exactly the ones a small cart reaches for first — live, milk and a potato went in and came out again
+        // and the cart landed ₴22 under the line with nothing but «Скасувати» under it. Reach again, past what
+        // was just tried, until the line is cleared or the baseline is spent.
+        for (int round = 0; round < TOP_UP_ROUNDS && verified.belowMinimumOrder(); round++) {
+            java.util.Set<String> triedNames = new java.util.HashSet<>(toppedUpLines.stream()
+                    .map(CartBuildingService::nameOfTopUpLine)
+                    .toList());
+            verified.unresolved().stream()
+                    .map(CartBuildingService::nameOfTopUpLine)
+                    .forEach(triedNames::add);
+            java.util.Set<String> inCart = verified.items().stream()
+                    .map(BasketItem::silpoProductId)
+                    .filter(java.util.Objects::nonNull)
+                    .collect(java.util.stream.Collectors.toSet());
+            List<ResolvedProduct> more =
+                    topUpFromBaseline(userId, context, inCart, verified.goodsTotal(), verified.minimumOrder()).stream()
+                            .filter(line -> !triedNames.contains(line.catalogName()))
+                            .toList();
+            if (more.isEmpty()) {
+                break;
+            }
+            addProductsToCart(userId, context, more);
+            toppedUpLines = new ArrayList<>(verified.toppedUpLines());
+            more.stream().map(CartBuildingService::describeTopUp).forEach(toppedUpLines::add);
+            verified = getVerifiedCart(
+                    userId,
+                    context,
+                    deliverySlot,
+                    verified.unresolved(),
+                    cart.promotedProductIds(),
+                    cart.skippedLines(),
+                    toppedUpLines);
+        }
+        // The cart is read back whole, so the lines that were already in it would otherwise lose the list
+        // line they were bought for. The top-up lines get none: nobody asked for them by name.
+        return verified.withRequestedNames(BasketItem.requestedNamesByProductId(cart.items()));
     }
+
+    /** How many more times a top-up reaches into the baseline after a read-back took some of its lines out. */
+    private static final int TOP_UP_ROUNDS = 2;
+
+    /** The catalog name in front of «— 1 шт, 45.99 грн» or «(немає на складі)». */
+    private static String nameOfTopUpLine(String line) {
+        int cut = line.indexOf(" — ");
+        String name = cut < 0 ? line : line.substring(0, cut);
+        return name.endsWith(OUT_OF_STOCK_SUFFIX)
+                ? name.substring(0, name.length() - OUT_OF_STOCK_SUFFIX.length())
+                : name;
+    }
+
+    /** Appended to a line's name under «Не знайшов» when the branch had none of it at read-back. */
+    static final String OUT_OF_STOCK_SUFFIX = " (немає на складі)";
 
     /** Whether there is a confirmed baseline to top a small cart up from — decides whether to offer it. */
     public boolean hasBaseline(UUID userId) {
@@ -1470,8 +1521,16 @@ public class CartBuildingService {
         if (!healedOnce) {
             StockHealing healing = takeOutWhatTheBranchLacks(userId, context, cart);
             if (healing.changedCart()) {
+                java.util.Set<String> toppedUpNames = (toppedUp == null ? List.<String>of() : toppedUp)
+                        .stream()
+                                .map(CartBuildingService::nameOfTopUpLine)
+                                .collect(java.util.stream.Collectors.toSet());
                 List<String> stillUnresolved = new ArrayList<>(unresolved == null ? List.of() : unresolved);
-                stillUnresolved.addAll(healing.gone());
+                // A requested line the branch lacks is reported as missing. A top-up line is not: nobody asked for
+                // it by name, and «Не знайшов: Картопля» over a hangover kit reads as a bug.
+                healing.gone().stream()
+                        .filter(gone -> !toppedUpNames.contains(nameOfTopUpLine(gone)))
+                        .forEach(stillUnresolved::add);
                 // A top-up line the branch turned out not to have is no longer "added on your behalf".
                 List<String> stillToppedUp = (toppedUp == null ? List.<String>of() : toppedUp)
                         .stream()
@@ -1698,7 +1757,7 @@ public class CartBuildingService {
                     McpResponses.findNumber(validationContext, "stock").orElse(BigDecimal.ZERO);
             if (stock.signum() <= 0) {
                 toRemove.add(Map.of("productId", productId));
-                gone.add(name + " (немає на складі)");
+                gone.add(name + OUT_OF_STOCK_SUFFIX);
                 removedNames.add(name);
                 log.info("taking «{}» out of cart {}: the branch has none left", name, context.cartId());
             } else {

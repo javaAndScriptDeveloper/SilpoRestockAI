@@ -54,6 +54,11 @@ public class CartMessageService {
                     .append(" — можеш додати вручну пізніше.");
         }
         for (String validation : summary.validations()) {
+            if (summary.belowMinimumOrder() && validation.startsWith("замовлення менше мінімальної суми")) {
+                // Said in full, with the amounts and what to do about it, by the paragraph the below-minimum
+                // message adds underneath; a warning line saying the same thing above it read as two problems.
+                continue;
+            }
             text.append("\n⚠ ").append(validation);
         }
         text.append("\n\nРазом: ").append(money(summary.total())).append(" грн");
