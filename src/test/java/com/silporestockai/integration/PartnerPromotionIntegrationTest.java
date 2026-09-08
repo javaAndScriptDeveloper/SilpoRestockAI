@@ -337,8 +337,12 @@ class PartnerPromotionIntegrationTest extends AbstractIntegrationTest {
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
+        // Columns since task 63: показів | у кошику | підтверджено | кошик→замовлення | FSR | базлайн | метод | lift.
+        // The single milk line was resolved once and the placement answered it, so its share of the category is 100 %.
         assertThat(report)
-                .contains("| Яготинське | молоко | " + PARTNER_MILK_NAME + " | ACTIVE | 1 | 1 | 1 | 100 % | 100 % |");
+                .contains("## Платні розміщення (PAID_PARTNER)")
+                .contains("| Яготинське | молоко | " + PARTNER_MILK_NAME + " | ACTIVE | 1 | 1 | 1 | 100 % | 100 % |")
+                .contains("наближення (1/N кандидатів)");
     }
 
     @Test

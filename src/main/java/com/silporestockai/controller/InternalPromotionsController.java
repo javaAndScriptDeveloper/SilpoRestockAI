@@ -4,7 +4,7 @@ import com.silporestockai.config.MetricsProperties;
 import com.silporestockai.dto.request.PartnerPromotionRequest;
 import com.silporestockai.dto.response.PartnerPromotionResponse;
 import com.silporestockai.service.PartnerPromotionAdminService;
-import com.silporestockai.service.PartnerPromotionService;
+import com.silporestockai.service.PromotionMetricsService;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import lombok.RequiredArgsConstructor;
@@ -18,7 +18,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * The partner side of task 46, for the hackathon: create a placement, read its funnel. Behind the same shared
+ * The partner side of task 46, for the hackathon: create a placement, read its share of the category (task 63).
+ * Behind the same shared
  * token as the pitch metrics ({@code X-Metrics-Token}); no token configured, no endpoint.
  */
 @RestController
@@ -28,7 +29,7 @@ public class InternalPromotionsController {
 
     private final MetricsProperties properties;
     private final PartnerPromotionAdminService adminService;
-    private final PartnerPromotionService partnerPromotionService;
+    private final PromotionMetricsService promotionMetricsService;
 
     @PostMapping
     public ResponseEntity<PartnerPromotionResponse> create(
@@ -49,7 +50,7 @@ public class InternalPromotionsController {
         if (refusal != null) {
             return refusal;
         }
-        return ResponseEntity.ok(partnerPromotionService.report());
+        return ResponseEntity.ok(promotionMetricsService.report());
     }
 
     private <T> ResponseEntity<T> gate(String token) {

@@ -4,14 +4,20 @@ import com.silporestockai.entity.CategoryResolutionLog;
 import com.silporestockai.entity.PartnerPromotion;
 import com.silporestockai.model.BaselineMethod;
 import com.silporestockai.model.PartnerPromotionEventType;
+import com.silporestockai.model.PartnerPromotionStatus;
 import com.silporestockai.model.PromotionMetrics;
+import com.silporestockai.model.PromotionType;
 import com.silporestockai.repository.CategoryResolutionLogRepository;
 import com.silporestockai.repository.PartnerPromotionEventRepository;
 import com.silporestockai.repository.PartnerPromotionRepository;
 import com.silporestockai.utils.CategoryWords;
+import java.time.Clock;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.OptionalDouble;
+import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -35,6 +41,104 @@ public class PromotionMetricsService {
     private final PartnerPromotionRepository promotionRepository;
     private final PartnerPromotionEventRepository eventRepository;
     private final CategoryResolutionLogRepository resolutionLogRepository;
+    private final Clock clock;
+
+    /**
+     * The operator-facing report behind {@code make promotions}: one section per value pool, never a blended total.
+     * External revenue and internal margin are two different businesses and one combined figure would describe
+     * neither of them.
+     */
+    public String report() {
+        List<PromotionMetrics> all = metrics();
+        StringBuilder text = new StringBuilder("# Партнерські розміщення — звіт (")
+                .append(clock.instant())
+                .append(")\n\n");
+        if (all.isEmpty()) {
+            return text.append("Жодного розміщення ще не налаштовано.\n").toString();
+        }
+        section(text, "Платні розміщення (PAID_PARTNER)", "Партнер", byType(all, PromotionType.PAID_PARTNER));
+        section(
+                text,
+                "Власні марки (OWN_BRAND_MARGIN_BOOST)",
+                "Бренд",
+                byType(all, PromotionType.OWN_BRAND_MARGIN_BOOST));
+        text.append("> FSR рахується від усіх розв'язань цієї категорії — включно з рядками, де розміщення не мало\n")
+                .append("> права виграти (обмеження господарства). Це справжня частка категорії: вона занижує\n")
+                .append("> FSR, а не завищує. Базлайн і lift завжди підписані методом розрахунку.\n");
+        return text.toString();
+    }
+
+    private static List<PromotionMetrics> byType(List<PromotionMetrics> all, PromotionType type) {
+        return all.stream()
+                .filter(metrics -> metrics.promotion().getPromotionType() == type)
+                .toList();
+    }
+
+    private static void section(StringBuilder text, String title, String owner, List<PromotionMetrics> rows) {
+        text.append("## ").append(title).append("\n\n");
+        if (rows.isEmpty()) {
+            text.append("Порожньо.\n\n");
+            return;
+        }
+        text.append("| ")
+                .append(owner)
+                .append(" | Категорія | Товар | Статус | Показів | У кошику | Підтверджено | Кошик→замовлення | ")
+                .append("FSR | Базлайн | Метод | Lift |\n");
+        text.append("|---|---|---|---|---|---|---|---|---|---|---|---|\n");
+        for (PromotionMetrics metrics : rows) {
+            PartnerPromotion promotion = metrics.promotion();
+            text.append("| ")
+                    .append(promotion.getPartnerName())
+                    .append(" | ")
+                    .append(promotion.getCategoryOrQuery())
+                    .append(" | ")
+                    .append(promotion.getProductName())
+                    .append(" | ")
+                    .append(promotion.getStatus())
+                    .append(" | ")
+                    .append(metrics.impressions())
+                    .append(" | ")
+                    .append(metrics.addedToCart())
+                    .append(" | ")
+                    .append(metrics.confirmedOrders())
+                    .append(" | ")
+                    .append(percent(metrics.confirmedOrders(), metrics.addedToCart()))
+                    .append(" | ")
+                    .append(share(metrics.featuredShareRate()))
+                    .append(" | ")
+                    .append(share(metrics.baselineShare()))
+                    .append(" | ")
+                    .append(metrics.baselineMethod().label())
+                    .append(" | ")
+                    .append(points(metrics.lift()))
+                    .append(" |\n");
+        }
+        long added = rows.stream().mapToLong(PromotionMetrics::addedToCart).sum();
+        long confirmed =
+                rows.stream().mapToLong(PromotionMetrics::confirmedOrders).sum();
+        Set<String> categories = rows.stream()
+                .filter(metrics -> metrics.promotion().getStatus() == PartnerPromotionStatus.ACTIVE)
+                .map(metrics -> metrics.promotion().getCategoryOrQuery())
+                .collect(Collectors.toSet());
+        text.append("\nРазом: кошик→замовлення ")
+                .append(percent(confirmed, added))
+                .append(", активних категорій ")
+                .append(categories.size())
+                .append(".\n\n");
+    }
+
+    private static String percent(long numerator, long denominator) {
+        return denominator == 0 ? "—" : String.format(Locale.ROOT, "%.0f %%", 100.0 * numerator / denominator);
+    }
+
+    /** A fraction as a percentage, or «—» when we do not have one. Never a zero standing in for «unknown». */
+    private static String share(Double fraction) {
+        return fraction == null ? "—" : String.format(Locale.ROOT, "%.0f %%", 100.0 * fraction);
+    }
+
+    private static String points(Double fraction) {
+        return fraction == null ? "—" : String.format(Locale.ROOT, "%+.0f п.п.", 100.0 * fraction);
+    }
 
     public List<PromotionMetrics> metrics() {
         List<CategoryResolutionLog> logs = resolutionLogRepository.findAll();

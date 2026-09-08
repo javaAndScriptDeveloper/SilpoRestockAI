@@ -139,4 +139,52 @@ class PromotionMetricsIntegrationTest extends AbstractIntegrationTest {
         assertThat(metrics.featuredShareRate()).isNull();
         assertThat(metrics.lift()).isNull();
     }
+
+    @Test
+    @DisplayName("paid placements and own brands are rolled up separately, never blended")
+    void theTwoValuePoolsAreReportedApart() {
+        PartnerPromotion paid = promotionRepository.save(PartnerPromotion.builder()
+                .id(UUID.randomUUID())
+                .partnerName("Яготинське")
+                .categoryOrQuery("молоко")
+                .silpoProductId("p-milk-partner")
+                .productName("Молоко Яготинське 2.5% 900г")
+                .priorityWeight(100)
+                .promotionType(PromotionType.PAID_PARTNER)
+                .status(PartnerPromotionStatus.ACTIVE)
+                .createdAt(Instant.now())
+                .build());
+        PartnerPromotion own = teaPromotion(PromotionType.OWN_BRAND_MARGIN_BOOST);
+        resolution("молоко", "p-milk-partner", paid.getId(), 4);
+        resolution("чай", OWN_TEA_ID, own.getId(), 3);
+        resolution("чай", "p-tea-other", null, 3);
+
+        String report = metricsService.report();
+
+        int paidHeading = report.indexOf("## Платні розміщення (PAID_PARTNER)");
+        int ownHeading = report.indexOf("## Власні марки (OWN_BRAND_MARGIN_BOOST)");
+        assertThat(paidHeading).isNotNegative();
+        assertThat(ownHeading).isGreaterThan(paidHeading);
+        assertThat(report.indexOf("Яготинське")).isBetween(paidHeading, ownHeading);
+        assertThat(report.indexOf("Сільпо власна марка")).isGreaterThan(ownHeading);
+        // 1 of 2 tea resolutions, and the method is never left off a baseline.
+        assertThat(report).contains("50 %").contains("наближення (1/N кандидатів)");
+    }
+
+    @Test
+    @DisplayName("an unknown baseline prints a dash for the lift too")
+    void anUnknownBaselineNeverBecomesALiftNumber() {
+        PartnerPromotion tea = teaPromotion(PromotionType.PAID_PARTNER);
+        resolution("чай", OWN_TEA_ID, tea.getId(), null);
+
+        String report = metricsService.report();
+
+        assertThat(report).contains("| — | — | — |");
+    }
+
+    @Test
+    @DisplayName("with nothing configured the report says so instead of printing empty tables")
+    void anEmptyReportIsHonest() {
+        assertThat(metricsService.report()).contains("Жодного розміщення ще не налаштовано");
+    }
 }

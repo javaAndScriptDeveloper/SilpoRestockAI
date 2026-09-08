@@ -18,7 +18,6 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -193,51 +192,6 @@ public class PartnerPromotionService {
         }
     }
 
-    /** Per promotion: featured N times, in a cart M times, confirmed K times, and the two conversions. */
-    public String report() {
-        List<PartnerPromotion> all = partnerPromotionRepository.findAll().stream()
-                .sorted(Comparator.comparing(PartnerPromotion::getCreatedAt))
-                .toList();
-        StringBuilder text = new StringBuilder("# Партнерські розміщення — звіт (")
-                .append(clock.instant())
-                .append(")\n\n");
-        if (all.isEmpty()) {
-            return text.append("Жодного партнерського розміщення ще не налаштовано.\n")
-                    .toString();
-        }
-        text.append(
-                "| Партнер | Категорія | Товар | Статус | Показів | У кошику | Підтверджено | Показ→кошик | Кошик→замовлення |\n");
-        text.append("|---|---|---|---|---|---|---|---|---|\n");
-        for (PartnerPromotion promotion : all) {
-            long impressions = eventRepository.countByPromotionIdAndEventType(
-                    promotion.getId(), PartnerPromotionEventType.IMPRESSION);
-            long added = eventRepository.countByPromotionIdAndEventType(
-                    promotion.getId(), PartnerPromotionEventType.ADDED_TO_CART);
-            long confirmed = eventRepository.countByPromotionIdAndEventType(
-                    promotion.getId(), PartnerPromotionEventType.CONFIRMED_ORDER);
-            text.append("| ")
-                    .append(promotion.getPartnerName())
-                    .append(" | ")
-                    .append(promotion.getCategoryOrQuery())
-                    .append(" | ")
-                    .append(promotion.getProductName())
-                    .append(" | ")
-                    .append(promotion.getStatus())
-                    .append(" | ")
-                    .append(impressions)
-                    .append(" | ")
-                    .append(added)
-                    .append(" | ")
-                    .append(confirmed)
-                    .append(" | ")
-                    .append(percent(added, impressions))
-                    .append(" | ")
-                    .append(percent(confirmed, added))
-                    .append(" |\n");
-        }
-        return text.toString();
-    }
-
     private void record(UUID promotionId, UUID userId, UUID orderId, PartnerPromotionEventType type) {
         try {
             eventRepository.save(PartnerPromotionEvent.builder()
@@ -251,9 +205,5 @@ public class PartnerPromotionService {
         } catch (RuntimeException e) {
             log.warn("could not record {} for promotion {}: {}", type, promotionId, e.getMessage());
         }
-    }
-
-    private static String percent(long numerator, long denominator) {
-        return denominator == 0 ? "—" : String.format(Locale.ROOT, "%.0f %%", 100.0 * numerator / denominator);
     }
 }
