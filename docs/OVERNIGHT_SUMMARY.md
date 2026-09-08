@@ -944,3 +944,58 @@ background browser tab came back blank — including for a one-panel dashboard w
 including the *previous* committed dashboard. The panels' data was verified instead by running each panel's
 PromQL against the local Prometheus: all sixteen queries return the expected live values. The picture itself
 needs a human pair of eyes, which is why the task is In review rather than Done.
+
+# Session 15 — a drinks round for a group chat, 2026-09-08 (evening)
+
+**Task 68, In review.** Branch `feature/group-event-ordering`, eight commits, full suite green (607 tests before
+the last fix; the group suites re-run green after it). Spec in
+`docs/superpowers/specs/2026-09-08-group-event-ordering-design.md`, plan beside it.
+
+**What it is.** Add the bot to a group, everyone replies to its greeting with what they drink, the organizer taps
+«Всі відповіли», the bot proposes a drinks list, the group taps 👍, a revision from anyone resets every 👍, and
+consensus puts the lines into the organizer's Silpo cart through the ordinary private confirmation. Four new
+tables in the same Postgres; no new service; `CartBuildingService` and `CartConfirmationService` unchanged.
+
+**The three things the task said not to simplify, and where they live.**
+
+- *No member list.* The denominator is `count(group_event_participant where counted_in_denominator)`, set once at
+  the organizer's tap — never a roster. A reply after the tap is stored with `counted = false` and answered as late.
+- *ReAct, not a blank prompt.* `GroupSignalService` runs four one-hop queries — the reply now, what a Jaccard-≥0.5
+  set of the same people took last time, each person's stored preference summaries from other rounds, and a
+  ±14-day seasonal per-head average that only a «.» with no history ever sees — and `GroupProposalService` renders
+  them tier-labelled with every raw reply verbatim, asks Claude once, clamps quantities to 3 per head, and then
+  resolves the lines through the organizer's real catalog before anyone approves. The exception «сьогодні не п'ю
+  віскі» changes this event's proposal; the row's `preference_summary` for the same person came back «червоне
+  вино», and older rows are never rewritten.
+- *Only addressed messages.* `TelegramRoutingService` splits group updates off before any household lookup and
+  marks each text as reply-to-bot / mention / command; `GroupEventService` drops the rest at DEBUG. Privacy mode
+  delivers exactly those three anyway, so an admin bot behaves the same as a non-admin one.
+
+**Live, in a real group with the real Silpo MCP (one real account, two synthetic participants).** The real
+`my_chat_member` named the organizer (`from.id 218196255`, «@notatlast»); the greeting landed with its button; a
+plain «хто бере торт?» produced nothing (privacy mode never even delivered it; the group-creation service message
+was delivered and dropped as unaddressed); the owner's reply to the greeting was stored and acknowledged; two
+synthetic replies followed; the organizer's real tap froze 3; Claude proposed in 14.4 s; `silpo_find_products_batch`
+returned 60 candidates; the matcher picked «Пиво Чернігівське світле 4,6%» and «Вино Plaimont Heritage Saint Mont
+AOP Rouge» at real prices (₴561.94, «~187.31 з людини»); the owner's 👍 and one synthetic 👍 made 2 of 3; a
+synthetic «@bot менше пива, більше вина» produced «Пропозиція №2» (1 beer, 2 wine, ₴760.99) with zero approvals
+on version 2 — the owner's tap on the *old* button was refused as «стара пропозиція»; three 👍 on version 2 built
+the real cart in the organizer's account, which came back under the ₴799 minimum, so the private chat offered
+«Докласти з мого набору (~39 грн)»; the top-up made it ₴859.99, «Підтвердити» stored an `AD_HOC` order as
+`CONFIRMED`, the group got «🎉 @notatlast підтвердив замовлення», and the round is `ORDERED`. The checkout link
+was delivered and not clicked — that is real money and remains the owner's.
+
+**Found live, fixed.** A reply-form acknowledgement to a message that no longer exists fails with «message to be
+replied not found» — synthetic participants have no real messages, and a person who deletes their reply before
+the bot answers would hit the same. `sendReply` now falls back to a plain message; the reply row was already
+written either way.
+
+**Found live, not a bug.** `answerCallbackQuery` for a synthetic tap is refused («query is too old»), as every
+synthetic tap always has been; the toast is lost, the vote is counted.
+
+**What could not be verified here.** Three *real* accounts — the two synthetic participants prove the code path,
+not three phones; and the payment. Both are on the RUNBOOK list for the owner.
+
+**Notion edits:** task 68 → In review with a dated note; demo script gets step 13.8 and a changelog line; selling
+points get a «Компанія, не домогосподарство» section — the group round is the first feature that brings the bot
+new people rather than serving one household better.

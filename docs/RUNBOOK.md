@@ -1176,6 +1176,16 @@ group; only those participants' replies are synthetic. Shapes (secret header as 
 The ids of the bot's own messages are not in the log; read them from Postgres: `select id, greeting_message_id,
 proposal_message_id, proposal_version, status from group_event order by created_at desc limit 1;`.
 
+### What was walked live (session 15, 2026-09-08) and what is left for you
+
+Walked in a real group («Комора — тест напоїв») with the real Silpo MCP: the real add event named the organizer,
+a plain message got no reaction, the owner's reply and two synthetic replies were stored, the organizer's tap
+froze 3, the proposal came back with real catalog names and prices, 2 of 3 approved, a synthetic revision
+posted version 2 with zero approvals and refused a tap on the old button, three 👍 built the real cart in the
+organizer's account, the ₴799 top-up and «Підтвердити» ran in the private chat, and the group got «🎉 …
+підтвердив замовлення». Left for you: (1) three *real* phones in one group — the two synthetic participants
+prove the code path, not the UX of three people tapping; (2) «Перейти до оплати» — real money.
+
 ### Reset
 
 `delete from group_event;` cascades to participants, items and approvals. The organizer's draft

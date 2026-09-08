@@ -191,6 +191,22 @@ public class TelegramOutboundService {
             Message sent = client.execute(message);
             return sent == null || sent.getMessageId() == null ? 0 : sent.getMessageId();
         } catch (TelegramApiException e) {
+            if (e.getMessage() != null && e.getMessage().contains("message to be replied not found")) {
+                // The person deleted their message before the bot answered. The answer still matters — the
+                // reply row was already written — so it goes out on its own rather than not at all.
+                log.debug("message {} in chat {} is gone; answering without the reply link", replyToMessageId, chatId);
+                return sendPlain(chatId, text);
+            }
+            throw failure("sendMessage", e);
+        }
+    }
+
+    private int sendPlain(long chatId, String text) {
+        try {
+            Message sent = client.execute(
+                    SendMessage.builder().chatId(chatId).text(text).build());
+            return sent == null || sent.getMessageId() == null ? 0 : sent.getMessageId();
+        } catch (TelegramApiException e) {
             throw failure("sendMessage", e);
         }
     }
