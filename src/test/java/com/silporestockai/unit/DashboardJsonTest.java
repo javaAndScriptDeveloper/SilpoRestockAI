@@ -89,6 +89,77 @@ class DashboardJsonTest {
         assertThat(dashboard.path("uid").asText()).isEqualTo("komora-observability");
     }
 
+    /**
+     * The partner section's acceptance criteria, as far as a file can carry them (task 64).
+     *
+     * <p>What a reader has to get in ten seconds cannot be asserted here. What can: that the words doing the
+     * explaining are present, that the stage percentage cannot render as a bar broken past its own bound, and that
+     * the raw event log is no longer what the section leads with.
+     */
+    @Test
+    void thePartnerSectionExplainsItselfWithoutNarration() throws IOException {
+        JsonNode dashboard = new ObjectMapper().readTree(Files.readString(DASHBOARD));
+        String whole = Files.readString(DASHBOARD);
+
+        // The industry name for FSR, so anyone who has bought retail media recognises the number instantly.
+        assertThat(whole).contains("аналог Share of Shelf у retail media");
+        // Both pools are their own visual area, never one blended bar.
+        assertThat(titles(dashboard)).anyMatch(title -> title.contains("PAID_PARTNER"));
+        assertThat(titles(dashboard)).anyMatch(title -> title.contains("OWN_BRAND_MARGIN_BOOST"));
+
+        List<JsonNode> conversion = panels(dashboard).stream()
+                .filter(panel -> panel.path("title").asText().contains("Conversion Rate"))
+                .toList();
+        assertThat(conversion)
+                .as("stage-to-stage percentages must be labelled with the business term")
+                .hasSize(2);
+        for (JsonNode panel : conversion) {
+            // The live run produced 125 %: the bar clamps, the printed value stays true, and the description says
+            // why a funnel stage can exceed its own previous stage at all.
+            assertThat(panel.path("fieldConfig").path("defaults").path("max").asInt())
+                    .isEqualTo(100);
+            assertThat(panel.path("description").asText()).contains("не суворо вкладена");
+        }
+
+        JsonNode rawTable = panels(dashboard).stream()
+                .filter(panel -> "table".equals(panel.path("type").asText()))
+                .filter(panel -> panel.path("targets").toString().contains("komora_promotion_events"))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("the raw event table should still exist for drill-down"));
+        assertThat(parentRowIsCollapsed(dashboard, rawTable))
+                .as("the raw event log stays available but must not lead the section")
+                .isTrue();
+    }
+
+    /** Every panel, including the ones nested inside a collapsed row. */
+    private static List<JsonNode> panels(JsonNode dashboard) {
+        List<JsonNode> all = new ArrayList<>();
+        for (JsonNode panel : dashboard.path("panels")) {
+            all.add(panel);
+            panel.path("panels").forEach(all::add);
+        }
+        return all;
+    }
+
+    private static List<String> titles(JsonNode dashboard) {
+        return panels(dashboard).stream()
+                .map(panel -> panel.path("title").asText())
+                .toList();
+    }
+
+    private static boolean parentRowIsCollapsed(JsonNode dashboard, JsonNode panel) {
+        for (JsonNode row : dashboard.path("panels")) {
+            if ("row".equals(row.path("type").asText()) && row.path("collapsed").asBoolean()) {
+                for (JsonNode child : row.path("panels")) {
+                    if (child == panel) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
     private static boolean isKnown(String series, Set<String> known) {
         for (String suffix : SUFFIXES) {
             if (series.endsWith(suffix) && known.contains(series.substring(0, series.length() - suffix.length()))) {

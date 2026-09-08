@@ -1006,7 +1006,7 @@
     },
     {
       "type": "row",
-      "title": "Партнерські розміщення",
+      "title": "Партнерські розміщення — зведення",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -1017,15 +1017,15 @@
       "panels": []
     },
     {
-      "type": "table",
-      "title": "Воронка розміщення",
+      "type": "stat",
+      "title": "Featured Share Rate — усі розміщення",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS}"
       },
       "gridPos": {
-        "h": 6,
-        "w": 12,
+        "h": 5,
+        "w": 6,
         "x": 0,
         "y": 35
       },
@@ -1035,64 +1035,15 @@
             "type": "prometheus",
             "uid": "${DS}"
           },
-          "expr": "max by (partner, product, event) (komora_promotion_events)",
-          "legendFormat": "",
+          "expr": "komora_promotion_share_overall{type=\"ALL\"}",
+          "legendFormat": "Частка категорії",
           "refId": "A"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": null,
-          "decimals": null,
-          "custom": {},
-          "color": {
-            "mode": "palette-classic"
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "showHeader": true
-      },
-      "description": "Показ → у кошику → у підтвердженому замовленні, по кожному оплаченому розміщенню.",
-      "transformations": [
-        {
-          "id": "labelsToFields",
-          "options": {
-            "mode": "columns",
-            "valueLabel": "event"
-          }
-        }
-      ]
-    },
-    {
-      "type": "bargauge",
-      "title": "Показ → кошик, %",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS}"
-      },
-      "gridPos": {
-        "h": 6,
-        "w": 12,
-        "x": 12,
-        "y": 35
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS}"
-          },
-          "expr": "100 * max by (partner, product) (komora_promotion_events{event=\"ADDED_TO_CART\"}) / max by (partner, product) (komora_promotion_events{event=\"IMPRESSION\"})",
-          "legendFormat": "{{partner}} · {{product}}",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percent",
-          "decimals": null,
+          "unit": "percentunit",
+          "decimals": 0,
           "custom": {},
           "color": {
             "mode": "palette-classic"
@@ -1108,10 +1059,763 @@
           "fields": "",
           "values": false
         },
-        "displayMode": "gradient",
-        "orientation": "horizontal"
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
       },
-      "description": "Конверсія розміщення — та сама цифра, яку партнер купує."
+      "description": "Яку частку розв'язань у категоріях, де ми стоїмо, забрали розміщення. Аналог Share of Shelf у retail media."
+    },
+    {
+      "type": "stat",
+      "title": "Attributed Revenue — усі розміщення",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS}"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 35
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          },
+          "expr": "komora_promotion_revenue_overall_uah{type=\"ALL\"}",
+          "legendFormat": "Атрибутовано",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUAH",
+          "decimals": 0,
+          "custom": {},
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "description": "Реальна сума рядків промотованих товарів у підтверджених замовленнях. Не оцінка: рахується з CONFIRMED_ORDER і збережених цін рядків."
+    },
+    {
+      "type": "bargauge",
+      "title": "Частка категорії за пулом",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS}"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 35
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          },
+          "expr": "komora_promotion_share_overall{type!=\"ALL\"}",
+          "legendFormat": "{{type}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 0,
+          "custom": {},
+          "color": {
+            "mode": "palette-classic"
+          },
+          "max": 1,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "showUnfilled": true
+      },
+      "description": "Платні розміщення і власні марки — два різні пули вартості, і зведення тримає їх окремо."
+    },
+    {
+      "type": "bargauge",
+      "title": "Attributed Revenue за пулом",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS}"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 35
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          },
+          "expr": "komora_promotion_revenue_overall_uah{type!=\"ALL\"}",
+          "legendFormat": "{{type}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUAH",
+          "decimals": 0,
+          "custom": {},
+          "color": {
+            "mode": "palette-classic"
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "showUnfilled": true
+      },
+      "description": "Зовнішній дохід і внутрішня маржа ніколи не додаються в одну цифру."
+    },
+    {
+      "type": "text",
+      "title": "Як читати ці панелі",
+      "gridPos": {
+        "h": 3,
+        "w": 24,
+        "x": 0,
+        "y": 40
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**Featured Share Rate** — яку частку розв'язань своєї категорії забрало розміщення *(аналог Share of Shelf у retail media)*. **Attributed Revenue** — реальні гривні рядків промотованого товару в підтверджених замовленнях *(аналог Attributed Sales)*, не оцінка. **Lift** — скільки з частки додало саме розміщення проти органічного базлайну; його немає, коли базлайну нема з чого порахувати.\n\n«Кошик → замовлення» може бути більшим за 100 %: воронка не суворо вкладена — повторне замовлення підтверджує товар, який у тій збірці не додавався в кошик. Смуга впирається в 100 %, підпис поруч показує справжнє число."
+      }
+    },
+    {
+      "type": "row",
+      "title": "Платні розміщення (PAID_PARTNER)",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 43
+      },
+      "panels": []
+    },
+    {
+      "type": "bargauge",
+      "title": "Воронка: показ → кошик → замовлення",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS}"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 7,
+        "x": 0,
+        "y": 44
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          },
+          "expr": "sum by (partner) (komora_promotion_events{type=\"PAID_PARTNER\", event=\"IMPRESSION\"})",
+          "legendFormat": "{{partner}} · 1. Показ",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          },
+          "expr": "sum by (partner) (komora_promotion_events{type=\"PAID_PARTNER\", event=\"ADDED_TO_CART\"})",
+          "legendFormat": "{{partner}} · 2. У кошику",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          },
+          "expr": "sum by (partner) (komora_promotion_events{type=\"PAID_PARTNER\", event=\"CONFIRMED_ORDER\"})",
+          "legendFormat": "{{partner}} · 3. Підтверджено",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": null,
+          "decimals": 0,
+          "custom": {},
+          "color": {
+            "mode": "palette-classic"
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "showUnfilled": true
+      },
+      "description": "Стадії згори вниз, по кожному бренду. Спадні смуги — це і є воронка."
+    },
+    {
+      "type": "bargauge",
+      "title": "Conversion Rate між стадіями",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS}"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 7,
+        "y": 44
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          },
+          "expr": "100 * sum by (partner) (komora_promotion_events{type=\"PAID_PARTNER\", event=\"ADDED_TO_CART\"}) / sum by (partner) (komora_promotion_events{type=\"PAID_PARTNER\", event=\"IMPRESSION\"})",
+          "legendFormat": "{{partner}} · Показ → кошик",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          },
+          "expr": "100 * sum by (partner) (komora_promotion_events{type=\"PAID_PARTNER\", event=\"CONFIRMED_ORDER\"}) / sum by (partner) (komora_promotion_events{type=\"PAID_PARTNER\", event=\"ADDED_TO_CART\"})",
+          "legendFormat": "{{partner}} · Кошик → замовлення",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 0,
+          "custom": {},
+          "color": {
+            "mode": "thresholds"
+          },
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 100
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "showUnfilled": true
+      },
+      "description": "Conversion Rate між стадіями. Понад 100 % — не помилка: воронка не суворо вкладена, повторне замовлення підтверджує товар, який у тій збірці не додавався в кошик. Смуга впирається в 100 %, число поруч справжнє."
+    },
+    {
+      "type": "bargauge",
+      "title": "Featured Share Rate і lift за брендом",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS}"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 13,
+        "y": 44
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          },
+          "expr": "komora_promotion_share{type=\"PAID_PARTNER\"}",
+          "legendFormat": "{{partner}} · {{category}} — FSR",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          },
+          "expr": "komora_promotion_lift{type=\"PAID_PARTNER\"}",
+          "legendFormat": "{{partner}} · {{category}} — lift проти органіки",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 0,
+          "custom": {},
+          "color": {
+            "mode": "palette-classic"
+          },
+          "max": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "showUnfilled": true
+      },
+      "description": "Featured Share Rate — частка розв'язань категорії, яку забрало це розміщення (аналог Share of Shelf у retail media). Lift — наскільки це більше за органічний базлайн; порожньо там, де базлайн невідомий, бо вигаданий lift гірший за жодний."
+    },
+    {
+      "type": "bargauge",
+      "title": "Attributed Revenue за брендом",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS}"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 5,
+        "x": 19,
+        "y": 44
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          },
+          "expr": "komora_promotion_revenue_uah{type=\"PAID_PARTNER\"}",
+          "legendFormat": "{{partner}} · {{category}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUAH",
+          "decimals": 0,
+          "custom": {},
+          "color": {
+            "mode": "palette-classic"
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "showUnfilled": true
+      },
+      "description": "Гривні рядків саме цього товару в підтверджених замовленнях (аналог Attributed Sales)."
+    },
+    {
+      "type": "row",
+      "title": "Власні марки (OWN_BRAND_MARGIN_BOOST)",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 50
+      },
+      "panels": []
+    },
+    {
+      "type": "bargauge",
+      "title": "Воронка: показ → кошик → замовлення",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS}"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 7,
+        "x": 0,
+        "y": 51
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          },
+          "expr": "sum by (partner) (komora_promotion_events{type=\"OWN_BRAND_MARGIN_BOOST\", event=\"IMPRESSION\"})",
+          "legendFormat": "{{partner}} · 1. Показ",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          },
+          "expr": "sum by (partner) (komora_promotion_events{type=\"OWN_BRAND_MARGIN_BOOST\", event=\"ADDED_TO_CART\"})",
+          "legendFormat": "{{partner}} · 2. У кошику",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          },
+          "expr": "sum by (partner) (komora_promotion_events{type=\"OWN_BRAND_MARGIN_BOOST\", event=\"CONFIRMED_ORDER\"})",
+          "legendFormat": "{{partner}} · 3. Підтверджено",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": null,
+          "decimals": 0,
+          "custom": {},
+          "color": {
+            "mode": "palette-classic"
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "showUnfilled": true
+      },
+      "description": "Стадії згори вниз, по кожному бренду. Спадні смуги — це і є воронка."
+    },
+    {
+      "type": "bargauge",
+      "title": "Conversion Rate між стадіями",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS}"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 7,
+        "y": 51
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          },
+          "expr": "100 * sum by (partner) (komora_promotion_events{type=\"OWN_BRAND_MARGIN_BOOST\", event=\"ADDED_TO_CART\"}) / sum by (partner) (komora_promotion_events{type=\"OWN_BRAND_MARGIN_BOOST\", event=\"IMPRESSION\"})",
+          "legendFormat": "{{partner}} · Показ → кошик",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          },
+          "expr": "100 * sum by (partner) (komora_promotion_events{type=\"OWN_BRAND_MARGIN_BOOST\", event=\"CONFIRMED_ORDER\"}) / sum by (partner) (komora_promotion_events{type=\"OWN_BRAND_MARGIN_BOOST\", event=\"ADDED_TO_CART\"})",
+          "legendFormat": "{{partner}} · Кошик → замовлення",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 0,
+          "custom": {},
+          "color": {
+            "mode": "thresholds"
+          },
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 100
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "showUnfilled": true
+      },
+      "description": "Conversion Rate між стадіями. Понад 100 % — не помилка: воронка не суворо вкладена, повторне замовлення підтверджує товар, який у тій збірці не додавався в кошик. Смуга впирається в 100 %, число поруч справжнє."
+    },
+    {
+      "type": "bargauge",
+      "title": "Featured Share Rate і lift за брендом",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS}"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 13,
+        "y": 51
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          },
+          "expr": "komora_promotion_share{type=\"OWN_BRAND_MARGIN_BOOST\"}",
+          "legendFormat": "{{partner}} · {{category}} — FSR",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          },
+          "expr": "komora_promotion_lift{type=\"OWN_BRAND_MARGIN_BOOST\"}",
+          "legendFormat": "{{partner}} · {{category}} — lift проти органіки",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 0,
+          "custom": {},
+          "color": {
+            "mode": "palette-classic"
+          },
+          "max": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "showUnfilled": true
+      },
+      "description": "Featured Share Rate — частка розв'язань категорії, яку забрало це розміщення (аналог Share of Shelf у retail media). Lift — наскільки це більше за органічний базлайн; порожньо там, де базлайн невідомий, бо вигаданий lift гірший за жодний."
+    },
+    {
+      "type": "bargauge",
+      "title": "Attributed Revenue за брендом",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS}"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 5,
+        "x": 19,
+        "y": 51
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          },
+          "expr": "komora_promotion_revenue_uah{type=\"OWN_BRAND_MARGIN_BOOST\"}",
+          "legendFormat": "{{partner}} · {{category}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUAH",
+          "decimals": 0,
+          "custom": {},
+          "color": {
+            "mode": "palette-classic"
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "showUnfilled": true
+      },
+      "description": "Гривні рядків саме цього товару в підтверджених замовленнях (аналог Attributed Sales)."
+    },
+    {
+      "type": "row",
+      "title": "Події розміщень (деталізація)",
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 57
+      },
+      "panels": [
+        {
+          "type": "table",
+          "title": "Події розміщення (сирі лічильники)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          },
+          "gridPos": {
+            "h": 6,
+            "w": 24,
+            "x": 0,
+            "y": 58
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${DS}"
+              },
+              "expr": "max by (partner, product, category, type, event) (komora_promotion_events)",
+              "legendFormat": "",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": null,
+              "decimals": null,
+              "custom": {},
+              "color": {
+                "mode": "palette-classic"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "showHeader": true
+          },
+          "description": "Показ → у кошику → у підтвердженому замовленні, по кожному розміщенню. Для тих, хто хоче перевірити цифри вище.",
+          "transformations": [
+            {
+              "id": "labelsToFields",
+              "options": {
+                "mode": "columns",
+                "valueLabel": "event"
+              }
+            }
+          ]
+        }
+      ]
     },
     {
       "type": "row",
@@ -1121,7 +1825,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 41
+        "y": 58
       },
       "panels": []
     },
@@ -1136,7 +1840,7 @@
         "h": 6,
         "w": 8,
         "x": 0,
-        "y": 42
+        "y": 59
       },
       "targets": [
         {
@@ -1177,7 +1881,7 @@
         "h": 6,
         "w": 8,
         "x": 8,
-        "y": 42
+        "y": 59
       },
       "targets": [
         {
@@ -1218,7 +1922,7 @@
         "h": 6,
         "w": 8,
         "x": 16,
-        "y": 42
+        "y": 59
       },
       "targets": [
         {
@@ -1268,7 +1972,7 @@
         "h": 6,
         "w": 8,
         "x": 0,
-        "y": 48
+        "y": 65
       },
       "targets": [
         {
@@ -1309,7 +2013,7 @@
         "h": 6,
         "w": 8,
         "x": 8,
-        "y": 48
+        "y": 65
       },
       "targets": [
         {
@@ -1350,7 +2054,7 @@
         "h": 6,
         "w": 8,
         "x": 16,
-        "y": 48
+        "y": 65
       },
       "targets": [
         {
