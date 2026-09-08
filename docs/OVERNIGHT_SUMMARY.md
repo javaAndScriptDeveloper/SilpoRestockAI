@@ -844,3 +844,103 @@ code-complete, the step still waits on 63/64) plus a changelog entry.
 `FeedbackIntegrationTest` failing to load its context with `could not read the voice style prompt`. That is
 the known `make run` / `./gradlew test` shared-`build/` flake, not a regression — the class passes alone and
 the suite passes clean once the app is stopped.
+
+# Session 13 — share of category instead of raw counts, 2026-09-08 (day)
+
+One task: **63 — own-brand featuring plus Featured Share Rate and lift.** The product complaint behind it is
+that task 46's report sells a number nobody can price against: «featured 4 times» says nothing about whether
+four is a lot. Share of the category does, and the same mechanism turns out to serve a second business —
+Silpo preferring its own high-margin label, with no external payer at all.
+
+**Two schema changes.** `partner_promotion.promotion_type` (029), defaulting to `PAID_PARTNER`, which
+migrates every task-46 row honestly with no backfill. And `category_resolution_log` (030): one row per
+resolved shopping-list line, promoted or not. The second table is the whole point — the funnel tables only
+ever see the lines a placement *won*, so on their own they can count a numerator and never a denominator.
+Its promotion key is `ON DELETE SET NULL`, deliberately not the cascade the event table uses: an event
+describes a campaign and dies with it, but a resolution is a fact about what a household got, and deleting
+one campaign must not shrink every other brand's denominator.
+
+**One write, at the one point every flow shares.** `CartBuildingService.resolveProducts` already funnels the
+weekly plan, ad-hoc, hangover, blackout, dish-ingredient and past-order flows through a single resolution
+pass. The log is written once there, after `secondPass`, from the final resolution list, wrapped in the same
+try/catch discipline as the funnel events: evidence must not break the thing it is evidence of.
+`candidate_count` is collected during the first pass and left **null** for lines the second pass rescued —
+an honest missing count rather than a fabricated one.
+
+**The matcher is now shared, and that was the subtle part.** `utils/CategoryWords` holds the one definition
+of «does this line belong to this category». The cart used it to decide the placement; the report uses it to
+count the denominator. Two copies of that regex would have made every share wrong in a way no test could
+catch, because each half would still have looked right alone.
+
+**Numbers that admit what they are.** FSR = the placement's resolutions over all resolutions in its
+category. Baseline is dual and always labelled: `виміряно` when at least five organic resolutions exist (how
+often the ordinary matcher reached for that product unaided), `наближення (1/N кандидатів)` otherwise, and
+`—` when neither is available — in which case **lift prints `—` too**, rather than a difference against a
+baseline we do not have. The two promotion types are rolled up in separate sections; external revenue and
+internal margin are different pools and one blended figure would describe neither.
+
+**The live run, three cart builds against the real account, six resolutions.** Own brand «Премія» milk took
+2 of 3 milk resolutions (FSR 67 %); the paid «Ситий двір» buckwheat took 1 of 3 (FSR 33 %, baseline 20 %
+approximated, lift +13 п.п.); paused «Яготинське» sits at 0 % of the same milk category. The denominator was
+counted by hand against `category_resolution_log` and matches. The milk baseline is `—` on purpose: every
+milk row carries `candidate_count = 0` (the plain «Молоко 2.5%» search returned nothing plausible; the
+placement won through its own query) and there is only one organic row — too little for either method, so
+the report says so instead of inventing a lift.
+
+**A product decision the user made mid-run.** The only Silpo private label the branch offers in an active
+category is «Премія» milk, which collided with the paid Яготинське milk placement. The user's call: keep the
+two kinds apart for now — own brand on milk, the paid placement moved off dairy to buckwheat, Яготинське and
+Пирятин left PAUSED. How to resolve a genuine same-category contest is a separate question.
+
+**Found by the live run, fixed.** Яготинське printed 125 % for cart→order (5 confirmations against 4 adds).
+The counts are right: task 46 records CONFIRMED_ORDER for every active placement whose product is in a
+confirmed order, whether or not that build logged an add, so a reorder can confirm without ever being
+counted as added. The funnel is not strictly nested, and the report now explains that rather than leaving a
+reader to assume a division bug.
+
+**Also worth writing down:** the same `timeslot.not_found` + `на складі лишилось 0` that stopped session 12's
+replay stopped these carts too, and it did not matter — resolutions and impressions are recorded before the
+cart call, so the metric this task is about was measurable anyway.
+
+# Session 14 — the partner panel becomes a funnel, 2026-09-08 (evening)
+
+**Task 64, In review.** Branch `feature/own-brand-featuring`, four commits on top of session 13, full suite
+green (581 tests).
+
+**The task called itself visualization-only; it was not.** Grafana here reads Prometheus and nothing else,
+and task 63's numbers lived only in the `make promotions` text report — no panel could reach them. Attributed
+Revenue, which #64 requires as a headline number, had never been computed at all. So the work was three
+layers, not one.
+
+**Attributed Revenue.** The promoted product's own order lines in the orders that fired a CONFIRMED_ORDER —
+`price × quantity`, deduplicated by order id, never the basket total, which would credit a placement for the
+bread that happened to be in the same cart. A line with no stored price is counted in `ordersMissingPrice`
+rather than added as zero: a sum that quietly under-reports while looking exact is worse than one that says
+what it is missing. Live figure: **₴239.96** for Яготинське, from five real confirmed orders.
+
+**Pool rollups.** Overall FSR per pool needs a denominator, and «every resolution ever logged» is the wrong
+one — it counts bread nobody bids on and sinks towards zero as households add lines, describing the shopping
+list instead of the placements. It counts only the categories that pool holds a placement in, and a category
+with two placements counts once. Live: **ALL 50 %**, own brand 67 %, paid 17 % (the paid pool holds three
+categories and only won in one of them).
+
+**Seven new gauges**, all multi-gauges over the existing snapshot refresh, tagged partner/product/category/
+type. A placement with no baseline publishes no lift series at all; the baseline carries the method it was
+derived by as a tag, so no panel can show an approximation as a measurement.
+
+**The panel.** The old section led with a table of raw event rows repeating IMPRESSION down a column. It now
+opens with two big numbers (overall FSR, overall ₴), splits them by pool, and gives each pool a band of four
+panels: descending stage bars per brand, «Conversion Rate між стадіями», «Featured Share Rate і lift за
+брендом», «Attributed Revenue за брендом». A text panel carries the two subtitles that make the numbers
+recognisable to anyone who has bought retail media — Share of Shelf, Attributed Sales — and the non-nested
+funnel note. The raw table survives in a collapsed row.
+
+**The 125 % case from session 13 is handled, not hidden:** the bar is capped at 100 so nothing renders
+broken, the printed value stays 125 %, the threshold turns that bar amber, and both the panel description and
+the section legend say why a stage can exceed the one above it.
+
+**What could not be verified from here.** Grafana renders panels lazily, so every screenshot through a
+background browser tab came back blank — including for a one-panel dashboard written by hand to test it, and
+including the *previous* committed dashboard. The panels' data was verified instead by running each panel's
+PromQL against the local Prometheus: all sixteen queries return the expected live values. The picture itself
+needs a human pair of eyes, which is why the task is In review rather than Done.

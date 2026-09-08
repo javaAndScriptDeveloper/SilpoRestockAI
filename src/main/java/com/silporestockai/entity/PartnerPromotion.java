@@ -1,6 +1,7 @@
 package com.silporestockai.entity;
 
 import com.silporestockai.model.PartnerPromotionStatus;
+import com.silporestockai.model.PromotionType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -53,6 +54,12 @@ public class PartnerPromotion {
     @Column(name = "priority_weight", nullable = false)
     @Builder.Default
     private int priorityWeight = 100;
+
+    /** Paid external placement, or Silpo's own margin lever — the report never blends the two (task 63). */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "promotion_type", nullable = false, length = 32)
+    @Builder.Default
+    private PromotionType promotionType = PromotionType.PAID_PARTNER;
 
     @Column(name = "active_from")
     private Instant activeFrom;

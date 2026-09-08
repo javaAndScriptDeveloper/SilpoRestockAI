@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.silporestockai.entity.CategoryResolutionLog;
 import com.silporestockai.entity.CustomerOrder;
 import com.silporestockai.entity.PartnerPromotion;
 import com.silporestockai.entity.PartnerPromotionEvent;
@@ -21,6 +22,8 @@ import com.silporestockai.model.OrderStatus;
 import com.silporestockai.model.OrderType;
 import com.silporestockai.model.PartnerPromotionEventType;
 import com.silporestockai.model.PartnerPromotionStatus;
+import com.silporestockai.model.PromotionType;
+import com.silporestockai.repository.CategoryResolutionLogRepository;
 import com.silporestockai.repository.CustomerOrderRepository;
 import com.silporestockai.repository.PartnerPromotionEventRepository;
 import com.silporestockai.repository.PartnerPromotionRepository;
@@ -44,6 +47,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -91,6 +95,12 @@ class PartnerPromotionIntegrationTest extends AbstractIntegrationTest {
     @Autowired
     private MockMvc mockMvc;
 
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private CategoryResolutionLogRepository logRepository;
+
     private static StubMcpServer startMcp() {
         try {
             return new StubMcpServer(List.of(
@@ -119,6 +129,8 @@ class PartnerPromotionIntegrationTest extends AbstractIntegrationTest {
     @BeforeEach
     void clean() {
         MCP.reset();
+        // Before the promotions: the log's foreign key points at the rows the next line deletes.
+        logRepository.deleteAll();
         eventRepository.deleteAll();
         promotionRepository.deleteAll();
         customerOrderRepository.deleteAll();
@@ -325,8 +337,12 @@ class PartnerPromotionIntegrationTest extends AbstractIntegrationTest {
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
+        // Columns since task 63: показів | у кошику | підтверджено | кошик→замовлення | FSR | базлайн | метод | lift.
+        // The single milk line was resolved once and the placement answered it, so its share of the category is 100 %.
         assertThat(report)
-                .contains("| Яготинське | молоко | " + PARTNER_MILK_NAME + " | ACTIVE | 1 | 1 | 1 | 100 % | 100 % |");
+                .contains("## Платні розміщення (PAID_PARTNER)")
+                .contains("| Яготинське | молоко | " + PARTNER_MILK_NAME + " | ACTIVE | 1 | 1 | 1 | 100 % | 100 % |")
+                .contains("наближення (1/N кандидатів)");
     }
 
     @Test
@@ -355,5 +371,88 @@ class PartnerPromotionIntegrationTest extends AbstractIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"partnerName\":\"x\",\"categoryOrQuery\":\"y\",\"productQuery\":\"z\"}"))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("every resolved line is logged, promoted or not — that is the FSR denominator")
+    void everyResolvedLineIsLogged() {
+        UUID userId = connectedUser(null);
+        PartnerPromotion promotion = milkPromotion();
+        catalogHasThePartnerMilk();
+
+        cartBuildingService.buildCart(userId, List.of(item("молоко"), item("гречка")));
+
+        List<CategoryResolutionLog> rows = logRepository.findAll();
+        assertThat(rows).hasSize(2);
+        assertThat(rows)
+                .filteredOn(row -> "молоко".equals(row.getLineName()))
+                .singleElement()
+                .satisfies(row -> {
+                    assertThat(row.getPromotionId()).isEqualTo(promotion.getId());
+                    assertThat(row.getResolvedProductId()).isEqualTo(PARTNER_MILK_ID);
+                    assertThat(row.getUserId()).isEqualTo(userId);
+                    assertThat(row.getCandidateCount()).isNotNull();
+                });
+        assertThat(rows)
+                .filteredOn(row -> "гречка".equals(row.getLineName()))
+                .singleElement()
+                .satisfies(row -> assertThat(row.getPromotionId()).isNull());
+    }
+
+    @Test
+    @DisplayName("an ordinary match is logged with no placement behind it")
+    void anUnpromotedResolutionIsStillCounted() {
+        UUID userId = connectedUser(null);
+        milkPromotion();
+        catalogLacksThePartnerMilk();
+
+        cartBuildingService.buildCart(userId, List.of(item("молоко"), item("гречка")));
+
+        assertThat(logRepository.findAll())
+                .hasSize(2)
+                .allSatisfy(row -> assertThat(row.getPromotionId()).isNull());
+    }
+
+    @Test
+    @DisplayName("a placement created before task 63 reads back as a paid partner placement")
+    void aRowWithoutAPromotionTypeDefaultsToPaidPartner() {
+        UUID id = UUID.randomUUID();
+        jdbcTemplate.update(
+                """
+                insert into partner_promotion
+                    (id, partner_name, category_or_query, silpo_product_id, product_name,
+                     priority_weight, status, created_at)
+                values (?, ?, ?, ?, ?, ?, ?, now())
+                """,
+                id,
+                "Яготинське",
+                "молоко",
+                PARTNER_MILK_ID,
+                PARTNER_MILK_NAME,
+                100,
+                PartnerPromotionStatus.ACTIVE.name());
+
+        PartnerPromotion stored = promotionRepository.findById(id).orElseThrow();
+
+        assertThat(stored.getPromotionType()).isEqualTo(PromotionType.PAID_PARTNER);
+    }
+
+    @Test
+    @DisplayName("an own-brand placement can be created and keeps its type")
+    void anOwnBrandPlacementKeepsItsType() {
+        PartnerPromotion stored = promotionRepository.save(PartnerPromotion.builder()
+                .id(UUID.randomUUID())
+                .partnerName("Сільпо власна марка")
+                .categoryOrQuery("чай")
+                .silpoProductId("p-tea-own")
+                .productName("Чай «Премія» чорний")
+                .priorityWeight(100)
+                .promotionType(PromotionType.OWN_BRAND_MARGIN_BOOST)
+                .status(PartnerPromotionStatus.ACTIVE)
+                .createdAt(Instant.now())
+                .build());
+
+        assertThat(promotionRepository.findById(stored.getId()).orElseThrow().getPromotionType())
+                .isEqualTo(PromotionType.OWN_BRAND_MARGIN_BOOST);
     }
 }

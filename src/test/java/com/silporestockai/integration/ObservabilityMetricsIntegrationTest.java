@@ -4,13 +4,22 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.silporestockai.entity.CategoryResolutionLog;
 import com.silporestockai.entity.CustomerOrder;
+import com.silporestockai.entity.PartnerPromotion;
+import com.silporestockai.entity.PartnerPromotionEvent;
 import com.silporestockai.entity.User;
 import com.silporestockai.entity.UserProfile;
 import com.silporestockai.model.BasketItem;
 import com.silporestockai.model.OrderStatus;
 import com.silporestockai.model.OrderType;
+import com.silporestockai.model.PartnerPromotionEventType;
+import com.silporestockai.model.PartnerPromotionStatus;
+import com.silporestockai.model.PromotionType;
+import com.silporestockai.repository.CategoryResolutionLogRepository;
 import com.silporestockai.repository.CustomerOrderRepository;
+import com.silporestockai.repository.PartnerPromotionEventRepository;
+import com.silporestockai.repository.PartnerPromotionRepository;
 import com.silporestockai.repository.UserProfileRepository;
 import com.silporestockai.repository.UserRepository;
 import com.silporestockai.service.ObservabilityService;
@@ -51,8 +60,20 @@ class ObservabilityMetricsIntegrationTest extends AbstractIntegrationTest {
     @Autowired
     private CustomerOrderRepository customerOrderRepository;
 
+    @Autowired
+    private PartnerPromotionRepository promotionRepository;
+
+    @Autowired
+    private PartnerPromotionEventRepository promotionEventRepository;
+
+    @Autowired
+    private CategoryResolutionLogRepository categoryResolutionLogRepository;
+
     @BeforeEach
     void clearOrders() {
+        categoryResolutionLogRepository.deleteAll();
+        promotionEventRepository.deleteAll();
+        promotionRepository.deleteAll();
         customerOrderRepository.deleteAll();
     }
 
@@ -139,6 +160,76 @@ class ObservabilityMetricsIntegrationTest extends AbstractIntegrationTest {
         assertThat(body).contains("komora_cart_size");
         // The SLO buckets configured in application.yml are what the p95 panels read.
         assertThat(body).contains("komora_cart_build_seconds_bucket");
+    }
+
+    @Test
+    void publishesShareLiftAndAttributedRevenuePerPlacementAndPerPool() throws Exception {
+        User user = newUser(4_064_001L);
+        PartnerPromotion own = promotionRepository.save(PartnerPromotion.builder()
+                .id(UUID.randomUUID())
+                .partnerName("Сільпо власна марка «Премія»")
+                .categoryOrQuery("чай")
+                .silpoProductId("p-tea-own")
+                .productName("Чай «Премія» чорний 100г")
+                .priorityWeight(100)
+                .promotionType(PromotionType.OWN_BRAND_MARGIN_BOOST)
+                .status(PartnerPromotionStatus.ACTIVE)
+                .createdAt(Instant.now())
+                .build());
+        resolution(user.getId(), "чай", "p-tea-own", own.getId(), null);
+        resolution(user.getId(), "чай", "p-tea-other", null, null);
+        UUID orderId = UUID.randomUUID();
+        customerOrderRepository.save(CustomerOrder.builder()
+                .id(orderId)
+                .userId(user.getId())
+                .type(OrderType.SCHEDULED_REORDER)
+                .items(List.of(
+                        new BasketItem("p-tea-own", "Чай «Премія»", "шт", BigDecimal.ONE, new BigDecimal("62.50"))))
+                .status(OrderStatus.CONFIRMED)
+                .createdAt(Instant.now())
+                .confirmedAt(Instant.now())
+                .total(new BigDecimal("820.00"))
+                .build());
+        promotionEventRepository.save(PartnerPromotionEvent.builder()
+                .id(UUID.randomUUID())
+                .promotionId(own.getId())
+                .userId(user.getId())
+                .orderId(orderId)
+                .eventType(PartnerPromotionEventType.CONFIRMED_ORDER)
+                .occurredAt(Instant.now())
+                .build());
+
+        observabilityService.refresh();
+        String body = scrape();
+
+        assertThat(body).contains("komora_promotion_share{").contains("type=\"OWN_BRAND_MARGIN_BOOST\"");
+        assertThat(valueOf(body, "komora_promotion_share", "category=\"чай\"")).isEqualTo(0.5);
+        assertThat(valueOf(body, "komora_promotion_revenue_uah", "category=\"чай\""))
+                .isEqualTo(62.50);
+        assertThat(valueOf(body, "komora_promotion_share_overall", "type=\"ALL\""))
+                .isEqualTo(0.5);
+        assertThat(valueOf(body, "komora_promotion_revenue_overall_uah", "type=\"ALL\""))
+                .isEqualTo(62.50);
+        assertThat(valueOf(body, "komora_promotion_categories", "type=\"OWN_BRAND_MARGIN_BOOST\""))
+                .isEqualTo(1.0);
+        // The events gauge splits by pool and category so the funnel panels can be filtered per section.
+        assertThat(body).contains("komora_promotion_events{").contains("event=\"CONFIRMED_ORDER\"");
+        // Two resolutions and no candidate counts worth measuring: no baseline, therefore no lift series at all.
+        // A zero here would read as «this placement achieved nothing» rather than «we do not know».
+        assertThat(body).doesNotContain("komora_promotion_lift{");
+    }
+
+    private void resolution(UUID userId, String line, String productId, UUID promotionId, Integer candidates) {
+        categoryResolutionLogRepository.save(CategoryResolutionLog.builder()
+                .id(UUID.randomUUID())
+                .userId(userId)
+                .lineName(line)
+                .resolvedProductId(productId)
+                .resolvedProductName(productId)
+                .promotionId(promotionId)
+                .candidateCount(candidates)
+                .occurredAt(Instant.now())
+                .build());
     }
 
     private String scrape() throws Exception {

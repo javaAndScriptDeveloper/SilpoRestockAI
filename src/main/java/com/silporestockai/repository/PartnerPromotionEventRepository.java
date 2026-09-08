@@ -14,6 +14,9 @@ public interface PartnerPromotionEventRepository extends JpaRepository<PartnerPr
 
     List<PartnerPromotionEvent> findByPromotionId(UUID promotionId);
 
+    /** Every event of one kind, for the money attribution that needs the {@code order_id} each one carries. */
+    List<PartnerPromotionEvent> findByEventType(PartnerPromotionEventType eventType);
+
     /**
      * The whole placement funnel in one grouped pass, named by partner and product rather than promotion id (task 54).
      *
@@ -22,10 +25,10 @@ public interface PartnerPromotionEventRepository extends JpaRepository<PartnerPr
      */
     @Query("""
             select new com.silporestockai.model.PromotionEventCount(
-                p.partnerName, p.productName, e.eventType, count(e))
+                p.partnerName, p.productName, p.categoryOrQuery, p.promotionType, e.eventType, count(e))
             from PartnerPromotionEvent e, PartnerPromotion p
             where p.id = e.promotionId
-            group by p.partnerName, p.productName, e.eventType
+            group by p.partnerName, p.productName, p.categoryOrQuery, p.promotionType, e.eventType
             """)
     List<PromotionEventCount> funnelCounts();
 }

@@ -12,17 +12,16 @@ import com.silporestockai.model.PartnerPromotionStatus;
 import com.silporestockai.repository.CustomerOrderRepository;
 import com.silporestockai.repository.PartnerPromotionEventRepository;
 import com.silporestockai.repository.PartnerPromotionRepository;
+import com.silporestockai.utils.CategoryWords;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
@@ -104,12 +103,11 @@ public class PartnerPromotionService {
      * conflicting promotion is never even considered — not surfaced and then filtered.
      */
     public Optional<PartnerPromotion> match(List<PartnerPromotion> candidates, String lineName, UserProfile profile) {
-        String line = normalise(lineName);
-        if (line.isBlank()) {
+        if (CategoryWords.normalise(lineName).isBlank()) {
             return Optional.empty();
         }
         for (PartnerPromotion promotion : candidates) {
-            if (!containsWord(line, normalise(promotion.getCategoryOrQuery()))) {
+            if (!CategoryWords.matches(lineName, promotion.getCategoryOrQuery())) {
                 continue;
             }
             Optional<String> conflict = conflicts(promotion, profile);
@@ -131,15 +129,16 @@ public class PartnerPromotionService {
         if (profile == null) {
             return Optional.empty();
         }
-        String haystack = normalise(promotion.getProductName()) + " " + normalise(promotion.getCategoryOrQuery());
+        String haystack = CategoryWords.normalise(promotion.getProductName()) + " "
+                + CategoryWords.normalise(promotion.getCategoryOrQuery());
         List<String> rules = new ArrayList<>();
         for (String restriction :
                 profile.getDietaryRestrictions() == null ? List.<String>of() : profile.getDietaryRestrictions()) {
-            String code = normalise(restriction);
+            String code = CategoryWords.normalise(restriction);
             rules.addAll(RESTRICTION_KEYWORDS.getOrDefault(code, List.of(code)));
         }
         for (String disliked : profile.getDislikedFoods() == null ? List.<String>of() : profile.getDislikedFoods()) {
-            rules.add(normalise(disliked));
+            rules.add(CategoryWords.normalise(disliked));
         }
         if (profile.getDietType() == DietType.VEGAN) {
             rules.addAll(VEGAN_KEYWORDS);
@@ -193,51 +192,6 @@ public class PartnerPromotionService {
         }
     }
 
-    /** Per promotion: featured N times, in a cart M times, confirmed K times, and the two conversions. */
-    public String report() {
-        List<PartnerPromotion> all = partnerPromotionRepository.findAll().stream()
-                .sorted(Comparator.comparing(PartnerPromotion::getCreatedAt))
-                .toList();
-        StringBuilder text = new StringBuilder("# Партнерські розміщення — звіт (")
-                .append(clock.instant())
-                .append(")\n\n");
-        if (all.isEmpty()) {
-            return text.append("Жодного партнерського розміщення ще не налаштовано.\n")
-                    .toString();
-        }
-        text.append(
-                "| Партнер | Категорія | Товар | Статус | Показів | У кошику | Підтверджено | Показ→кошик | Кошик→замовлення |\n");
-        text.append("|---|---|---|---|---|---|---|---|---|\n");
-        for (PartnerPromotion promotion : all) {
-            long impressions = eventRepository.countByPromotionIdAndEventType(
-                    promotion.getId(), PartnerPromotionEventType.IMPRESSION);
-            long added = eventRepository.countByPromotionIdAndEventType(
-                    promotion.getId(), PartnerPromotionEventType.ADDED_TO_CART);
-            long confirmed = eventRepository.countByPromotionIdAndEventType(
-                    promotion.getId(), PartnerPromotionEventType.CONFIRMED_ORDER);
-            text.append("| ")
-                    .append(promotion.getPartnerName())
-                    .append(" | ")
-                    .append(promotion.getCategoryOrQuery())
-                    .append(" | ")
-                    .append(promotion.getProductName())
-                    .append(" | ")
-                    .append(promotion.getStatus())
-                    .append(" | ")
-                    .append(impressions)
-                    .append(" | ")
-                    .append(added)
-                    .append(" | ")
-                    .append(confirmed)
-                    .append(" | ")
-                    .append(percent(added, impressions))
-                    .append(" | ")
-                    .append(percent(confirmed, added))
-                    .append(" |\n");
-        }
-        return text.toString();
-    }
-
     private void record(UUID promotionId, UUID userId, UUID orderId, PartnerPromotionEventType type) {
         try {
             eventRepository.save(PartnerPromotionEvent.builder()
@@ -251,22 +205,5 @@ public class PartnerPromotionService {
         } catch (RuntimeException e) {
             log.warn("could not record {} for promotion {}: {}", type, promotionId, e.getMessage());
         }
-    }
-
-    private static String percent(long numerator, long denominator) {
-        return denominator == 0 ? "—" : String.format(Locale.ROOT, "%.0f %%", 100.0 * numerator / denominator);
-    }
-
-    private static boolean containsWord(String text, String word) {
-        if (word.isBlank()) {
-            return false;
-        }
-        return Pattern.compile("(^|[^\\p{L}])" + Pattern.quote(word) + "(?=$|[^\\p{L}])")
-                .matcher(text)
-                .find();
-    }
-
-    private static String normalise(String value) {
-        return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
     }
 }
