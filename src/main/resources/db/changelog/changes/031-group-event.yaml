@@ -1,0 +1,129 @@
+databaseChangeLog:
+  - changeSet:
+      id: 031-group-event
+      author: komora
+      comment: >-
+        Task 68: a drinks round for a Telegram group chat. Four tables of their own — a group round is
+        not a household, and nothing in the core domain should learn to be one. The Bot API never
+        tells a bot who is in a group, so every count here is a count of explicit reply rows:
+        group_event_participant holds the people who actually answered, and counted_in_denominator is
+        set once, at the organizer's tap, which is the only moment the vote total is defined.
+        group_event_item is the history the next round reads («what this company took last time»);
+        group_event_approval is keyed by proposal_version, so a revision empties the vote by
+        construction rather than by deleting anything.
+      changes:
+        - createTable:
+            tableName: group_event
+            columns:
+              - column: { name: id, type: UUID, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: telegram_group_chat_id, type: BIGINT, constraints: { nullable: false } }
+              - column: { name: chat_title, type: VARCHAR(256) }
+              - column: { name: organizer_telegram_user_id, type: BIGINT, constraints: { nullable: false } }
+              - column: { name: organizer_user_id, type: UUID }
+              - column: { name: event_tag, type: VARCHAR(256) }
+              - column: { name: event_date, type: DATE }
+              - column: { name: budget, type: "NUMERIC(10,2)" }
+              - column: { name: status, type: VARCHAR(24), constraints: { nullable: false } }
+              - column: { name: proposal_version, type: INTEGER, defaultValueNumeric: 0, constraints: { nullable: false } }
+              - column: { name: proposal_json, type: JSONB }
+              - column: { name: revision_notes, type: JSONB }
+              - column: { name: greeting_message_id, type: INTEGER }
+              - column: { name: proposal_message_id, type: INTEGER }
+              - column: { name: frozen_at, type: TIMESTAMP WITH TIME ZONE }
+              - column: { name: approved_at, type: TIMESTAMP WITH TIME ZONE }
+              - column: { name: created_at, type: TIMESTAMP WITH TIME ZONE, constraints: { nullable: false } }
+        - addForeignKeyConstraint:
+            constraintName: fk_group_event_organizer
+            baseTableName: group_event
+            baseColumnNames: organizer_user_id
+            referencedTableName: users
+            referencedColumnNames: id
+            onDelete: SET NULL
+        - createIndex:
+            indexName: ix_group_event_chat_status
+            tableName: group_event
+            columns:
+              - column:
+                  name: telegram_group_chat_id
+              - column:
+                  name: status
+        - createIndex:
+            indexName: ix_group_event_organizer
+            tableName: group_event
+            columns:
+              - column:
+                  name: organizer_user_id
+
+        - createTable:
+            tableName: group_event_participant
+            columns:
+              - column: { name: id, type: UUID, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: group_event_id, type: UUID, constraints: { nullable: false } }
+              - column: { name: telegram_user_id, type: BIGINT, constraints: { nullable: false } }
+              - column: { name: display_name, type: VARCHAR(128) }
+              - column: { name: raw_reply_text, type: TEXT, constraints: { nullable: false } }
+              - column: { name: preference_summary, type: VARCHAR(256) }
+              - column: { name: replied_at, type: TIMESTAMP WITH TIME ZONE, constraints: { nullable: false } }
+              - column: { name: counted_in_denominator, type: BOOLEAN, defaultValueBoolean: false, constraints: { nullable: false } }
+        - addForeignKeyConstraint:
+            constraintName: fk_group_event_participant_event
+            baseTableName: group_event_participant
+            baseColumnNames: group_event_id
+            referencedTableName: group_event
+            referencedColumnNames: id
+            onDelete: CASCADE
+        - addUniqueConstraint:
+            constraintName: ux_group_event_participant_user
+            tableName: group_event_participant
+            columnNames: group_event_id, telegram_user_id
+        - createIndex:
+            indexName: ix_group_event_participant_user
+            tableName: group_event_participant
+            columns:
+              - column:
+                  name: telegram_user_id
+
+        - createTable:
+            tableName: group_event_item
+            columns:
+              - column: { name: id, type: UUID, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: group_event_id, type: UUID, constraints: { nullable: false } }
+              - column: { name: resolved_silpo_product_id, type: VARCHAR(64) }
+              - column: { name: product_name, type: VARCHAR(256), constraints: { nullable: false } }
+              - column: { name: requested_name, type: VARCHAR(256) }
+              - column: { name: quantity, type: "NUMERIC(10,3)", constraints: { nullable: false } }
+              - column: { name: unit, type: VARCHAR(32) }
+              - column: { name: unit_price, type: "NUMERIC(10,2)" }
+        - addForeignKeyConstraint:
+            constraintName: fk_group_event_item_event
+            baseTableName: group_event_item
+            baseColumnNames: group_event_id
+            referencedTableName: group_event
+            referencedColumnNames: id
+            onDelete: CASCADE
+        - createIndex:
+            indexName: ix_group_event_item_event
+            tableName: group_event_item
+            columns:
+              - column:
+                  name: group_event_id
+
+        - createTable:
+            tableName: group_event_approval
+            columns:
+              - column: { name: id, type: UUID, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: group_event_id, type: UUID, constraints: { nullable: false } }
+              - column: { name: telegram_user_id, type: BIGINT, constraints: { nullable: false } }
+              - column: { name: proposal_version, type: INTEGER, constraints: { nullable: false } }
+              - column: { name: approved_at, type: TIMESTAMP WITH TIME ZONE, constraints: { nullable: false } }
+        - addForeignKeyConstraint:
+            constraintName: fk_group_event_approval_event
+            baseTableName: group_event_approval
+            baseColumnNames: group_event_id
+            referencedTableName: group_event
+            referencedColumnNames: id
+            onDelete: CASCADE
+        - addUniqueConstraint:
+            constraintName: ux_group_event_approval_vote
+            tableName: group_event_approval
+            columnNames: group_event_id, telegram_user_id, proposal_version
