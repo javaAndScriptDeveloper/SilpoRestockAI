@@ -96,12 +96,22 @@ public class AdHocScheduleService {
 
     /** Turns one task into one order, by kind, and marks it fired. */
     private void fire(ScheduledAdHocTask task, User user) {
-        switch (task.getKind() == null ? ScheduledAdHocTaskKind.SNACK_THEME : task.getKind()) {
-            case SNACK_THEME ->
-                adHocOrderService.buildAdHocOrder(user, task.getThemeDescription(), task.getTriggerAt());
-            case DISH_INGREDIENTS -> dishIngredientsService.orderIngredients(user, task.getThemeDescription());
-        }
+        // Claimed before the work, not after it. A dish order fires the moment it is scheduled and takes a model
+        // call plus a cart build; live, a sweep tick landed inside that window, found the row still PENDING and
+        // fired it a second time — two carts, two «Не зрозумів» — for one sentence. A task whose work fails goes
+        // back to PENDING so the next sweep retries it, which is what the status meant all along.
         task.setStatus(ScheduledAdHocTaskStatus.FIRED);
         scheduledAdHocTaskRepository.save(task);
+        try {
+            switch (task.getKind() == null ? ScheduledAdHocTaskKind.SNACK_THEME : task.getKind()) {
+                case SNACK_THEME ->
+                    adHocOrderService.buildAdHocOrder(user, task.getThemeDescription(), task.getTriggerAt());
+                case DISH_INGREDIENTS -> dishIngredientsService.orderIngredients(user, task.getThemeDescription());
+            }
+        } catch (RuntimeException e) {
+            task.setStatus(ScheduledAdHocTaskStatus.PENDING);
+            scheduledAdHocTaskRepository.save(task);
+            throw e;
+        }
     }
 }
