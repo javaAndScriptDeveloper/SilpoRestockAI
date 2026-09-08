@@ -21,6 +21,7 @@ import com.silporestockai.model.ProductResolution;
 import com.silporestockai.model.ResolvedProduct;
 import com.silporestockai.repository.BaselineBasketRepository;
 import com.silporestockai.repository.UserProfileRepository;
+import com.silporestockai.utils.CategoryWords;
 import com.silporestockai.utils.McpResponses;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -31,6 +32,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -84,6 +86,7 @@ public class CartBuildingService {
     private final SilpoMcpClient silpoMcpClient;
     private final UserProfileRepository userProfileRepository;
     private final PartnerPromotionService partnerPromotionService;
+    private final CategoryResolutionLogService categoryResolutionLogService;
     private final ProductMatchingService productMatchingService;
     private final BaselineBasketRepository baselineBasketRepository;
     private final ObservabilityService observabilityService;
@@ -843,6 +846,11 @@ public class CartBuildingService {
         }
         int chunkSize = promotionFor.isEmpty() ? SEARCH_BATCH_SIZE : SEARCH_BATCH_SIZE / 2;
 
+        // Task 63: how many plausible candidates the catalog offered for each line, kept for the report's
+        // approximated organic baseline. A line the second pass rescues has no first-pass candidate list and
+        // stays absent here — an honest missing count rather than a fabricated one.
+        Map<String, Integer> candidateCounts = new HashMap<>();
+
         for (int start = 0; start < needsSearch.size(); start += chunkSize) {
             List<ShoppingListItem> chunk = needsSearch.subList(start, Math.min(needsSearch.size(), start + chunkSize));
             List<String> terms = new ArrayList<>();
@@ -880,6 +888,11 @@ public class CartBuildingService {
                     .map(item -> plausibleFor(
                             item, productsByQuery.getOrDefault(item.getName().toLowerCase(Locale.ROOT), List.of())))
                     .toList();
+            for (int i = 0; i < toMatch.size(); i++) {
+                candidateCounts.putIfAbsent(
+                        CategoryWords.normalise(toMatch.get(i).getName()),
+                        candidatesFor.get(i).size());
+            }
             List<Integer> picked = productMatchingService.choose(
                     matchRequests(toMatch, candidatesFor, preferDiscounted, onlyUaProducer));
             Map<ShoppingListItem, JsonNode> matched = new IdentityHashMap<>();
@@ -930,6 +943,9 @@ public class CartBuildingService {
         }
 
         secondPass(userId, context, needsSearch, resolved, skipped, preferDiscounted, onlyUaProducer);
+
+        // Task 63: every line that resolved, promoted or not — the denominator a share is computed against.
+        categoryResolutionLogService.record(userId, resolved, candidateCounts);
 
         log.info(
                 "MCP <- resolved {} of {} shopping list lines ({} pre-resolved, {} searched, {} partner placements,"

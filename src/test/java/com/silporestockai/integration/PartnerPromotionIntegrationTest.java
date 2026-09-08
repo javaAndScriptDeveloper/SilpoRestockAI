@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.silporestockai.entity.CategoryResolutionLog;
 import com.silporestockai.entity.CustomerOrder;
 import com.silporestockai.entity.PartnerPromotion;
 import com.silporestockai.entity.PartnerPromotionEvent;
@@ -22,6 +23,7 @@ import com.silporestockai.model.OrderType;
 import com.silporestockai.model.PartnerPromotionEventType;
 import com.silporestockai.model.PartnerPromotionStatus;
 import com.silporestockai.model.PromotionType;
+import com.silporestockai.repository.CategoryResolutionLogRepository;
 import com.silporestockai.repository.CustomerOrderRepository;
 import com.silporestockai.repository.PartnerPromotionEventRepository;
 import com.silporestockai.repository.PartnerPromotionRepository;
@@ -96,6 +98,9 @@ class PartnerPromotionIntegrationTest extends AbstractIntegrationTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    @Autowired
+    private CategoryResolutionLogRepository logRepository;
+
     private static StubMcpServer startMcp() {
         try {
             return new StubMcpServer(List.of(
@@ -124,6 +129,8 @@ class PartnerPromotionIntegrationTest extends AbstractIntegrationTest {
     @BeforeEach
     void clean() {
         MCP.reset();
+        // Before the promotions: the log's foreign key points at the rows the next line deletes.
+        logRepository.deleteAll();
         eventRepository.deleteAll();
         promotionRepository.deleteAll();
         customerOrderRepository.deleteAll();
@@ -360,6 +367,46 @@ class PartnerPromotionIntegrationTest extends AbstractIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"partnerName\":\"x\",\"categoryOrQuery\":\"y\",\"productQuery\":\"z\"}"))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("every resolved line is logged, promoted or not — that is the FSR denominator")
+    void everyResolvedLineIsLogged() {
+        UUID userId = connectedUser(null);
+        PartnerPromotion promotion = milkPromotion();
+        catalogHasThePartnerMilk();
+
+        cartBuildingService.buildCart(userId, List.of(item("молоко"), item("гречка")));
+
+        List<CategoryResolutionLog> rows = logRepository.findAll();
+        assertThat(rows).hasSize(2);
+        assertThat(rows)
+                .filteredOn(row -> "молоко".equals(row.getLineName()))
+                .singleElement()
+                .satisfies(row -> {
+                    assertThat(row.getPromotionId()).isEqualTo(promotion.getId());
+                    assertThat(row.getResolvedProductId()).isEqualTo(PARTNER_MILK_ID);
+                    assertThat(row.getUserId()).isEqualTo(userId);
+                    assertThat(row.getCandidateCount()).isNotNull();
+                });
+        assertThat(rows)
+                .filteredOn(row -> "гречка".equals(row.getLineName()))
+                .singleElement()
+                .satisfies(row -> assertThat(row.getPromotionId()).isNull());
+    }
+
+    @Test
+    @DisplayName("an ordinary match is logged with no placement behind it")
+    void anUnpromotedResolutionIsStillCounted() {
+        UUID userId = connectedUser(null);
+        milkPromotion();
+        catalogLacksThePartnerMilk();
+
+        cartBuildingService.buildCart(userId, List.of(item("молоко"), item("гречка")));
+
+        assertThat(logRepository.findAll())
+                .hasSize(2)
+                .allSatisfy(row -> assertThat(row.getPromotionId()).isNull());
     }
 
     @Test

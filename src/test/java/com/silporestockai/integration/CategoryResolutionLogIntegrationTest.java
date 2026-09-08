@@ -5,9 +5,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.silporestockai.entity.CategoryResolutionLog;
 import com.silporestockai.entity.PartnerPromotion;
 import com.silporestockai.model.PartnerPromotionStatus;
+import com.silporestockai.model.ResolvedProduct;
 import com.silporestockai.repository.CategoryResolutionLogRepository;
 import com.silporestockai.repository.PartnerPromotionRepository;
+import com.silporestockai.service.CategoryResolutionLogService;
+import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -22,6 +27,9 @@ class CategoryResolutionLogIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
     private PartnerPromotionRepository promotionRepository;
+
+    @Autowired
+    private CategoryResolutionLogService logService;
 
     @BeforeEach
     void clean() {
@@ -80,5 +88,17 @@ class CategoryResolutionLogIntegrationTest extends AbstractIntegrationTest {
         CategoryResolutionLog read = logRepository.findById(logId).orElseThrow();
         assertThat(read.getPromotionId()).isNull();
         assertThat(read.getResolvedProductId()).isEqualTo("p-milk-partner");
+    }
+
+    @Test
+    @DisplayName("a line that cannot be stored costs its row, never the cart")
+    void aBrokenRowIsSwallowed() {
+        UUID userId = UUID.randomUUID();
+        ResolvedProduct unstorable = new ResolvedProduct(
+                "Молоко", null, "company-3", "branch-7", BigDecimal.ONE, "шт", null, "Молоко Селянське", null, false);
+
+        logService.record(userId, List.of(unstorable), Map.of());
+
+        assertThat(logRepository.findAll()).isEmpty();
     }
 }
