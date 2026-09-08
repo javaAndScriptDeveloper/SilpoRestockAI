@@ -466,8 +466,10 @@ class IntentRouterIntegrationTest extends AbstractIntegrationTest {
 
     /**
      * The other half of the rule: a step that really did ask a question keeps owning the answer to it. «Що беремо
-     * на цей тиждень?» is a question, so the sentence after it is a list input and must never be classified —
-     * routing it would answer a question the household was in the middle of answering.
+     * на цей тиждень?» is a question, so a description typed after it builds the list. Since session 16 the
+     * sentence is offered to the classifier first (a request typed over the question wins, as over a check-in);
+     * a sentence that is not a request — here the stub answers with list JSON, which reads as no intent — still
+     * lands in the list builder. Two Claude calls: the classifier, then the builder.
      */
     @Test
     void theListBuilderStillOwnsTheAnswerToItsOwnOpeningQuestion() throws Exception {
@@ -476,7 +478,7 @@ class IntentRouterIntegrationTest extends AbstractIntegrationTest {
 
         sendText(1, "щось просте на тиждень для двох");
 
-        assertThat(CLAUDE.callCount()).isEqualTo(1);
+        assertThat(CLAUDE.callCount()).isEqualTo(2);
         assertThat(TELEGRAM.sentMessages().getLast().path("text").asText()).contains("Молоко 2.5%");
     }
 

@@ -1102,3 +1102,62 @@ Task 68 was built as written in nine of ten places. The places where it is not, 
   either. The alternative (feed it, don't count it) gives a person influence without a vote. Either is
   defensible; the current one is simpler to explain in the group.
 - **A tap on «🔄 Новий збір» cancels an open (not yet approved) round in the same chat.** No confirmation.
+
+## Session 16 — 2026-09-08/09 (night): the «до перемоги» walk through Telegram Web, pass 1
+
+Every step of the demo script driven by hand in a real chat against the real Silpo MCP, with the jury's
+four questions asked at each one. Decisions taken on the spot, all reversible:
+
+### Inline keyboards wrap into rows
+Every inline keyboard went out as one row. The slot picker put eight windows side by side, the list's four
+buttons squeezed «Змінити вручну» — the first two screens after the plan. One rule in `TelegramOutboundService`:
+a label over 24 characters gets its own row; up to three short labels share one; a strip of tiny labels (the
+seven day buttons) stays whole; anything else folds two per row. Callers untouched.
+
+### A request typed over «Що беремо на цей тиждень?» wins
+Same rule task 53 gave the check-in prompt. Exception: a sentence the classifier reads as LIST_VIEW or
+LIST_MODIFY is the description the question asked for and still goes to the builder. Cost: one classifier
+call (~2 s) before a list is built from a sentence.
+
+### The cart heals itself on `product.offer.stock.max`, once
+A line the branch has none of is removed (`silpo_remove_cart_products`), a line it has less of is cut to the
+stock, the cart is read again. A requested line lost this way goes under «Не знайшов: … (немає на складі)»;
+a top-up line does not — nobody asked for it. Silpo's own refusal is the ground truth here; the search
+prefilter cannot see a baseline line's stock. If the refusal repeats it is reported, not chased.
+
+### A top-up reaches into the baseline again after healing
+The cheapest baseline lines are the first ones a small cart reaches for, and the same two out-of-stock ones
+went in and came out on every top-up; live the hangover kit landed ₴22 short with only «Скасувати». Up to two
+more rounds, past what was just tried. **Open:** when the whole usable baseline is still short (an old, thin
+baseline), the message ends in «Скасувати» and a pointer to the Silpo app — self-pickup as the other way out
+is still not built (session 6's open follow-up).
+
+### Reorders search by the household's word, not the baseline's catalog name
+`BasketItem.requestedName` (task 39) is the search term when it exists; the catalog name finds exactly one
+product or nothing, and that product is what just ran out. Baselines from before task 39 fall back to the
+catalog name.
+
+### Matcher prompt: everyday over premium; a discount on a delicacy is not «по знижці»
+«Філе риби» → chilled salmon at ₴559.60 (a third of a weekly cart); «по знижці» → Jacob's Creek Reserve at
+₴619 and Comte at ₴1500/kg because both carried a promotion; «ізотонік» → an energy drink. Three rules added.
+Prompt changes are re-verified on pass 2 (the app was restarted with them mid-pass).
+
+### Not changed, for the owner: a second weekly list is an AD_HOC order
+`ShoppingListBuilderService.order` makes any «Замовити» after a baseline exists `AD_HOC` («Еталонний набір
+лишаю як був»). A special-mode list (gastritis) must not become the baseline, so the rule is right there; for
+an ordinary new weekly plan it means the baseline never moves unless a reorder is edited. Product call, not made.
+
+### Not changed, for the recording: `SILPO_MCP_REDIRECT_URI` is localhost
+The pinned Silpo OAuth client (`SILPO_MCP_CLIENT_ID`) was registered with `http://localhost:8080/auth/silpo/callback`.
+In Chrome on this box the round trip works; from a phone, «Під'єднати Сільпо» would land on a dead localhost.
+Before recording step 1–3 on a phone: set the redirect to the tunnel host, blank the client id so the app
+re-registers, reconnect once. Neither tunnel script repoints it, deliberately — a rotating host would
+re-register on every restart and orphan the stored token. Added to the demo script's step 0.
+
+### Test-account artefacts, not product bugs
+- The account kept its 2026-09-07 baseline through the fresh onboarding (the profile row was deleted, orders
+  and baseline kept, so GMV and the partner funnel survived). That baseline had no `requestedName` and two
+  out-of-stock lines — which is what surfaced the healing and the second-round top-up. Tonight's ₴1863 cart was
+  made the current baseline by SQL afterwards.
+- Telegram Web's composer kept the previous draft, so two step-13 phrases reached the bot concatenated
+  («зроби менш калорійнимшукай тільки…») and classified at 0.4–0.5. Cleared before each send from then on.
