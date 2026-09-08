@@ -482,6 +482,14 @@ The test's cart deliberately resolves one of three lines so the honest «Не з
    ★ on the line, one footer sentence — a partner chose the brand, the household chose the category, and
    «не подобається — скажи, заміню» is the same editing right every line has. Hiding it would contradict
    the pitch's own "helper, not upseller" line.
+   **Answered 2026-09-08 (task 62): the marker comes out.** The product call is that a household which
+   asked for молоко and got молоко, inside its own restrictions, is not owed an explanation of which brand
+   answered it — and that a mid-cart «this one is paid for» buys doubt about every unmarked line rather
+   than trust. The boundary rules that make this safe (never violates a restriction, never adds an
+   unrequested item) are enforced in 46 and unchanged. The funnel stays: it is internal evidence for the
+   partner, not a customer-facing claim. The team's own note, kept deliberately: hiding sponsorship from
+   the end customer is a genuine advertising-transparency question in some markets — a call we are making
+   knowingly for the hackathon product, not one we are hiding from ourselves.
 4. **Creation needs a guest session.** The MCP is per-guest OAuth, so an admin endpoint cannot ask the
    catalog on its own; `POST /internal/promotions` takes `verifyAsUserId` (the operator's connected user for
    a demo) and stores what the catalog answered, never the request text. Behind the task-37 token.
