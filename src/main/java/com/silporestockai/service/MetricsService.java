@@ -37,8 +37,8 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class MetricsService {
 
-    /** How many tools the official server exposes — the pitch's "N of 39" denominator. */
-    public static final int SILPO_MCP_TOOL_COUNT = 39;
+    /** How many tools the official server exposes — the pitch's "N of 40" denominator. */
+    public static final int SILPO_MCP_TOOL_COUNT = 40;
 
     private final UserRepository userRepository;
     private final UserProfileRepository userProfileRepository;

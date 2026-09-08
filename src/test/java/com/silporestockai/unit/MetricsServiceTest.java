@@ -96,7 +96,7 @@ class MetricsServiceTest {
         String markdown = service.markdown(metrics);
         assertThat(markdown)
                 .contains("| — | 0 з 0 онбордених")
-                .contains("| 0 з 39 |")
+                .contains("| 0 з 40 |")
                 .doesNotContain("Інструменти:");
     }
 
@@ -125,7 +125,7 @@ class MetricsServiceTest {
                 .contains("| 67 % | 4 відповідей на 6 запитів |")
                 .contains("| 75 % | 3 з 4 |")
                 .contains("| 92 % | 69 знайдено / 6 не знайдено у 6 кошиках |")
-                .contains("| 2 з 39 | 74 викликів, 2 з помилкою |")
+                .contains("| 2 з 40 | 74 викликів, 2 з помилкою |")
                 .contains("Інструменти: silpo_find_products_batch, silpo_get_time_slots");
     }
 

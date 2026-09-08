@@ -111,7 +111,7 @@ class InternalMetricsIntegrationTest extends AbstractIntegrationTest {
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
-        assertThat(body).contains("цифри для пітчу").contains("| 1 з 39 |").contains("silpo_get_my_profile");
+        assertThat(body).contains("цифри для пітчу").contains("| 1 з 40 |").contains("silpo_get_my_profile");
     }
 
     @Test

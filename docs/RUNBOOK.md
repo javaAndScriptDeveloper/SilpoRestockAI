@@ -505,7 +505,7 @@ make metrics
 ```
 
 You get a markdown table: onboarding→first order (median, fastest), check-in response rate, reorders
-confirmed unedited, catalog resolve rate per cart, distinct MCP tools of 39 — each with its sample size.
+confirmed unedited, catalog resolve rate per cart, distinct MCP tools of 40 — each with its sample size.
 Paste it into the Notion «Selling Points» table. Rows are only as real as the run: a fresh DB prints
 dashes, not zeros dressed up as results.
 
