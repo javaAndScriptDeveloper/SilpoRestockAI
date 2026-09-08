@@ -1,0 +1,43 @@
+databaseChangeLog:
+  - changeSet:
+      id: 030-category-resolution-log
+      author: komora
+      comment: >-
+        Task 63: one row per resolved shopping-list line, promoted or not. Featured Share Rate needs a
+        denominator — how many times a category was resolved at all — and the task-46 event tables only
+        ever see the lines a placement won, so without this table «share» can only ever be the raw count
+        again. The promotion foreign key is ON DELETE SET NULL rather than the cascade used for events:
+        an event describes a campaign and dies with it, while a resolution is a historical fact about
+        what a household actually got, and deleting one campaign must never shrink another brand's
+        denominator.
+      changes:
+        - createTable:
+            tableName: category_resolution_log
+            columns:
+              - column: { name: id, type: UUID, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: user_id, type: UUID, constraints: { nullable: false } }
+              - column: { name: line_name, type: VARCHAR(256), constraints: { nullable: false } }
+              - column: { name: resolved_product_id, type: VARCHAR(64), constraints: { nullable: false } }
+              - column: { name: resolved_product_name, type: VARCHAR(256) }
+              - column: { name: promotion_id, type: UUID }
+              - column: { name: candidate_count, type: INTEGER }
+              - column: { name: occurred_at, type: TIMESTAMP WITH TIME ZONE, constraints: { nullable: false } }
+        - addForeignKeyConstraint:
+            constraintName: fk_category_resolution_log_promotion
+            baseTableName: category_resolution_log
+            baseColumnNames: promotion_id
+            referencedTableName: partner_promotion
+            referencedColumnNames: id
+            onDelete: SET NULL
+        - createIndex:
+            indexName: ix_category_resolution_log_promotion
+            tableName: category_resolution_log
+            columns:
+              - column:
+                  name: promotion_id
+        - createIndex:
+            indexName: ix_category_resolution_log_occurred_at
+            tableName: category_resolution_log
+            columns:
+              - column:
+                  name: occurred_at
