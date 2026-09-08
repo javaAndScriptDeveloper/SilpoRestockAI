@@ -290,15 +290,22 @@ public class GroupEventService {
             telegramOutboundService.answerCallback(tap.callbackQueryId(), messages.nobodyReplied());
             return;
         }
+        Instant now = Instant.now();
+        if (eventRepository.transitionToProposed(
+                        event.getId(), GroupEventStatus.COLLECTING_REPLIES, GroupEventStatus.PROPOSED, now)
+                == 0) {
+            // A double tap, or two organizer taps in flight at once: the first one already froze the round.
+            telegramOutboundService.answerCallback(tap.callbackQueryId(), messages.alreadyClosed());
+            return;
+        }
         telegramOutboundService.answerCallback(tap.callbackQueryId());
         for (GroupEventParticipant row : replied) {
             row.setCountedInDenominator(true);
         }
         participantRepository.saveAll(replied);
-        event.setFrozenAt(Instant.now());
+        event.setFrozenAt(now);
         event.setStatus(GroupEventStatus.PROPOSED);
         event.setProposalVersion(1);
-        eventRepository.save(event);
         log.info("group round {} frozen with {} counted participants", event.getId(), replied.size());
         telegramOutboundService.sendMessage(tap.chatId(), messages.frozen(replied.size()));
         if (organizer(event)
@@ -419,10 +426,17 @@ public class GroupEventService {
     // ---- consensus -------------------------------------------------------------------------------------------
 
     private void consensus(GroupEvent event) {
+        Instant now = Instant.now();
+        if (eventRepository.transitionToApproved(
+                        event.getId(), GroupEventStatus.PROPOSED, GroupEventStatus.APPROVED, now)
+                == 0) {
+            // Two final taps landed together; the other thread is already building the cart.
+            log.info("group round {} consensus already handled", event.getId());
+            return;
+        }
         GroupProposal proposal = storedProposal(event);
         event.setStatus(GroupEventStatus.APPROVED);
-        event.setApprovedAt(Instant.now());
-        eventRepository.save(event);
+        event.setApprovedAt(now);
         if (proposal != null) {
             for (GroupProposalLine line : proposal.lines()) {
                 itemRepository.save(GroupEventItem.builder()

@@ -134,6 +134,30 @@ class GroupEventSchemaIntegrationTest extends AbstractIntegrationTest {
                 .isEmpty();
     }
 
+    @Test
+    @DisplayName("a status transition can be won only once")
+    void transitionsAreOneWay() {
+        GroupEvent event = events.save(event());
+        Instant now = Instant.now();
+        assertThat(events.transitionToProposed(
+                        event.getId(), GroupEventStatus.COLLECTING_REPLIES, GroupEventStatus.PROPOSED, now))
+                .isEqualTo(1);
+        assertThat(events.transitionToProposed(
+                        event.getId(), GroupEventStatus.COLLECTING_REPLIES, GroupEventStatus.PROPOSED, now))
+                .isZero();
+        assertThat(events.transitionToApproved(
+                        event.getId(), GroupEventStatus.PROPOSED, GroupEventStatus.APPROVED, now))
+                .isEqualTo(1);
+        assertThat(events.transitionToApproved(
+                        event.getId(), GroupEventStatus.PROPOSED, GroupEventStatus.APPROVED, now))
+                .isZero();
+        GroupEvent stored = events.findById(event.getId()).orElseThrow();
+        assertThat(stored.getStatus()).isEqualTo(GroupEventStatus.APPROVED);
+        assertThat(stored.getProposalVersion()).isEqualTo(1);
+        assertThat(stored.getFrozenAt()).isNotNull();
+        assertThat(stored.getApprovedAt()).isNotNull();
+    }
+
     private static GroupEvent event() {
         return GroupEvent.builder()
                 .id(UUID.randomUUID())
