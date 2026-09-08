@@ -538,6 +538,37 @@ curl -s -X POST -H "X-Metrics-Token: $METRICS_TOKEN" -H "Content-Type: applicati
 
 4. Pause it: `UPDATE partner_promotion SET status='PAUSED';` — the next cart resolves normally.
 
+**`productQuery` must be the catalog's own product name.** A composed one — «Молоко Яготинське 2.5% 900г»,
+«Молоко Галичина 2.5%», «Молоко Молокія 2.5%» — comes back `422 no catalog product matched`; the search is
+the household-facing one, not a brand lookup. A bare brand («Молоко Яготинське») does find something but not
+the same thing twice: it answered with the right milk on one call and with «Вершки ультрапастеризировані
+Яготинські 15% т/б» on the next. Probe with a broad query first, read the `productName` the response
+carries, then create the placement with that exact string — `PartnerPromotionAdminService` prefers the
+catalog entry whose name equals the query, so an exact name is the only deterministic input. Delete probe
+rows afterwards (`DELETE FROM partner_promotion WHERE category_or_query = '<probe>';`).
+
+#### What is seeded for the demo recording (2026-09-08)
+
+Both rows were created through the endpoint above against the live catalog and verified live end to end.
+
+| Partner | `category_or_query` | `silpo_product_id` | Product | Status |
+|---|---|---|---|---|
+| Яготинське | `молоко` | `1ed07622-1cad-6c7a-a419-dd63763181f9` | Молоко «Яготинське» 2,6% п/е | ACTIVE, 2026-09-07 → 2026-09-21 |
+| Пирятин | `сир` | `1ed076a7-c9c2-6e8a-8ed0-5f148feebb3f` | Сир «Пирятин» «Голландський» твердий нарізаний 45% | PAUSED |
+
+- Milk is the one meant to be on screen: the weekly list's «Молоко» line becomes that product, marked ★, and
+  `make promotions` prints 1 / 1 / 1 with «100 %» twice — Акт 1–2 and Акт 7 of the demo script.
+- Cheese is left **PAUSED on purpose**: it was verified through the ad-hoc flow («замов мені сиру з вином» →
+  the sweep builds the cart, the cheese line carries ★), which proves the placement is resolved wherever a
+  product is resolved rather than inside the weekly plan. Active, it would put a second ★ in the same weekly
+  cart, since the list also carries «Сир кисломолочний» / «Сир твердий». Re-activate with
+  `UPDATE partner_promotion SET status='ACTIVE' WHERE category_or_query='сир';` if the ad-hoc act is recorded.
+- The funnel rows in `partner_promotion_event` are from those two runs only. A cart build that dies on Silpo's
+  stock validation (a banana line over stock, here) still logs `IMPRESSION` and `ADDED_TO_CART` — Silpo took
+  the cart, only checkout was refused — so a failed rehearsal leaves counted events behind. Delete them by
+  `occurred_at` before recording, or the report shows a conversion the household never saw.
+- `METRICS_TOKEN` is in `.env`; without it both `/internal/promotions` endpoints answer 404, not 403.
+
 ### Tasks 56 and 57: verify «де моє замовлення» and the Замовлення button
 
 The account must be connected to Silpo; everything here is read-only, so nothing in the database changes.
@@ -956,6 +987,26 @@ a screenshot from here.
 
 ---
 
+## 16a. Tunnels and restarts during a long live session (session 10)
+
+localhost.run's anonymous hostname rotates every ~10 minutes and `scripts/tunnel-supervisor.sh` restarts
+the app on every rotation — a cart build that is mid-way dies with it. For a session driven from a
+browser:
+
+```bash
+scripts/session-tunnel.sh ngrok     # stops the supervisor, one stable hostname, restarts the app once
+scripts/restart-app.sh              # restart on the same tunnel (PROFILE=demo … for the recording profile)
+scripts/stop-app.sh                 # before make test — the suite shares build/classes with bootRun
+scripts/session-tunnel.sh stop      # then start scripts/tunnel-supervisor.sh again
+```
+
+ngrok's browser interstitial shows once per browser; click «Visit Site» on the WebApp URL and Telegram
+Web's Mini App works from then on. It does **not** work in a phone's WebView (docs/LOCAL_TUNNEL.md), so a
+phone recording runs on the supervisor. cloudflared quick tunnels time out from this network.
+
+The test suite writes its own demo-channel lines to `build/mcp-calls.log`, not `logs/mcp-calls.log`
+(`DEMO_LOG_FILE` in `build.gradle.kts`), so a recording's log stays clean of stub JSON.
+
 ## 17. The demo console: what the recording shows (task 58)
 
 Step 6 of the demo script puts the console next to the chat, and that console is the whole proof of
@@ -1205,6 +1256,20 @@ products are wrong — task 09's fuzzy name search.
 The manual runbook exists for what stubs cannot answer: whether Silpo's real catalogue matches the
 words we search for, whether a real transcription is accurate, and whether a real fridge photo produces
 a sensible reading.
+
+### Session 10: what was walked in a real Telegram Web chat, and what to re-check on a phone
+
+Every row of the demo script (steps 1–13.7) was driven by hand in Telegram Web on 2026-09-08 — see
+`docs/OVERNIGHT_SUMMARY.md` → Session 10 for the table. What that pass could not do and you can:
+
+| Do this | Expect |
+|---|---|
+| Tap «Перейти до оплати» after a confirmation and pay (task 28) | Silpo's checkout with the same lines and the delivery window the bot named — the window is booked for real since `0866514`; before it Silpo held the first slot regardless |
+| With one paid order on the account: «де моє замовлення?», «📦 Замовлення», «зроби список як минулого разу» | The status/delivery lines and the past-order buttons (tasks 56/57/35) — only the empty answers have ever been seen |
+| Open the form on a phone at 360 px, both themes | Same as Telegram Web's ~380 px Mini App window: one column, nothing cut |
+| Send a fridge photo with the household's own products during a check-in | Visible items in «Ще є», an empty shelf in «Немає»; a photo of unrelated food gets the clarification (that is what the stock photo produced) |
+| Send a voice note with `STT_API_KEY` set | Transcribed and routed like text |
+| Before a recording: `: > logs/mcp-calls.log` | The suite no longer writes there, but earlier sessions did |
 
 ### Session 6: what a cart says now, and what to check with your own eyes
 

@@ -18,7 +18,12 @@ if fuser 8080/tcp >/dev/null 2>&1; then
 fi
 
 : > logs/app.log
-setsid nohup make run > logs/bootrun.out 2>&1 < /dev/null &
+# PROFILE=demo scripts/restart-app.sh starts the recording profile (make demo) instead.
+if [[ "${PROFILE:-}" == "demo" ]]; then
+    setsid nohup make demo > logs/bootrun.out 2>&1 < /dev/null &
+else
+    setsid nohup make run > logs/bootrun.out 2>&1 < /dev/null &
+fi
 disown
 
 for i in $(seq 1 120); do

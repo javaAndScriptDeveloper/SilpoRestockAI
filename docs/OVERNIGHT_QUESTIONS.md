@@ -909,3 +909,90 @@ in Alloy's simplest configuration, and a second shared secret to maintain is wor
 own sample. Deliberate: the question "how long does one call to Silpo take" is the one a latency panel should
 answer, and a 429 backoff showing up as repeated `rate_limited` samples is more informative than being hidden
 inside one long success.
+
+## Session 10 (2026-09-08, night): the live QA pass through Telegram Web — decisions and what needs you
+
+### The account was reset for a fresh onboarding, and the Silpo token was carried over
+
+The demo script's step 0 wants a fresh Telegram account. There is one account and one phone, so the
+`users` row for chat 218196255 was deleted (cascading profile, plan, list, orders, baseline, check-ins) and
+the encrypted `mcp_oauth_token` row was backed up and re-inserted under the new user id after `/start`.
+Reason for keeping the token: the Silpo OAuth login is phone + OTP, which is yours to do. In the event the
+browser still held a Silpo session, so «Під'єднати Сільпо» went straight to the consent page and the
+OAuth round trip ran for real twice (the second time to re-verify the favorites fix). Every number in the
+pitch table therefore comes from a household created at 01:09 on 2026-09-08, not from the September 6 one.
+
+### Real payment (task 28, criterion 3) was not done
+
+The «Перейти до оплати» button appeared after every confirmation this session (INITIAL, SCHEDULED_REORDER,
+two AD_HOC). Tapping it and paying is your money and your phone; I stopped there on purpose. Note that until
+`0866514` the delivery window shown in the bot was not the one Silpo held, so a payment made before this
+session would have landed on the 09:00 slot regardless of what «Інший час» said.
+
+### What I could not verify because the account has no paid Silpo orders (tasks 35, 56, 57)
+
+`silpo_get_my_online_orders` and `silpo_get_my_offline_orders` both answer `0 items` for this account. The
+honest empty paths («Не бачу замовлень…», «Не бачу минулих замовлень…») are verified live; the paths with
+real order buttons, a status line and a delivery time are not, and no order-history JSON has ever been seen
+in this repository. **Needed:** one paid Silpo order on this account (task 28 gives you that), or a
+connected account that has one. After that: `де моє замовлення?`, «📦 Замовлення», `зроби список як
+минулого разу` — ten minutes, and the RUNBOOK rows for 35/56/57 say what to expect.
+
+### Google Calendar (task 18) needs an OAuth client
+
+`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` are empty in `.env`, so «підключи гугл календар» is classified
+correctly and answered «Календар зараз не налаштований на сервері» — the supported unconfigured path.
+**Needed:** a Google Cloud OAuth *Web application* client with `http://localhost:8080/auth/google/callback`
+as a redirect URI (RUNBOOK section 14). The consent screen is a login on your Google account, also yours.
+
+### Task 27's live-CSS check needs a human with devtools
+
+The Chrome extension this session runs through is not allowed to open `silpo.ua`, so the cross-check of
+`--silpo-primary: #FF8200` against the live shop's computed button colour is still open. Both Telegram
+themes of the form were checked and look right; this is the one criterion left on that task.
+
+### Voice notes were not sent
+
+Telegram Web in this sandbox has no microphone and `STT_API_KEY` is empty, so the voice rows of the task
+31 checklist («Голосові поки не розбираю» without a key; transcription with one) were not exercised.
+
+### Fridge photo: the pipeline ran, the demo photo did not exist
+
+A USDA fridge photo from Wikimedia (containers, a lemon, peas) went through the whole path — vision call,
+empty delta because none of the baseline's items are in it, honest clarification, `checkin` row with
+source PHOTO. The «full shelf vs empty shelf» contrast the RUNBOOK describes needs a photo of *this*
+household's actual products (milk «Яготинське», bread «Премія»), which is a phone job.
+
+### The ready-meals week at this branch is thin, by the catalog's own numbers
+
+After the planner fix, the test branch's delivery catalog holds five packaged ready meals with two or
+three units each plus sauces. The plan now respects that (the correction round rejects over-stock choices)
+and the cart builds, but the week repeats the same five products and the model pads with dips. Not in the
+demo script (the demo household cooks), but if READY_MEALS_ONLY is ever shown, do it on a branch with a
+real deli. A product decision worth taking: when candidates cannot cover 21 meals, say so and offer the
+recipe planner instead of a padded week.
+
+### Tunnel: ngrok for a browser session, the supervisor for a phone
+
+localhost.run's anonymous hostname rotates every ~10 minutes and the supervisor restarts the app each
+time — twice in the first fifteen minutes tonight, which would have cut every cart build in half. ngrok
+(authtoken already configured) keeps one hostname for the whole session; its browser interstitial appears
+once per browser and Telegram Web's Mini App iframe then works. It does *not* work in the phone's WebView
+(docs/LOCAL_TUNNEL.md), so a phone recording still runs on the supervisor, and `scripts/session-tunnel.sh`
+is a session tool, not the default. cloudflared quick tunnels time out from this network.
+
+### Two things I changed the product on without asking
+
+1. **`/start` closes whatever question was open.** Before, `/start` mid mass-gain setup said «Я тут» and
+   the next sentence was still «Не зрозумів число». The failure-recovery message tells people to type
+   `/start`; it has to be a way out. Cost: a draft cart's inline buttons stop responding after `/start`
+   (the draft stays DRAFT, «Список» → «Замовити» builds a fresh one).
+2. **A request typed over a check-in no longer leaves a `checkin` row.** It inflated «відповіді на
+   чек-іни» to 2 of 2 for one real answer.
+
+### Still worth a decision (carried over, now with live evidence)
+
+- The «Редагувати» date on a scheduled purchase is still decorative — everything fires on the next sweep
+  (session 3's note). Live: editing the theme works and shows; the time text is ignored.
+- Weekly cart vs budget: the first cart for a 2500 budget came out at 3089 before the matcher fixes and
+  2253 after. The planner does not see prices; whether it should is open.

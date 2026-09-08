@@ -669,3 +669,82 @@ Firing nine messages at once (the sandbox turns a foreground `sleep` into a no-o
 circuit breaker: one 80-second `ClaudeUnavailableException`, then instant failures at 7–14 ms until it
 reset. Worth knowing before a live take — the bot cannot be driven faster than it thinks. It also made
 the yellow ❌ lines legible on screen for the first time, which was not the plan but was useful.
+
+---
+
+# Session 10 — the live QA pass through Telegram Web, 2026-09-08 (night)
+
+**Mode:** every step of the demo script walked in a real Telegram Web chat with «Батон Степанович» on the
+owner's account against the real Silpo MCP and the real Claude API, with `logs/mcp-calls.log` and
+`logs/app.log` read after every step and the Grafana Cloud dashboard checked where a step feeds it. The
+rule was to stop at the first thing wrong, fix it, run the same step again, then move on. Twelve commits
+of code, one per defect, all on `main`, unpushed. The account was reset for a fresh onboarding first (the
+encrypted Silpo token carried over — see `OVERNIGHT_QUESTIONS.md` → Session 10).
+
+## The demo script, step by step
+
+| Step | What happened live | Verdict |
+|---|---|---|
+| 1 `/start` | Greeting with «Під'єднати Сільпо» / «Пропустити»; state `ONBOARDING/AWAITING_CONNECT` | ✅ |
+| 3 Connect Silpo | URL button → Silpo consent page (session cached) → callback → «Ось що знайшов: людей удома: 1» with Все вірно/Виправлю. Console: family, restrictions, online orders, **favorites ❌ Invalid arguments** → fixed (`d03fbb5`), re-run: all ✅ | ✅ after fix |
+| 2 WebApp form | Opens inside Telegram Web; cooking question first; prefilled from enrichment; dark and light theme both read well; budget in the form; «Записав. Готую перший план» | ✅ |
+| 4 Plan + «Список» | Plan in 26 s, all seven days in the announcement, 23 shop-unit lines by category; «📝 Список» re-shows it with no model call; keyboard 3×2, nothing truncated | ✅ |
+| 5 Calendar | «що їмо в середу?» → Wednesday directly + day buttons; «Пт» tap works | ✅ |
+| 6 «Замовити» | 37 s, full MCP sequence on the console, 22/23 resolved, ★ on the partner milk, draft INITIAL. **Matcher took sausages for «Фарш», 3 l oil for 1 l, red rice for «Рис»** → prompt fixed (`a88a54d`), cancel path checked, rebuilt: 20/23, ₴3089 → ₴2253 | ✅ after fix |
+| 6 «Інший час» → «Підтвердити» | Eight real windows; pick re-renders lazily. **Booking call refused by Silpo (`Invalid arguments`) and swallowed — it had never worked** → fixed (`0866514`), verified on the reorder: call ✅, cart re-read carries the window. Confirmation: baseline 20 lines, total stored, «Перейти до оплати» button, double tap changes nothing | ✅ after fix |
+| 13.7 Grafana | GMV INITIAL 2252.98 in Grafana Cloud within ~60 s; later ₴5.32K = four orders to the kopeck. **Funnel read «перше замовлення: 4», 400 %** → fixed (`3bd444a`) | ✅ after fix |
+| 7 Check-in | Prompt on the sweep; «молоко закінчилося, хліб є» → delta in the baseline's spellings, trend counters moved; anti-nag held | ✅ |
+| 8 Reorder | «що треба докупити?» → milk + 14 baseline lines to clear ₴799, Silpo's saving, cart cleared first; confirmed unedited → baseline unchanged, trust 1 | ✅ |
+| 9 Gastritis | 0.97 → «Перемикаю на щадне харчування» → diet plan in 19 s | ✅ |
+| 10 Hangover | Typed over an open check-in → request wins (0.98); water ×2, isotonic ×2, sorbent; «Докласти з мого набору (~480 грн)» → confirmed, «Еталонний набір лишаю як був». **The request had also been stored as a check-in row** → fixed (`88c9112`) | ✅ after fix |
+| 11 Wine & cheese | «Зроблю це найближчим часом» → sweep → three lines all on promotion, «Економія за акціями: 214.11 грн» | ✅ |
+| 12 Blackout | **Cart refused: «Банан: на складі лишилось 0»** — a 0.4 kg candidate for a 1 kg line reached the cart → stock prefilter (`aa6c000`), re-run: 10 lines, «Не знайшов: банани», ₴1279 without top-up | ✅ after fix |
+| 13 More intents | leaner (0.95, **no preface → added**, `444abbc`), UA-only on and off by negation, back to normal with the delta summary, mass gain (cross-sell → weight → calories → protein → plan), «зроби щось» → clarifying question, list edit, Інструкція. **`/start` mid-setup left the flow open** → fixed (`2dfe3eb`) | ✅ after fixes |
+| 13.5 Partner | ★ on «Молоко «Яготинське»» in the weekly cart; `make promotions`: 4 / 4 / 4, 100 % / 100 % | ✅ |
+| Extra: 33, 36, 47, 56/57, 35, 17, 18, 31 §7, 38 | Scheduled edit/cancel; carbonara by text and by photo («Схоже на «карбонара»», 0.85); feedback stored; order status and past-order seed answer honestly (no paid orders); fridge photo through the vision path; calendar «не налаштований» (no client id); Анкета prefill / no-change / change → question; manual-fallback onboarding with the cooking question first | see task notes |
+| Task 58 console | `make demo`: seven dim startup lines, zero stack traces, green 🔧 lines, no secrets. **favicon.ico produced an ERROR stack trace twice per onboarding** → fixed (`f7f6f65`); **the test suite was writing stub JSON into `logs/mcp-calls.log`** → fixed (`8644e63`) | ✅ after fixes |
+| READY_MEALS_ONLY (fallback onboarding) | **Planner timed out three times (7 min) → «План скласти не вдалось»**; then the cart died on by-weight deli lines; then on stock. Planner answers with positions now, candidates carry stock and skip weighted products, over-stock choices go to the correction round (`fc5ffe4`). Live: 12.9 s, corrected week, 7-line cart with a checkout link | ✅ after fix |
+
+## Fixed on the way — one commit each
+
+| # | Commit | What a person saw | Cause |
+|---|---|---|---|
+| 1 | `d03fbb5` | Yellow ❌ line in the console during onboarding | `silpo_get_my_favorites` called with no arguments; it wants the cart's branch/delivery/slot |
+| 2 | `f7f6f65` | «Unhandled exception» stack trace at ERROR on the demo console, twice per onboarding | `/favicon.ico` from the browser hit the catch-all handler |
+| 3 | `a88a54d` | Sausages for «Фарш», a 3 l bottle for «Олія 1 л», red rice for «Рис» | Matcher prompt lacked the raw-meat, pack-size and plain-rice rules |
+| 4 | `0866514` | «Доставка: 10:30–12:00» in the bot while Silpo held 09:00; loyalty bonuses never applied | `silpo_update_shopping_cart` needs the cart's own address/shipments/deliveryType back; both confirm flows sent `{cartId, timeslot}` and swallowed the refusal |
+| 5 | `88c9112` | «Відповіді на чек-іни: 2 з 2» for one answer | A request typed over a prompt was stored as a check-in before the router saw it |
+| 6 | `aa6c000` | «Кошик зібрати не вдалось: Банан: на складі лишилось 0» for a whole 11-line kit | A candidate with less stock than the line needs reached the matcher and Silpo refused the cart |
+| 7 | `444abbc` | 20–30 s of silence after «зроби менш калорійним» | No preface before the regenerate |
+| 8 | `2dfe3eb` | `/start` said «Я тут» and the next sentence still got «Не зрозумів число» | `/start` never closed the open flow |
+| 9 | `3bd444a` | Grafana funnel: «перше замовлення: 4», «400 %» | Derived query `countDistinctUserIdByStatus` counted distinct orders |
+| 10 | `8644e63` | 565 over-wide stub lines in the demo log | Tests wrote to `logs/mcp-calls.log` |
+| 11 | `fc5ffe4` | READY_MEALS_ONLY: seven minutes then «План скласти не вдалось», then two refused carts | Full-plan output past the 120 s timeout; by-weight deli as candidates; no stock awareness |
+| 12 | `7b13cef` | (tooling) app restarted every ~10 min on tunnel rotation | `scripts/session-tunnel.sh`, `restart-app.sh`, `stop-app.sh` |
+
+## Not verified, and why
+
+- **Real payment** (28 §3) — the button is there after every flow; the tap is yours.
+- **Order status / past-order seed with real orders** (35, 56, 57) — the account has no paid Silpo order.
+- **Google Calendar consent and event** (18) — no OAuth client configured.
+- **silpo.ua live CSS** (27 §1) — the browser tool is not allowed on that domain.
+- **Voice notes** — no microphone in Telegram Web, `STT_API_KEY` empty.
+- **A fridge photo with this household's items** (17) — the pipeline ran on a stock photo; the contrast demo needs a phone.
+- **Phone rendering of the WebApp** (23/27 at 360 px) — checked in the ~380 px Mini App window of Telegram Web, both themes.
+
+## Notion
+
+Moved to **Done** by this session, each with a dated note of what was seen: 09, 19, 23, 24, 26, 29, 31,
+32, 33, 34, 36, 37, 38, 47, 49, 50, 51, 52, 54, 58. Left **In review** with a note saying exactly what
+is missing: 17, 18, 27, 28, 35, 56, 57. Selling Points gained the measured table; the demo script got a
+session-10 changelog entry.
+
+## Environment left behind
+
+- App running on `main` behind ngrok (`scripts/session-tunnel.sh ngrok`); to go back to the phone-friendly
+  supervisor: `scripts/session-tunnel.sh stop` then restart `scripts/tunnel-supervisor.sh`.
+- `.env` session knobs under the `# --- session-only test knobs (revert!) ---` marker were removed at the
+  end of the session; `CHECKIN_SWEEP_CRON` etc. are back to defaults.
+- The account (chat 218196255) is onboarded as a cooking household of two with a fresh recipe plan on
+  screen, three confirmed orders in the DB (INITIAL, SCHEDULED_REORDER, two AD_HOC), the partner milk
+  placement ACTIVE, cheese PAUSED.
