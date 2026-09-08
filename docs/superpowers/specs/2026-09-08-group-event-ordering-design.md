@@ -243,11 +243,12 @@ waits as long as it takes.
 - Greeting: what to do, the «.» rule, the organizer's optional settings, «✅ Всі відповіли».
 - Ack: «Записав, {name}. Відповіли: N.» — as a reply.
 - Freeze by a non-organizer: toast «Це кнопка організатора».
-- Proposal: «Пропозиція №v на N людей» + lines «— {catalog name} — {qty} {unit} — {cost} грн» + «Не знайшов:
-  …» + «Разом орієнтовно ~X грн» + budget line («бюджет 2000 — вкладаємось» / «на 300 грн більше за
-  бюджет — напиши мені, що прибрати») + «Це ~Y грн з людини, якщо ділити на N порівну — просто
-  арифметика, платить організатор» + «Кількості орієнтовні під компанію» + the model's one-line note +
-  «Щоб змінити — тегни мене: «@bot менше пива, більше вина»» + «👍 Погоджуюсь».
+- Proposal: «Пропозиція №v на N людей (кількості орієнтовні)» + lines «— {catalog name} — {qty} {unit} — {cost}
+  грн» + «Не знайшов: …» + «Разом орієнтовно ~X грн» + budget line («бюджет 2000 — вкладаємось» / «на 300 грн
+  більше за бюджет — скажи, що прибрати») + one line of rules «👍 — згоден. Змінити — тегни @bot і напиши, що
+  прибрати чи додати (усі 👍 обнуляться)» + «👍 Погоджуюсь». Deliberately short (product review after the live
+  run): the per-head split is said once, in the consensus message, where it describes a real cart; the model's
+  note goes to the log; the revision hint names no drink, so a non-alcoholic round reads the same.
 - Approval ack: toast «N з M погодились».
 - Consensus: «✅ Усі M погодились. Поклав у кошик «Сільпо» {organizer}: … Разом ~X грн (~Y з людини).
   {organizer}, кошик і оплата — у нас у приваті.»

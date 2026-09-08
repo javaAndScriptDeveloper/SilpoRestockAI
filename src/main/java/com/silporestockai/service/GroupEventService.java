@@ -400,6 +400,14 @@ public class GroupEventService {
                         participantRepository.save(row);
                     });
         }
+        if (proposal.note() != null && !proposal.note().isBlank()) {
+            // The model's reasoning is for the operator reading the log, not for the group reading a phone.
+            log.info(
+                    "group round {} version {} note: {}",
+                    event.getId(),
+                    proposal.version(),
+                    proposal.note().strip());
+        }
         int messageId = telegramOutboundService.sendMessageWithButtons(
                 event.getTelegramGroupChatId(),
                 messages.proposal(event, proposal, counted.size(), telegramOutboundService.botUsername()),

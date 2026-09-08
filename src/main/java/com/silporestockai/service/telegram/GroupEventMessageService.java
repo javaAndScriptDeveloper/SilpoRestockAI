@@ -96,7 +96,12 @@ public class GroupEventMessageService {
                 .formatted(organizerName, where);
     }
 
-    /** The proposal: real lines with prices when priced, the total against the budget, the split, the rules. */
+    /**
+     * The proposal: the lines, the total against the budget, one line of rules. Short on purpose — the group reads
+     * it on a phone between its own messages. The per-head split waits for the consensus message, where it is a
+     * fact about a cart rather than a guess about a proposal; the model's note goes to the log; and the hint for a
+     * revision names no drink, because a non-alcoholic round would make «менше пива» read as a joke.
+     */
     public String proposal(GroupEvent event, GroupProposal proposal, int headcount, Optional<String> botUsername) {
         StringBuilder text = new StringBuilder();
         text.append("Пропозиція №")
@@ -105,7 +110,7 @@ public class GroupEventMessageService {
                 .append(headcount)
                 .append(' ')
                 .append(people(headcount))
-                .append(":\n");
+                .append(" (кількості орієнтовні):\n");
         for (GroupProposalLine line : proposal.lines()) {
             text.append("\n— ").append(line.catalogName());
             if (line.quantity() != null) {
@@ -136,25 +141,13 @@ public class GroupEventMessageService {
                                 ? "на " + money(over) + " грн більше за бюджет — скажи, що прибрати"
                                 : "вкладаємось");
             }
-            BigDecimal split = GroupProposalService.perHead(proposal.estimatedTotal(), headcount);
-            if (split != null) {
-                text.append("\nЦе ~")
-                        .append(money(split))
-                        .append(" грн з людини, якщо ділити на ")
-                        .append(headcount)
-                        .append(" порівну — просто арифметика, платить організатор.");
-            }
         } else if (!proposal.priced()) {
             text.append("\n\nБез цін: у організатора ще не підключено «Сільпо». Ціни з'являться, щойно підключить.");
         }
-        text.append("\nКількості орієнтовні під компанію, не точний розрахунок.");
-        if (proposal.note() != null && !proposal.note().isBlank()) {
-            text.append("\n\n").append(proposal.note().strip());
-        }
         String mention = botUsername.map(name -> "@" + name).orElse("мене");
-        text.append("\n\nЗгоден — тисни 👍. Щоб змінити — тегни: «")
+        text.append("\n\n👍 — згоден. Змінити — тегни ")
                 .append(mention)
-                .append(" менше пива, більше вина». Будь-яка правка обнуляє всі 👍.");
+                .append(" і напиши, що прибрати чи додати (усі 👍 обнуляться).");
         return text.toString();
     }
 

@@ -274,14 +274,16 @@ class GroupEventIntegrationTest extends AbstractIntegrationTest {
         JsonNode proposal = TELEGRAM.sentMessages().getLast();
         int proposalId = TELEGRAM.lastMessageId();
         assertThat(proposal.path("text").asText())
-                .contains("Пропозиція №1 на 3 людини")
+                .contains("Пропозиція №1 на 3 людини (кількості орієнтовні)")
                 .contains("Вино Los Cardos — 2 шт — 658.00 грн")
                 .contains("Пиво Львівське світле 0.5 — 6 шт — 252.00 грн")
                 .contains("Разом орієнтовно ~910.00 грн")
                 .contains("бюджет 1500 грн, вкладаємось")
-                .contains("~303.33 грн з людини")
-                .contains("просто арифметика")
-                .contains("Кількості орієнтовні");
+                .contains("тегни @" + BOT_USERNAME + " і напиши, що прибрати чи додати")
+                // Short on purpose: no split, no model note, no drink-specific example in the group message.
+                .doesNotContain("з людини")
+                .doesNotContain("Пиво порахував")
+                .doesNotContain("менше пива");
         assertThat(callbackOf(proposal)).isEqualTo("grp:ok:" + event.getId() + ":1");
         assertThat(event.getProposalMessageId()).isEqualTo(proposalId);
         assertThat(participants
