@@ -12,6 +12,9 @@ import com.silporestockai.model.PlannedDay;
 import com.silporestockai.model.PlannedIngredient;
 import com.silporestockai.model.PlannedMeal;
 import com.silporestockai.model.PurchaseLine;
+import com.silporestockai.model.ReadyMealChoice;
+import com.silporestockai.model.ReadyMealDay;
+import com.silporestockai.model.ReadyMealWeek;
 import com.silporestockai.model.RecipeWeek;
 import com.silporestockai.model.ShoppingListSourceType;
 import com.silporestockai.model.SpecialMode;
@@ -20,6 +23,7 @@ import com.silporestockai.repository.MealPlanRepository;
 import com.silporestockai.repository.UserProfileRepository;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.DayOfWeek;
@@ -28,12 +32,9 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
@@ -178,7 +179,14 @@ public class MealPlanService {
         return persist(userId, asStoredPlan(week), ShoppingListSourceType.RECIPE_DERIVED);
     }
 
-    /** The ready-meals planner (task 22): curation from real candidates, product ids stamped on afterwards. */
+    /**
+     * The ready-meals planner (task 22): curation from real candidates, answered as positions in that list.
+     *
+     * <p>The model chooses; the code builds the plan. Asked for the full stored shape — twenty-one meals with a
+     * six-field ingredient each, names copied character for character, and the shopping list the schema also
+     * offered — the answer ran past the 120 s timeout twice in a row on 2026-09-08 and the household saw nothing.
+     * A position is a few tokens, cannot be misspelt, and cannot be invented without being caught.
+     */
     private MealPlan generateReadyMeals(UUID userId, UserProfile profile, String adjustment, List<String> untouched) {
         List<CatalogCandidate> candidates = readyMealCatalogService.findCandidates(userId);
         if (candidates.isEmpty()) {
@@ -188,19 +196,102 @@ public class MealPlanService {
                     userId, List.of("Сільпо не має готових страв, які підходять під твої обмеження цього тижня"));
         }
         String userPrompt = curationPrompt(profile, adjustment, untouched, candidates);
-        WeeklyMealPlan plan =
-                claudeApiClient.completeStructured(readyMealsSystemPrompt, userPrompt, WeeklyMealPlan.class);
-        List<String> defects = allDefectsOf(plan, candidates);
+        ReadyMealWeek week =
+                claudeApiClient.completeStructured(readyMealsSystemPrompt, userPrompt, ReadyMealWeek.class);
+        List<String> defects = choiceDefects(week, candidates);
         if (!defects.isEmpty()) {
             log.warn("Claude returned an unusable ready-meals plan for user {}: {}", userId, defects);
-            plan = claudeApiClient.completeStructured(
-                    readyMealsSystemPrompt, correctionOf(userPrompt, defects), WeeklyMealPlan.class);
-            defects = allDefectsOf(plan, candidates);
+            week = claudeApiClient.completeStructured(
+                    readyMealsSystemPrompt, correctionOf(userPrompt, defects), ReadyMealWeek.class);
+            defects = choiceDefects(week, candidates);
             if (!defects.isEmpty()) {
                 throw new MealPlanGenerationException(userId, defects);
             }
         }
-        return persist(userId, withResolvedProductIds(plan, candidates), ShoppingListSourceType.READY_MEAL_DIRECT);
+        return persist(userId, asStoredPlan(week, candidates), ShoppingListSourceType.READY_MEAL_DIRECT);
+    }
+
+    /**
+     * Everything wrong with a ready-meals answer: the day-level rules both planners share, plus every position that
+     * is not in the candidate list — the check the acceptance criteria call "never invents outside the list".
+     */
+    private static List<String> choiceDefects(ReadyMealWeek week, List<CatalogCandidate> candidates) {
+        if (week == null) {
+            return List.of("у відповіді немає жодного дня");
+        }
+        List<String> defects = new ArrayList<>();
+        List<PlannedDay> days = new ArrayList<>();
+        int[] timesChosen = new int[candidates.size()];
+        for (ReadyMealDay day : week.days() == null ? List.<ReadyMealDay>of() : week.days()) {
+            if (day == null) {
+                days.add(null);
+                continue;
+            }
+            List<PlannedMeal> meals = new ArrayList<>();
+            for (ReadyMealChoice choice : day.meals() == null ? List.<ReadyMealChoice>of() : day.meals()) {
+                if (choice == null || choice.candidate() == null) {
+                    defects.add("страва без номера у дні %s".formatted(day.day()));
+                    meals.add(null);
+                    continue;
+                }
+                if (choice.candidate() < 1 || choice.candidate() > candidates.size()) {
+                    defects.add("номера %d немає у списку реальних товарів Сільпо (є 1–%d)"
+                            .formatted(choice.candidate(), candidates.size()));
+                    meals.add(null);
+                    continue;
+                }
+                timesChosen[choice.candidate() - 1]++;
+                meals.add(new PlannedMeal(
+                        choice.type(), candidates.get(choice.candidate() - 1).name(), List.of(READY_MEAL_PLACEHOLDER)));
+            }
+            days.add(new PlannedDay(day.day(), meals));
+        }
+        for (int i = 0; i < candidates.size(); i++) {
+            CatalogCandidate candidate = candidates.get(i);
+            if (candidate.stock() != null && BigDecimal.valueOf(timesChosen[i]).compareTo(candidate.stock()) > 0) {
+                defects.add("«%s» обрано %d разів, а в наявності лише %s"
+                        .formatted(
+                                candidate.name(),
+                                timesChosen[i],
+                                candidate.stock().stripTrailingZeros().toPlainString()));
+            }
+        }
+        defects.addAll(dayDefects(days, true));
+        return defects;
+    }
+
+    private static final String READY_MEAL_CATEGORY = "Готові страви";
+
+    /** Stands in for "this meal has its one product" while the day-level checks run; never stored. */
+    private static final PlannedIngredient READY_MEAL_PLACEHOLDER =
+            new PlannedIngredient("готова страва", BigDecimal.ONE, "порція", READY_MEAL_CATEGORY, null);
+
+    /**
+     * The stored shape of a ready-meals week: every meal is exactly one real catalog product, with its id and price
+     * stamped on from the candidate list — nothing here came from the model but the position. Only called once
+     * {@link #choiceDefects} has passed, so every position is guaranteed to exist.
+     */
+    private static WeeklyMealPlan asStoredPlan(ReadyMealWeek week, List<CatalogCandidate> candidates) {
+        List<PlannedDay> days = week.days().stream()
+                .map(day -> new PlannedDay(
+                        day.day(),
+                        day.meals().stream()
+                                .map(choice -> {
+                                    CatalogCandidate candidate = candidates.get(choice.candidate() - 1);
+                                    return new PlannedMeal(
+                                            choice.type(),
+                                            candidate.name(),
+                                            List.of(new PlannedIngredient(
+                                                    candidate.name(),
+                                                    BigDecimal.ONE,
+                                                    "порція",
+                                                    READY_MEAL_CATEGORY,
+                                                    candidate.productId(),
+                                                    candidate.price())));
+                                })
+                                .toList()))
+                .toList();
+        return new WeeklyMealPlan(days);
     }
 
     /**
@@ -220,78 +311,6 @@ public class MealPlanService {
                         line.name().trim(), line.quantity(), line.unit(), line.category(), null, null))
                 .toList();
         return new WeeklyMealPlan(days, shoppingList);
-    }
-
-    private static List<String> allDefectsOf(WeeklyMealPlan plan, List<CatalogCandidate> candidates) {
-        List<String> defects = new ArrayList<>(defectsOf(plan));
-        defects.addAll(candidateDefects(plan, candidates));
-        return defects;
-    }
-
-    /**
-     * Every ingredient name Claude returned that is not, character for character (case-insensitive), one of the real
-     * candidates it was given — the check the acceptance criteria call "never invents outside the list".
-     */
-    private static List<String> candidateDefects(WeeklyMealPlan plan, List<CatalogCandidate> candidates) {
-        if (plan == null || plan.days() == null) {
-            return List.of();
-        }
-        Set<String> candidateNames = candidates.stream()
-                .map(candidate -> normalise(candidate.name()))
-                .collect(Collectors.toSet());
-        List<String> defects = new ArrayList<>();
-        for (PlannedDay day : plan.days()) {
-            List<PlannedMeal> meals = day == null || day.meals() == null ? List.of() : day.meals();
-            for (PlannedMeal meal : meals) {
-                List<PlannedIngredient> ingredients =
-                        meal == null || meal.ingredients() == null ? List.of() : meal.ingredients();
-                for (PlannedIngredient ingredient : ingredients) {
-                    String name = ingredient == null ? null : ingredient.name();
-                    if (name == null || !candidateNames.contains(normalise(name))) {
-                        defects.add("«%s» немає у списку реальних товарів Сільпо".formatted(name));
-                    }
-                }
-            }
-        }
-        return defects;
-    }
-
-    /**
-     * Stamps each ingredient's real productId on, matching by the same case-insensitive name rule as
-     * {@link #candidateDefects}. Only ever called once that check has already passed — every name is guaranteed to
-     * have a match.
-     */
-    private static WeeklyMealPlan withResolvedProductIds(WeeklyMealPlan plan, List<CatalogCandidate> candidates) {
-        Map<String, CatalogCandidate> byName = candidates.stream()
-                .collect(Collectors.toMap(
-                        candidate -> normalise(candidate.name()), candidate -> candidate, (a, b) -> a));
-        List<PlannedDay> days = plan.days().stream()
-                .map(day -> new PlannedDay(
-                        day.day(),
-                        day.meals().stream()
-                                .map(meal -> new PlannedMeal(
-                                        meal.type(),
-                                        meal.name(),
-                                        meal.ingredients().stream()
-                                                .map(ingredient -> {
-                                                    CatalogCandidate candidate = Objects.requireNonNull(
-                                                            byName.get(normalise(ingredient.name())));
-                                                    return new PlannedIngredient(
-                                                            ingredient.name(),
-                                                            ingredient.quantity(),
-                                                            ingredient.unit(),
-                                                            ingredient.category(),
-                                                            candidate.productId(),
-                                                            candidate.price());
-                                                })
-                                                .toList()))
-                                .toList()))
-                .toList();
-        return new WeeklyMealPlan(days);
-    }
-
-    private static String normalise(String value) {
-        return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
     }
 
     private static String correctionOf(String userPrompt, List<String> defects) {
@@ -338,14 +357,6 @@ public class MealPlanService {
             }
         }
         return defects;
-    }
-
-    /** Everything wrong with a stored-shape plan (the ready-meals path). Empty means the plan is storable. */
-    private static List<String> defectsOf(WeeklyMealPlan plan) {
-        if (plan == null) {
-            return List.of("у відповіді немає жодного дня");
-        }
-        return dayDefects(plan.days(), true);
     }
 
     /**
@@ -510,13 +521,20 @@ public class MealPlanService {
     private String curationPrompt(
             UserProfile profile, String adjustment, List<String> untouched, List<CatalogCandidate> candidates) {
         StringBuilder text = new StringBuilder(describe(profile, adjustment, untouched));
-        text.append("\nОсь список готових страв, які зараз реально є в Сільпо. Обирай страви ТІЛЬКИ з цього ")
-                .append("списку і вказуй name страви ТОЧНО так, як він написаний нижче:\n");
+        text.append("\nОсь пронумерований список готових страв, які зараз реально є в Сільпо. Обирай страви ")
+                .append("ТІЛЬКИ з цього списку і відповідай НОМЕРОМ страви (candidate):\n");
         int position = 1;
         for (CatalogCandidate candidate : candidates) {
             text.append(position++).append(". ").append(candidate.name());
             if (candidate.price() != null) {
                 text.append(" (").append(candidate.price().toPlainString()).append(" грн)");
+            }
+            if (candidate.stock() != null) {
+                // The branch's own count. A plan that names one product more times than this is refused by
+                // Silpo at the cart, so the model is told the ceiling and the code checks it (choiceDefects).
+                text.append(" — в наявності ")
+                        .append(candidate.stock().stripTrailingZeros().toPlainString())
+                        .append(" шт, більше не обирай");
             }
             text.append('\n');
         }

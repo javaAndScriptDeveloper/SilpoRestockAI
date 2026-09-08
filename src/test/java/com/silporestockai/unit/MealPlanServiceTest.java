@@ -13,10 +13,12 @@ import com.silporestockai.model.AgeBracket;
 import com.silporestockai.model.CatalogCandidate;
 import com.silporestockai.model.CookingTimePreference;
 import com.silporestockai.model.MealType;
-import com.silporestockai.model.PlannedDay;
 import com.silporestockai.model.PlannedIngredient;
 import com.silporestockai.model.PlannedMeal;
 import com.silporestockai.model.PurchaseLine;
+import com.silporestockai.model.ReadyMealChoice;
+import com.silporestockai.model.ReadyMealDay;
+import com.silporestockai.model.ReadyMealWeek;
 import com.silporestockai.model.RecipeDay;
 import com.silporestockai.model.RecipeMeal;
 import com.silporestockai.model.RecipeWeek;
@@ -84,14 +86,14 @@ class MealPlanServiceTest {
     void picksTheReadyMealsPromptForReadyMealsOnlyHouseholds() {
         profile(CookingTimePreference.READY_MEALS_ONLY);
         when(readyMealCatalogService.findCandidates(USER_ID)).thenReturn(oneCandidate());
-        when(claudeApiClient.completeStructured(anyString(), anyString(), eq(WeeklyMealPlan.class)))
-                .thenReturn(readyMealPlan());
+        when(claudeApiClient.completeStructured(anyString(), anyString(), eq(ReadyMealWeek.class)))
+                .thenReturn(readyMealWeek());
 
         service().generateWeeklyPlan(USER_ID);
 
         ArgumentCaptor<String> systemPrompt = ArgumentCaptor.forClass(String.class);
         Mockito.verify(claudeApiClient)
-                .completeStructured(systemPrompt.capture(), anyString(), eq(WeeklyMealPlan.class));
+                .completeStructured(systemPrompt.capture(), anyString(), eq(ReadyMealWeek.class));
         assertThat(systemPrompt.getValue()).isEqualTo("READY-MEALS-PROMPT");
     }
 
@@ -210,13 +212,13 @@ class MealPlanServiceTest {
     void readyMealsOnlyCurationPromptListsRealCandidatesWithPrice() {
         profile(CookingTimePreference.READY_MEALS_ONLY);
         when(readyMealCatalogService.findCandidates(USER_ID)).thenReturn(oneCandidate());
-        when(claudeApiClient.completeStructured(anyString(), anyString(), eq(WeeklyMealPlan.class)))
-                .thenReturn(readyMealPlan());
+        when(claudeApiClient.completeStructured(anyString(), anyString(), eq(ReadyMealWeek.class)))
+                .thenReturn(readyMealWeek());
 
         service().generateWeeklyPlan(USER_ID);
 
         ArgumentCaptor<String> userPrompt = ArgumentCaptor.forClass(String.class);
-        Mockito.verify(claudeApiClient).completeStructured(anyString(), userPrompt.capture(), eq(WeeklyMealPlan.class));
+        Mockito.verify(claudeApiClient).completeStructured(anyString(), userPrompt.capture(), eq(ReadyMealWeek.class));
         assertThat(userPrompt.getValue()).contains("Салат Цезар готовий").contains("89.9");
     }
 
@@ -224,8 +226,8 @@ class MealPlanServiceTest {
     void readyMealsOnlyResolvesTheRealProductIdOntoTheStoredPlan() {
         profile(CookingTimePreference.READY_MEALS_ONLY);
         when(readyMealCatalogService.findCandidates(USER_ID)).thenReturn(oneCandidate());
-        when(claudeApiClient.completeStructured(anyString(), anyString(), eq(WeeklyMealPlan.class)))
-                .thenReturn(readyMealPlan());
+        when(claudeApiClient.completeStructured(anyString(), anyString(), eq(ReadyMealWeek.class)))
+                .thenReturn(readyMealWeek());
 
         service().generateWeeklyPlan(USER_ID);
 
@@ -243,26 +245,55 @@ class MealPlanServiceTest {
     }
 
     @Test
-    void readyMealsOnlyRetriesWhenClaudeInventsAProductOutsideTheCandidateList() {
+    void readyMealsOnlyRetriesWhenClaudeAnswersWithAPositionNobodyOffered() {
         profile(CookingTimePreference.READY_MEALS_ONLY);
         when(readyMealCatalogService.findCandidates(USER_ID)).thenReturn(oneCandidate());
-        List<PlannedIngredient> invented = List.of(
-                new PlannedIngredient("Страва, якої нема в каталозі", BigDecimal.ONE, "порція", "Готові страви", null));
-        List<PlannedMeal> inventedMeals = List.of(
-                new PlannedMeal(MealType.BREAKFAST, "Вигадка", invented),
-                new PlannedMeal(MealType.LUNCH, "Вигадка", invented),
-                new PlannedMeal(MealType.DINNER, "Вигадка", invented));
-        WeeklyMealPlan inventedPlan = new WeeklyMealPlan(Arrays.stream(DayOfWeek.values())
-                .map(day -> new PlannedDay(day, inventedMeals))
+        // Position 7 in a list of one: the ready-meals equivalent of an invented dish.
+        List<ReadyMealChoice> invented = List.of(
+                new ReadyMealChoice(MealType.BREAKFAST, 7),
+                new ReadyMealChoice(MealType.LUNCH, 7),
+                new ReadyMealChoice(MealType.DINNER, 7));
+        ReadyMealWeek inventedWeek = new ReadyMealWeek(Arrays.stream(DayOfWeek.values())
+                .map(day -> new ReadyMealDay(day, invented))
                 .toList());
-        when(claudeApiClient.completeStructured(anyString(), anyString(), eq(WeeklyMealPlan.class)))
-                .thenReturn(inventedPlan)
-                .thenReturn(readyMealPlan());
+        when(claudeApiClient.completeStructured(anyString(), anyString(), eq(ReadyMealWeek.class)))
+                .thenReturn(inventedWeek)
+                .thenReturn(readyMealWeek());
 
         service().generateWeeklyPlan(USER_ID);
 
         Mockito.verify(claudeApiClient, Mockito.times(2))
-                .completeStructured(anyString(), anyString(), eq(WeeklyMealPlan.class));
+                .completeStructured(anyString(), anyString(), eq(ReadyMealWeek.class));
+    }
+
+    /**
+     * Live on 2026-09-08 a branch held two or three packs of each of five ready meals and the plan asked for five
+     * of each; Silpo refused the cart line by line. The candidate list now carries the branch's count, the prompt
+     * says it, and a plan that names a product more times than the shelf holds goes back for correction.
+     */
+    @Test
+    void readyMealsOnlyRetriesWhenAProductIsChosenMoreTimesThanTheBranchHas() {
+        profile(CookingTimePreference.READY_MEALS_ONLY);
+        when(readyMealCatalogService.findCandidates(USER_ID))
+                .thenReturn(List.of(new CatalogCandidate(
+                        "Салат Цезар готовий",
+                        "p-1",
+                        "company-3",
+                        "branch-7",
+                        new BigDecimal("89.90"),
+                        new BigDecimal("2"))));
+        // Twenty-one meals of a product the branch has two of, twice in a row.
+        when(claudeApiClient.completeStructured(anyString(), anyString(), eq(ReadyMealWeek.class)))
+                .thenReturn(readyMealWeek())
+                .thenReturn(readyMealWeek());
+
+        assertThatThrownBy(() -> service().generateWeeklyPlan(USER_ID))
+                .isInstanceOf(com.silporestockai.exception.MealPlanGenerationException.class)
+                .hasMessageContaining("обрано 21 разів, а в наявності лише 2");
+        ArgumentCaptor<String> userPrompt = ArgumentCaptor.forClass(String.class);
+        Mockito.verify(claudeApiClient, Mockito.times(2))
+                .completeStructured(anyString(), userPrompt.capture(), eq(ReadyMealWeek.class));
+        assertThat(userPrompt.getAllValues().getFirst()).contains("в наявності 2 шт");
     }
 
     @Test
@@ -280,17 +311,14 @@ class MealPlanServiceTest {
                 new CatalogCandidate("Салат Цезар готовий", "p-1", "company-3", "branch-7", new BigDecimal("89.90")));
     }
 
-    private static WeeklyMealPlan readyMealPlan() {
-        List<PlannedIngredient> ingredients =
-                List.of(new PlannedIngredient("Салат Цезар готовий", BigDecimal.ONE, "порція", "Готові страви", null));
-        List<PlannedMeal> meals = List.of(
-                new PlannedMeal(MealType.BREAKFAST, "Салат Цезар готовий", ingredients),
-                new PlannedMeal(MealType.LUNCH, "Салат Цезар готовий", ingredients),
-                new PlannedMeal(MealType.DINNER, "Салат Цезар готовий", ingredients));
-        List<PlannedDay> days = Arrays.stream(DayOfWeek.values())
-                .map(day -> new PlannedDay(day, meals))
-                .toList();
-        return new WeeklyMealPlan(days);
+    private static ReadyMealWeek readyMealWeek() {
+        List<ReadyMealChoice> meals = List.of(
+                new ReadyMealChoice(MealType.BREAKFAST, 1),
+                new ReadyMealChoice(MealType.LUNCH, 1),
+                new ReadyMealChoice(MealType.DINNER, 1));
+        return new ReadyMealWeek(Arrays.stream(DayOfWeek.values())
+                .map(day -> new ReadyMealDay(day, meals))
+                .toList());
     }
 
     private static RecipeWeek validRecipeWeek() {

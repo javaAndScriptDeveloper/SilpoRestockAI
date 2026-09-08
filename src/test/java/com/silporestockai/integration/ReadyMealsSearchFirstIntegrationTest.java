@@ -159,31 +159,17 @@ class ReadyMealsSearchFirstIntegrationTest extends AbstractIntegrationTest {
     }
 
     private static String curatedWeekJson() {
-        // The exact ready-meal names from the stubbed catalog above, echoed back verbatim — what a correctly
-        // curating Claude does, and what the new ready-meals system prompt asks for.
-        String[] names = {
-            "Сир кисломолочний з ягодами, порція",
-            "Салат «Грецький» готовий",
-            "Гречка з яловичиною готова страва",
-            "Йогурт натуральний грецький",
-            "Плов з куркою готовий",
-            "Борщ готовий, порція",
-            "Салат Цезар готовий"
-        };
+        // Positions in the stubbed catalog above — what a correctly curating Claude answers with now: never a
+        // name to copy character for character, only the number of the real product.
         StringBuilder days = new StringBuilder();
         String[] dayNames = {"MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"};
         for (int d = 0; d < 7; d++) {
             if (!days.isEmpty()) {
                 days.append(',');
             }
-            String breakfast = names[d % names.length];
-            String lunch = names[(d + 1) % names.length];
-            String dinner = names[(d + 2) % names.length];
             days.append("""
-                    {"day":"%s","meals":[\
-                    {"type":"BREAKFAST","name":"%s","ingredients":[{"name":"%s","quantity":1,"unit":"порція","category":"Готові страви"}]},\
-                    {"type":"LUNCH","name":"%s","ingredients":[{"name":"%s","quantity":1,"unit":"порція","category":"Готові страви"}]},\
-                    {"type":"DINNER","name":"%s","ingredients":[{"name":"%s","quantity":1,"unit":"порція","category":"Готові страви"}]}]}""".formatted(dayNames[d], breakfast, breakfast, lunch, lunch, dinner, dinner));
+                    {"day":"%s","meals":[{"type":"BREAKFAST","candidate":%d},\
+                    {"type":"LUNCH","candidate":%d},{"type":"DINNER","candidate":%d}]}""".formatted(dayNames[d], d % 7 + 1, (d + 1) % 7 + 1, (d + 2) % 7 + 1));
         }
         return "{\"days\":[" + days + "]}";
     }

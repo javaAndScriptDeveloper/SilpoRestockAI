@@ -180,25 +180,18 @@ class MealPlanHandoffIntegrationTest extends AbstractIntegrationTest {
     }
 
     private static String sparseReadyMealsWeekJson() {
+        // Positions in the two-product catalog stubbed above: the ready-meals answer is numbers, not names.
         StringBuilder days = new StringBuilder();
-        String[] names = {"Салат Цезар готовий", "Борщ готовий, порція"};
-        String[] ids = {"p-1", "p-2"};
         int i = 0;
         for (DayOfWeek day : DayOfWeek.values()) {
             if (!days.isEmpty()) {
                 days.append(',');
             }
-            String name = names[i % 2];
-            String productId = ids[i % 2];
+            int candidate = i % 2 + 1;
             i++;
             days.append("""
-                    {"day":"%s","meals":[\
-                    {"type":"BREAKFAST","name":"%s","ingredients":[{"name":"%s","quantity":1,"unit":"порція",\
-                    "category":"Готові страви","productId":"%s"}]},\
-                    {"type":"LUNCH","name":"%s","ingredients":[{"name":"%s","quantity":1,"unit":"порція",\
-                    "category":"Готові страви","productId":"%s"}]},\
-                    {"type":"DINNER","name":"%s","ingredients":[{"name":"%s","quantity":1,"unit":"порція",\
-                    "category":"Готові страви","productId":"%s"}]}]}""".formatted(day.name(), name, name, productId, name, name, productId, name, name, productId));
+                    {"day":"%s","meals":[{"type":"BREAKFAST","candidate":%d},\
+                    {"type":"LUNCH","candidate":%d},{"type":"DINNER","candidate":%d}]}""".formatted(day.name(), candidate, candidate, candidate));
         }
         return "{\"days\":[" + days + "]}";
     }

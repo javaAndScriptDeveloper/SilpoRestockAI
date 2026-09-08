@@ -11,5 +11,14 @@ import java.math.BigDecimal;
  * @param companyId company the product belongs to
  * @param branchId branch the price and availability apply to
  * @param price the product's price, when Silpo's search response carried one
+ * @param stock how many the branch has right now, when the search response said; null when it did not. A
+ *     ready-meals week is twenty-one portions, and live on 2026-09-08 a branch with two or three packs of each of
+ *     five products refused a plan that asked for five of each — the planner has to know the number.
  */
-public record CatalogCandidate(String name, String productId, String companyId, String branchId, BigDecimal price) {}
+public record CatalogCandidate(
+        String name, String productId, String companyId, String branchId, BigDecimal price, BigDecimal stock) {
+
+    public CatalogCandidate(String name, String productId, String companyId, String branchId, BigDecimal price) {
+        this(name, productId, companyId, branchId, price, null);
+    }
+}

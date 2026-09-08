@@ -66,6 +66,28 @@ class ReadyMealCatalogServiceTest {
                 .isNotEmpty();
     }
 
+    /**
+     * Live on 2026-09-08 a ready-meals cart died on Silpo's stock validation: five candidates were deli products
+     * sold by weight (smoked fish, salads per kilogram), the plan said «1 порція», the pre-resolved line carried
+     * no weight, and the cart sent quantity 1 — a kilogram against 0.4 in stock. A portion of a by-weight product
+     * is not a thing this planner can order, and neither is a product with nothing on the shelf.
+     */
+    @Test
+    void leavesOutProductsSoldByWeightAndProductsWithNothingInStock() {
+        setUp();
+        when(silpoMcpClient.callTool(eq("silpo_find_products_batch"), any(), eq(USER_ID)))
+                .thenReturn(new McpToolResponse("""
+                        {"queries":[{"query":"салат готовий","products":[\
+                        {"name":"Салат Цезар готовий","productId":"p-1","price":89.9,"stock":12},\
+                        {"name":"Салат «Грецький»","productId":"p-2","price":399,"weighted":true,"stock":0.6},\
+                        {"name":"Плов з куркою","productId":"p-3","price":120,"stock":0},\
+                        {"name":"Банош з бринзою","productId":"p-4","price":95,"available":false}]}]}""", null, false));
+
+        List<CatalogCandidate> candidates = service.findCandidates(USER_ID);
+
+        assertThat(candidates).extracting(CatalogCandidate::productId).containsExactly("p-1");
+    }
+
     @Test
     void flattensEveryProductAcrossEveryQueryNotJustTheFirstMatch() {
         setUp();

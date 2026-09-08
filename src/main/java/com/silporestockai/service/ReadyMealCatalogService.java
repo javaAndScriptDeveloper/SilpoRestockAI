@@ -97,6 +97,29 @@ public class ReadyMealCatalogService {
                 if (productId == null || name == null) {
                     continue;
                 }
+                // A ready meal is a thing you order one of. A product sold by weight (deli salads, smoked fish
+                // per kilogram) is not: the plan says «1 порція», the pre-resolved line carries no weight, and the
+                // cart sends quantity 1 — a kilogram — which the branch's 0.4 kg refuses, and with it the whole
+                // order (live, 2026-09-08: five such lines killed a 17-line cart). Out of stock is out too: a
+                // pre-resolved line is never stock-checked again before the cart.
+                boolean weighted = McpResponses.findNode(product, McpResponses.WEIGHTED)
+                        .map(node -> node.asBoolean(false))
+                        .orElse(false);
+                boolean available = McpResponses.findNode(product, McpResponses.AVAILABLE)
+                        .map(node -> node.asBoolean(true))
+                        .orElse(true);
+                boolean inStock = McpResponses.findNumber(product, McpResponses.STOCK)
+                        .map(stock -> stock.compareTo(java.math.BigDecimal.ONE) >= 0)
+                        .orElse(true);
+                if (weighted || !available || !inStock) {
+                    log.debug(
+                            "skipping «{}» as a ready-meal candidate: weighted={} available={} inStock={}",
+                            name,
+                            weighted,
+                            available,
+                            inStock);
+                    continue;
+                }
                 byProductId.putIfAbsent(
                         productId,
                         new CatalogCandidate(
@@ -107,6 +130,8 @@ public class ReadyMealCatalogService {
                                 McpResponses.findString(product, McpResponses.BRANCH_ID)
                                         .orElse(context.branchId()),
                                 McpResponses.findNumber(product, McpResponses.PRICE)
+                                        .orElse(null),
+                                McpResponses.findNumber(product, McpResponses.STOCK)
                                         .orElse(null)));
             }
         }
