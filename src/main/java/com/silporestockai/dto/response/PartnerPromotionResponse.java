@@ -2,6 +2,7 @@ package com.silporestockai.dto.response;
 
 import com.silporestockai.entity.PartnerPromotion;
 import com.silporestockai.model.PartnerPromotionStatus;
+import com.silporestockai.model.PromotionType;
 import java.util.UUID;
 
 /** What the internal endpoint answers once a placement exists (task 46): the real product it will feature. */
@@ -12,7 +13,8 @@ public record PartnerPromotionResponse(
         String silpoProductId,
         String productName,
         int priorityWeight,
-        PartnerPromotionStatus status) {
+        PartnerPromotionStatus status,
+        PromotionType promotionType) {
 
     public static PartnerPromotionResponse of(PartnerPromotion promotion) {
         return new PartnerPromotionResponse(
@@ -22,6 +24,7 @@ public record PartnerPromotionResponse(
                 promotion.getSilpoProductId(),
                 promotion.getProductName(),
                 promotion.getPriorityWeight(),
-                promotion.getStatus());
+                promotion.getStatus(),
+                promotion.getPromotionType());
     }
 }

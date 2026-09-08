@@ -1,0 +1,19 @@
+databaseChangeLog:
+  - changeSet:
+      id: 029-promotion-type
+      author: komora
+      comment: >-
+        Task 63: a placement is either an external partner paying for preference (PAID_PARTNER — every
+        row task 46 created) or Silpo preferring its own high-margin brand through the identical
+        mechanism with no payer at all (OWN_BRAND_MARGIN_BOOST). The column default migrates the
+        existing rows honestly: they really are paid placements, so nothing has to be guessed.
+      changes:
+        - addColumn:
+            tableName: partner_promotion
+            columns:
+              - column:
+                  name: promotion_type
+                  type: VARCHAR(32)
+                  defaultValue: PAID_PARTNER
+                  constraints:
+                    nullable: false

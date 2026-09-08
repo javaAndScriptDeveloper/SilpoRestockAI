@@ -9,6 +9,7 @@ import com.silporestockai.exception.ApplicationException;
 import com.silporestockai.model.CartContext;
 import com.silporestockai.model.OfferedSlot;
 import com.silporestockai.model.PartnerPromotionStatus;
+import com.silporestockai.model.PromotionType;
 import com.silporestockai.repository.PartnerPromotionRepository;
 import com.silporestockai.utils.McpResponses;
 import java.time.Clock;
@@ -96,13 +97,15 @@ public class PartnerPromotionAdminService {
                 .silpoProductId(productId)
                 .productName(productName)
                 .priorityWeight(request.priorityWeight() == null ? 100 : request.priorityWeight())
+                .promotionType(request.promotionType() == null ? PromotionType.PAID_PARTNER : request.promotionType())
                 .activeFrom(request.activeFrom())
                 .activeTo(request.activeTo())
                 .status(PartnerPromotionStatus.ACTIVE)
                 .createdAt(clock.instant())
                 .build());
         log.info(
-                "partner placement {} created: «{}» → {} ({}) for {}",
+                "{} placement {} created: «{}» → {} ({}) for {}",
+                promotion.getPromotionType(),
                 promotion.getId(),
                 promotion.getCategoryOrQuery(),
                 productName,

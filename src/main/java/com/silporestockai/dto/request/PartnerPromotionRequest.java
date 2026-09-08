@@ -1,5 +1,6 @@
 package com.silporestockai.dto.request;
 
+import com.silporestockai.model.PromotionType;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -15,6 +16,8 @@ import java.util.UUID;
  * @param activeTo optional end
  * @param verifyAsUserId a user with a connected Silpo session — the MCP is per-guest OAuth, so the catalog can only
  *     be asked on somebody's behalf; the operator's own account for a demo
+ * @param promotionType {@code PAID_PARTNER} (the default when absent) or {@code OWN_BRAND_MARGIN_BOOST} for one of
+ *     Silpo's own brands (task 63)
  */
 public record PartnerPromotionRequest(
         String partnerName,
@@ -23,4 +26,5 @@ public record PartnerPromotionRequest(
         Integer priorityWeight,
         Instant activeFrom,
         Instant activeTo,
-        UUID verifyAsUserId) {}
+        UUID verifyAsUserId,
+        PromotionType promotionType) {}

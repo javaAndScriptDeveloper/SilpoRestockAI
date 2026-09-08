@@ -21,6 +21,7 @@ import com.silporestockai.model.OrderStatus;
 import com.silporestockai.model.OrderType;
 import com.silporestockai.model.PartnerPromotionEventType;
 import com.silporestockai.model.PartnerPromotionStatus;
+import com.silporestockai.model.PromotionType;
 import com.silporestockai.repository.CustomerOrderRepository;
 import com.silporestockai.repository.PartnerPromotionEventRepository;
 import com.silporestockai.repository.PartnerPromotionRepository;
@@ -44,6 +45,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -90,6 +92,9 @@ class PartnerPromotionIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     private static StubMcpServer startMcp() {
         try {
@@ -355,5 +360,48 @@ class PartnerPromotionIntegrationTest extends AbstractIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"partnerName\":\"x\",\"categoryOrQuery\":\"y\",\"productQuery\":\"z\"}"))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("a placement created before task 63 reads back as a paid partner placement")
+    void aRowWithoutAPromotionTypeDefaultsToPaidPartner() {
+        UUID id = UUID.randomUUID();
+        jdbcTemplate.update(
+                """
+                insert into partner_promotion
+                    (id, partner_name, category_or_query, silpo_product_id, product_name,
+                     priority_weight, status, created_at)
+                values (?, ?, ?, ?, ?, ?, ?, now())
+                """,
+                id,
+                "Яготинське",
+                "молоко",
+                PARTNER_MILK_ID,
+                PARTNER_MILK_NAME,
+                100,
+                PartnerPromotionStatus.ACTIVE.name());
+
+        PartnerPromotion stored = promotionRepository.findById(id).orElseThrow();
+
+        assertThat(stored.getPromotionType()).isEqualTo(PromotionType.PAID_PARTNER);
+    }
+
+    @Test
+    @DisplayName("an own-brand placement can be created and keeps its type")
+    void anOwnBrandPlacementKeepsItsType() {
+        PartnerPromotion stored = promotionRepository.save(PartnerPromotion.builder()
+                .id(UUID.randomUUID())
+                .partnerName("Сільпо власна марка")
+                .categoryOrQuery("чай")
+                .silpoProductId("p-tea-own")
+                .productName("Чай «Премія» чорний")
+                .priorityWeight(100)
+                .promotionType(PromotionType.OWN_BRAND_MARGIN_BOOST)
+                .status(PartnerPromotionStatus.ACTIVE)
+                .createdAt(Instant.now())
+                .build());
+
+        assertThat(promotionRepository.findById(stored.getId()).orElseThrow().getPromotionType())
+                .isEqualTo(PromotionType.OWN_BRAND_MARGIN_BOOST);
     }
 }
