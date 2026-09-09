@@ -1437,6 +1437,11 @@ Two full passes of the demo script on 2026-09-08/09 against the real Silpo MCP (
 | Group: tag the bot with privacy mode on and no admin rights | Nothing — that is Telegram, not the bot. Promote it to admin (or `/setprivacy` → Disable) and the same tag opens the round; the intro now asks for admin when `getMe` reports privacy mode |
 | Group: reply «спробуй ще» to a proposal that came without prices | A new proposal; the unpriced text names «Сільпо» not answering, not a missing account |
 | `CHECKIN_INTERVAL=2m` and a Telegram timeout on the prompt | One prompt, not two — the stamp is written before the send |
+| A list with «рис» in a branch that has only coloured or risotto rice | «Не знайшов: Рис», never «Sacramento червоний» or «Карнаролі» at ₴449 — the variant guard sits in front of the matcher |
+| «Локшина» in a soup list | Dry egg noodles or vermicelli, never «швидкого приготування з соусом» |
+| «Замовити» on an old list message after that list was ordered | «Цей список уже замовлено або скасовано. Натисни «Список»…», not the «describe it differently» failure |
+| «молоко закінчилося, хліб є» → «що треба докупити?» or a «Докласти» tap | The top-up never adds bread; milk comes back |
+| /start, form, then watch the chat for two minutes | No check-in prompt lands between «Записав. Готую перший план» and the plan |
 
 ### Session 6: what a cart says now, and what to check with your own eyes
 

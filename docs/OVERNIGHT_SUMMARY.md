@@ -1087,6 +1087,26 @@ once; and the group round: a real tag opened it, one real and two synthetic repl
 20 s naming who asked for what, three 👍, «✅ Усі 3 погодились», the cart in the private chat, a top-up to ₴981 and
 «Підтвердити» → «🎉 @notatlast підтвердив замовлення». Eleven confirmed orders, GMV ₴14 745 by the end of the pass.
 
+## Pass 3 — from Act 1 again, 05:34 onwards
+
+Steps 1–6 held (greeting, connect within the TTL, «людей удома: 1» → «Все вірно», the form prefilled from the
+enrichment, a 24-line plan with «~2725.39 грн за 18 з 24 позицій» — the baseline now knows the household's own
+words — Wednesday, a ₴2000 cart with three honest «Не знайшов» lines, «Підтвердити»). Three things were still
+wrong enough to fix:
+
+- **«Локшина — 300 г» became instant «Glads Wok Mie goreng з соусом» ×3** → a prompt sentence; the rebuilt cart
+  took «La Pasta локшина» at ₴28.99 (`1e8f65d`).
+- **«Замовити» tapped under a list that had just been ordered** answered with the «describe it differently or
+  send a photo» failure → «Цей список уже замовлено або скасовано…» (`c36cb8f`).
+- **Rice.** «Sacramento червоний» ×3, then «Origini Карнаролі білий класичний» at ₴449, then — with red and black
+  spelled out in the prompt — «Cordero рожевий» at ₴598. The fast model does not hold the rice rule, this branch
+  has no plain rice, and rice is in every weekly plan. A deterministic guard in the stock prefilter now drops
+  named variants for a bare «рис» (and instant noodles for a bare «локшина»); a plain unmarked name stays. The
+  rebuilt cart says «Не знайшов: Рис» (`8df89e5`).
+
+A fourth pass was not run: pass 3's findings were all at the level of one catalog line or one button text, each
+re-verified on its own step, and none touched a flow. That is a judgment call, stated here rather than hidden.
+
 ## Observations, not fixed
 
 - The matcher still reaches for premium in a blackout kit («Сир «Фоль Епі», нарізка» at ₴309) — the everyday rule

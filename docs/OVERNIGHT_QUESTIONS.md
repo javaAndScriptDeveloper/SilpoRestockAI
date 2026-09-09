@@ -1236,6 +1236,27 @@ mid-exchange or a plan is on its way, and the agent speaking first can wait for 
 three-day interval and hourly sweep this costs nothing; with the 2-minute demo knob it is what makes the
 transcript readable.
 
+### Pass 3: a bare «рис» line gets a deterministic guard, not another prompt sentence
+The matcher prompt has said since session 10 that a bare «Рис» is plain white rice and everything else is -1.
+Tonight the fast model took «Sacramento червоний» three times, «Origini Карнаролі білий класичний» at ₴449 (the
+name says «білий»), and once red and black were spelled out, «Cordero рожевий» at ₴598. This branch has no plain
+rice, and rice is in every weekly plan — every demo cart would carry the line. Decision (`8df89e5`): the stock
+prefilter also drops a candidate whose name marks a variant the bare line did not ask for (coloured, wild,
+risotto grains, spiced mixes; instant noodles for a bare «локшина»/«макарони»). Only a *named* variant is
+refused — «Рис Sacramento» with no colour in it stays, which is what the existing test asserts and what a
+production branch with plain rice needs. A whitelist («білий», «довгозернистий»…) was tried and dropped: it
+refused unmarked plain rice. Result: «Не знайшов: Рис» — honest, and the person can add it by hand.
+
+### Pass 3: «Замовити» under a list that is gone
+Tapping the old keyboard after the order was confirmed answered «Не вдалось скласти список. Спробуй описати
+інакше або надішли фото» — the failure text for a description nobody typed. Now «Цей список уже замовлено або
+скасовано. Натисни «Список», щоб скласти новий» (`c36cb8f`). Not changed: the old keyboard stays in the chat;
+Telegram cannot retract it and editing every old list message on confirm is more noise than the tap.
+
+### Pass 3: noodles
+«Локшина — 300 г» for a chicken soup came back as instant «Glads Wok Mie goreng з соусом» ×3. A prompt sentence
+fixed it on the rebuild (`1e8f65d`), and the same words are in the deterministic guard above as a belt.
+
 ### Pass 2 runs with `CHECKIN_INTERVAL=10m`, not 2m
 Four «Як справи з їжею?» in eight minutes made the pass-1 transcript unreadable. Ten minutes is still short
 enough to reach step 7 inside a pass. `make metrics` must be re-run after the knobs are reverted before any
