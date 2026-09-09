@@ -8,10 +8,14 @@ import com.silporestockai.repository.UserRepository;
 import com.silporestockai.utils.SecretRedactor;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.net.ConnectException;
+import java.net.NoRouteToHostException;
 import java.net.URI;
+import java.net.UnknownHostException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
@@ -21,6 +25,7 @@ import org.telegram.telegrambots.meta.TelegramUrl;
 import org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery;
 import org.telegram.telegrambots.meta.api.methods.GetFile;
 import org.telegram.telegrambots.meta.api.methods.GetMe;
+import org.telegram.telegrambots.meta.api.methods.botapimethods.BotApiMethod;
 import org.telegram.telegrambots.meta.api.methods.send.SendAudio;
 import org.telegram.telegrambots.meta.api.methods.send.SendDocument;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
@@ -84,7 +89,7 @@ public class TelegramOutboundService {
         logOutbound(chatId, text, List.of());
         SendMessage message = SendMessage.builder().chatId(chatId).text(text).build();
         try {
-            client.execute(message);
+            execute(message);
         } catch (TelegramApiException e) {
             throw failure("sendMessage", e);
         }
@@ -144,7 +149,7 @@ public class TelegramOutboundService {
                 .replyMarkup(MainMenuKeyboard.markup())
                 .build();
         try {
-            client.execute(message);
+            execute(message);
         } catch (TelegramApiException e) {
             throw failure("sendMessage", e);
         }
@@ -170,7 +175,7 @@ public class TelegramOutboundService {
                 .replyMarkup(InlineKeyboardMarkup.builder().keyboard(rows).build())
                 .build();
         try {
-            Message sent = client.execute(message);
+            Message sent = execute(message);
             return sent == null || sent.getMessageId() == null ? 0 : sent.getMessageId();
         } catch (TelegramApiException e) {
             throw failure("sendMessage", e);
@@ -191,7 +196,7 @@ public class TelegramOutboundService {
                 .replyToMessageId(replyToMessageId)
                 .build();
         try {
-            Message sent = client.execute(message);
+            Message sent = execute(message);
             return sent == null || sent.getMessageId() == null ? 0 : sent.getMessageId();
         } catch (TelegramApiException e) {
             if (e.getMessage() != null && e.getMessage().contains("message to be replied not found")) {
@@ -206,8 +211,8 @@ public class TelegramOutboundService {
 
     private int sendPlain(long chatId, String text) {
         try {
-            Message sent = client.execute(
-                    SendMessage.builder().chatId(chatId).text(text).build());
+            Message sent =
+                    execute(SendMessage.builder().chatId(chatId).text(text).build());
             return sent == null || sent.getMessageId() == null ? 0 : sent.getMessageId();
         } catch (TelegramApiException e) {
             throw failure("sendMessage", e);
@@ -230,7 +235,7 @@ public class TelegramOutboundService {
             return cached;
         }
         try {
-            org.telegram.telegrambots.meta.api.objects.User me = client.execute(new GetMe());
+            org.telegram.telegrambots.meta.api.objects.User me = execute(new GetMe());
             cached = Optional.ofNullable(me == null ? null : me.getUserName());
         } catch (TelegramApiException | RuntimeException e) {
             log.warn("could not look up the bot's username with getMe: {}", e.getMessage());
@@ -260,7 +265,7 @@ public class TelegramOutboundService {
             return cached;
         }
         try {
-            org.telegram.telegrambots.meta.api.objects.User me = client.execute(new GetMe());
+            org.telegram.telegrambots.meta.api.objects.User me = execute(new GetMe());
             cached = me == null || !Boolean.FALSE.equals(me.getCanReadAllGroupMessages());
         } catch (TelegramApiException | RuntimeException e) {
             log.warn("could not look up the bot's privacy mode with getMe: {}", e.getMessage());
@@ -296,7 +301,7 @@ public class TelegramOutboundService {
                 .replyMarkup(markup)
                 .build();
         try {
-            client.execute(message);
+            execute(message);
         } catch (TelegramApiException e) {
             throw failure("sendMessage", e);
         }
@@ -328,7 +333,7 @@ public class TelegramOutboundService {
         }
         AnswerCallbackQuery answer = builder.build();
         try {
-            client.execute(answer);
+            execute(answer);
         } catch (TelegramApiException e) {
             log.warn("could not acknowledge callback query {}: {}", callbackQueryId, e.getMessage());
         }
@@ -344,7 +349,7 @@ public class TelegramOutboundService {
      */
     public byte[] downloadFile(String fileId) {
         try {
-            File file = client.execute(GetFile.builder().fileId(fileId).build());
+            File file = execute(GetFile.builder().fileId(fileId).build());
             URI uri = URI.create("%s/file/bot%s/%s".formatted(apiUrl, botToken, file.getFilePath()));
             HttpResponse<byte[]> response = fileDownloader.send(
                     HttpRequest.newBuilder(uri).GET().build(), HttpResponse.BodyHandlers.ofByteArray());
@@ -367,6 +372,8 @@ public class TelegramOutboundService {
             builder.secretToken(secretToken);
         }
         try {
+            // SetWebhook is a PartialBotApiMethod (it may carry a certificate), so it takes the plain path; the
+            // registration service already retries on its own schedule.
             client.execute(builder.build());
         } catch (TelegramApiException e) {
             throw failure("setWebhook", e);
@@ -392,6 +399,9 @@ public class TelegramOutboundService {
     }
 
     /** A label longer than this cannot share a row with another one on a phone without being cut to «…». */
+    /** Long enough for a resolver to answer its second query, short enough that nobody notices. */
+    private static final Duration RETRY_PAUSE = Duration.ofMillis(1500);
+
     private static final int LONGEST_LABEL_FOR_A_SHARED_ROW = 24;
 
     /** Up to this many short labels fit one row on a phone; more than that is split two per row. */
@@ -436,6 +446,61 @@ public class TelegramOutboundService {
             builder.callbackData(button.callbackData());
         }
         return builder.build();
+    }
+
+    /**
+     * One retry, and only for a failure that happened before anything reached Telegram.
+     *
+     * <p>Live, four scheduled check-in prompts in one night died on {@code UnknownHostException: api.telegram.org}
+     * from a home router's DNS that answers the second query — while every send a person had just triggered went
+     * through. A timeout or a 5xx is not retried here: the message may already be delivered, and a duplicate is
+     * worse than a gap. A name that did not resolve, or a connection nobody accepted, delivered nothing.
+     */
+    private <T extends java.io.Serializable> T execute(BotApiMethod<T> method) throws TelegramApiException {
+        try {
+            return client.execute(method);
+        } catch (TelegramApiException e) {
+            if (!failedBeforeReachingTelegram(e)) {
+                throw e;
+            }
+            log.warn(
+                    "Telegram {} failed before the request left this box ({}); retrying once",
+                    method.getMethod(),
+                    rootCause(e).toString());
+            pause(RETRY_PAUSE);
+            return client.execute(method);
+        }
+    }
+
+    /** True when the failure sits in name resolution or connection set-up: nothing can have been delivered. */
+    static boolean failedBeforeReachingTelegram(Throwable e) {
+        for (Throwable cause = e; cause != null; cause = cause.getCause()) {
+            if (cause instanceof UnknownHostException
+                    || cause instanceof ConnectException
+                    || cause instanceof NoRouteToHostException) {
+                return true;
+            }
+            if (cause.getCause() == cause) {
+                break;
+            }
+        }
+        return false;
+    }
+
+    private static Throwable rootCause(Throwable e) {
+        Throwable cause = e;
+        while (cause.getCause() != null && cause.getCause() != cause) {
+            cause = cause.getCause();
+        }
+        return cause;
+    }
+
+    private static void pause(Duration duration) {
+        try {
+            Thread.sleep(duration.toMillis());
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     /** The message carries the Bot API error, never the token — the token lives only in the URL path. */
