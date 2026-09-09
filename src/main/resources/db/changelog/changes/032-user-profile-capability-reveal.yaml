@@ -1,0 +1,15 @@
+databaseChangeLog:
+  - changeSet:
+      id: 032-user-profile-capability-reveal
+      author: komora
+      comment: >-
+        When this household was shown the one-time «ось що я ще вмію» teaser that follows their first weekly
+        plan. Null means never. A timestamp rather than a boolean for the same reason
+        users.last_checkin_prompt_sent_at is one: knowing it happened is worth less than knowing when.
+      changes:
+        - addColumn:
+            tableName: user_profile
+            columns:
+              - column:
+                  name: capability_reveal_sent_at
+                  type: TIMESTAMP WITH TIME ZONE

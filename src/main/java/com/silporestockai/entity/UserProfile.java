@@ -107,4 +107,8 @@ public class UserProfile {
     @Enumerated(EnumType.STRING)
     @Column(name = "cooking_time_preference", length = 32)
     private CookingTimePreference cookingTimePreference;
+
+    /** When the one-time capability teaser (task 70) went out. Null means it has not. */
+    @Column(name = "capability_reveal_sent_at")
+    private Instant capabilityRevealSentAt;
 }
