@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 # Deploy Комора on the demo host (task 59). Run this ON THE SERVER, from the repo root.
 #
-#   scripts/deploy.sh              # pull, build, restart, verify
-#   scripts/deploy.sh --no-pull    # deploy what is already checked out (a hotfix you edited on the box)
-#   scripts/deploy.sh --no-build   # restart with the image already built (config-only change)
+#   scripts/deploy.sh              # pull the image CI published, restart, verify
+#   scripts/deploy.sh --build      # build the image here instead (offline, or a commit CI has not seen)
+#   scripts/deploy.sh --no-pull    # skip `git pull` (a hotfix you edited on the box)
 #
 # Safe to run repeatedly: it is the same command for the first deploy and for every update.
+#
+# Normally you do not run this at all. Watchtower (task 69) polls ghcr.io and deploys a green build on its
+# own; this script is what you reach for to skip the wait, to deploy a commit CI has not built, or to bring
+# the stack up the very first time.
 #
 # What it deliberately does NOT do: run migrations. Liquibase runs inside the app at startup and the
 # schema is validated against the entities (ddl-auto: validate), so a changeset that failed to apply
@@ -16,13 +20,15 @@ cd "$(dirname "$0")/.."
 
 COMPOSE=(docker compose -f docker-compose.prod.yml --env-file .env.prod)
 DO_PULL=1
-DO_BUILD=1
+MODE=registry
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --no-pull)  DO_PULL=0; shift ;;
-        --no-build) DO_BUILD=0; shift ;;
-        -h|--help)  sed -n '2,10p' "$0"; exit 0 ;;
+        # Build the image here instead of pulling what CI published. For working offline, or on a commit
+        # that has not been through CI yet.
+        --build)    MODE=build; shift ;;
+        -h|--help)  sed -n '2,12p' "$0"; exit 0 ;;
         *)          echo "unknown flag: $1" >&2; exit 2 ;;
     esac
 done
@@ -69,14 +75,20 @@ if [[ "$DO_PULL" == 1 ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-if [[ "$DO_BUILD" == 1 ]]; then
-    step "build image"
+if [[ "$MODE" == "registry" ]]; then
+    step "pull the published image"
+    # What CI built from this commit's branch, tagged latest. Seconds rather than minutes, and it sidesteps
+    # the Gradle build being OOM-killed on a small VPS entirely — that failure belongs to --build now.
+    # A 'denied' or 'not found' here usually means CI has not published yet: check the Actions run, or
+    # fall back to --build.
+    "${COMPOSE[@]}" pull app
+else
+    step "build image locally"
     # Gradle inside the build stage wants well over a gigabyte. On a 1 GB VPS this is where a deploy dies,
     # with a JVM that was OOM-killed rather than an error message. If that happens, either add swap:
     #   fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
-    # or build the image on your laptop and ship it, skipping this step entirely:
-    #   docker save silpo-restock-ai:latest | ssh <host> 'docker load'
-    #   scripts/deploy.sh --no-build
+    # or build the image on your laptop and ship it:
+    #   docker save ghcr.io/javaandscriptdeveloper/silporestockai:latest | ssh <host> 'docker load'
     "${COMPOSE[@]}" build app
 fi
 
@@ -159,6 +171,10 @@ if [[ "$CODE" == "404" ]]; then
 else
     echo "WARNING: /actuator answered ${CODE} publicly — MANAGEMENT_PORT is not taking effect." >&2
 fi
+
+# Which image is actually serving, so "did my fix deploy?" has an answer that is not a guess. With
+# Watchtower running, this can legitimately be newer than the commit you just pulled.
+echo "running image: $(docker inspect -f '{{.Config.Image}}' komora-app 2>/dev/null || echo unknown)"
 
 # Did the app manage to tell Telegram where to deliver? It does this itself at boot; this only reports it,
 # matching the success line and the failure line both, since a wrong token fails here and nowhere else.

@@ -97,8 +97,16 @@ observability-local-down: ## Tear the local observability harness down
 
 # --- Production (task 59). Run these ON THE SERVER; they need .env.prod, which never leaves it. ---
 
-deploy: ## Deploy on the server: pull, build, restart, verify (see docs/RUNBOOK.md "Deploy checklist")
+deploy: ## Deploy on the server: git pull, pull the CI image, restart, verify (RUNBOOK "Deploy checklist")
 	./scripts/deploy.sh
+
+deploy-build: ## Same, but build the image on this machine instead of pulling what CI published
+	./scripts/deploy.sh --build
+
+prod-pull: ## Skip Watchtower's poll: pull the newest published image and restart the app now
+	$(PROD) pull app
+	$(PROD) up -d app
+	@echo "running image: $$(docker inspect -f '{{.Config.Image}}' komora-app 2>/dev/null || echo unknown)"
 
 prod-up: ## Start the production stack without pulling or rebuilding
 	$(PROD) up -d
