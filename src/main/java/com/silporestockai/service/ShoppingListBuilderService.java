@@ -391,7 +391,9 @@ public class ShoppingListBuilderService {
         }
         List<ShoppingListItem> items = currentItems(user.getId());
         if (items.isEmpty()) {
-            telegramOutboundService.sendMessage(chatId, messages.couldNotBuildText());
+            // An old keyboard: the list under it was ordered or cancelled since. Say that, not «describe it
+            // differently or send a photo» — nobody described anything, they tapped a button.
+            telegramOutboundService.sendMessage(chatId, messages.nothingLeftToOrderText());
             return;
         }
         // The first confirmed basket is what every later check-in is compared against; a later one is not.

@@ -259,6 +259,14 @@ public class ShoppingListMessageService {
         return "Не вдалось скласти список. Спробуй описати інакше або надішли фото.";
     }
 
+    /**
+     * «Замовити» tapped under a list that is gone — ordered already, or cancelled. Live it answered with
+     * {@link #couldNotBuildText()}, which talks about describing products and photos: the wrong story for a tap.
+     */
+    public String nothingLeftToOrderText() {
+        return "Цей список уже замовлено або скасовано. Натисни «Список», щоб скласти новий.";
+    }
+
     public String cancelledText() {
         return "Скасував. Натисни «Список», коли будемо збирати новий.";
     }

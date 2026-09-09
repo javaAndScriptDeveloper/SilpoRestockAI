@@ -525,6 +525,17 @@ class ShoppingListBuilderIntegrationTest extends AbstractIntegrationTest {
                 .containsExactly("Молоко");
     }
 
+    /** Live: «Замовити» under a list that had just been ordered talked about describing products and photos. */
+    @Test
+    void orderingAListThatIsGoneSaysSoRatherThanBlamingTheDescription() throws Exception {
+        conversationStateService.save(CHAT_ID, ConversationFlow.LIST_BUILDING, "AWAITING_APPROVAL", java.util.Map.of());
+
+        tapButton(1, ShoppingListMessageService.CALLBACK_ORDER);
+
+        assertThat(lastMessageText()).contains("уже замовлено або скасовано").doesNotContain("надішли фото");
+        assertThat(customerOrderRepository.findAll()).isEmpty();
+    }
+
     @Test
     void anUnreadableAnswerAsksAgainRatherThanOrderingSomething() throws Exception {
         sendText(1, "/list");
