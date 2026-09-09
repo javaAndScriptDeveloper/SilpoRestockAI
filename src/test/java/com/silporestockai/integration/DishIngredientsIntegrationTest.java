@@ -243,6 +243,9 @@ class DishIngredientsIntegrationTest extends AbstractIntegrationTest {
         assertThat(orders).hasSize(1);
         assertThat(orders.getFirst().getType()).isEqualTo(OrderType.AD_HOC);
         assertThat(orders.getFirst().getStatus()).isEqualTo(OrderStatus.DRAFT);
+        // Task 75: whichever message started this — the sentence, or the «Так, замовляй» tap — is the request.
+        assertThat(orders.getFirst().getTriggerIntent()).isEqualTo("DISH_INGREDIENTS_ORDER");
+        assertThat(orders.getFirst().getRequestedAt()).isNotNull();
         // Task 09's path: resolved by name search, unresolved lines named, nothing invented.
         assertThat(MCP.calledTools()).contains("silpo_find_products_batch");
         assertThat(sentTexts())

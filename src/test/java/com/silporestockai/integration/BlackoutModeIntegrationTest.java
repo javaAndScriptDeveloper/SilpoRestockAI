@@ -201,6 +201,8 @@ class BlackoutModeIntegrationTest extends AbstractIntegrationTest {
                 .findByUserIdAndStatus(user.getId(), OrderStatus.DRAFT)
                 .getFirst();
         assertThat(draft.getType()).isEqualTo(OrderType.AD_HOC);
+        // Task 75: the slash command is a request too, filed under the same intent name as the sentence.
+        assertThat(draft.getTriggerIntent()).isEqualTo("BLACKOUT");
         // The same keyboard task 10 built, not a second one.
         assertThat(TELEGRAM.sentMessages().getLast().toString()).contains(CartMessageService.CALLBACK_CONFIRM);
     }

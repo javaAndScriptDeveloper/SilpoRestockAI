@@ -4,11 +4,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.silporestockai.entity.CustomerOrder;
 import com.silporestockai.entity.SilpoOAuthToken;
 import com.silporestockai.entity.User;
 import com.silporestockai.entity.UserProfile;
 import com.silporestockai.model.ConversationFlow;
+import com.silporestockai.model.OrderStatus;
 import com.silporestockai.repository.ConversationStateRepository;
+import com.silporestockai.repository.CustomerOrderRepository;
 import com.silporestockai.repository.ScheduledAdHocTaskRepository;
 import com.silporestockai.repository.SilpoOAuthTokenRepository;
 import com.silporestockai.repository.UserProfileRepository;
@@ -58,6 +61,9 @@ class IntentRouterIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
     private ConversationStateRepository conversationStateRepository;
+
+    @Autowired
+    private CustomerOrderRepository customerOrderRepository;
 
     @Autowired
     private ScheduledAdHocTaskRepository scheduledAdHocTaskRepository;
@@ -277,6 +283,14 @@ class IntentRouterIntegrationTest extends AbstractIntegrationTest {
                         .orElseThrow()
                         .getCurrentFlow())
                 .isEqualTo(com.silporestockai.model.ConversationFlow.CART_CONFIRMATION);
+        // Task 75: the draft knows which intent asked for it, and the clock started before the classification
+        // call — so intent→order speed includes the thinking, not just the shopping.
+        CustomerOrder draft = customerOrderRepository.findAll().stream()
+                .filter(order -> order.getStatus() == OrderStatus.DRAFT)
+                .findFirst()
+                .orElseThrow();
+        assertThat(draft.getTriggerIntent()).isEqualTo("BLACKOUT");
+        assertThat(draft.getRequestedAt()).isBeforeOrEqualTo(draft.getCreatedAt());
     }
 
     private void sendVoice(int updateId) throws Exception {
