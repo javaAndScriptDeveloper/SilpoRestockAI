@@ -73,6 +73,9 @@ class CartConfirmationIntegrationTest extends AbstractIntegrationTest {
     private ConversationStateRepository conversationStateRepository;
 
     @Autowired
+    private com.silporestockai.repository.CheckinRepository checkinRepository;
+
+    @Autowired
     private UserProfileRepository userProfileRepository;
 
     @Autowired
@@ -127,6 +130,7 @@ class CartConfirmationIntegrationTest extends AbstractIntegrationTest {
         TELEGRAM.reset();
         MCP.reset();
         shoppingListItemRepository.deleteAll();
+        checkinRepository.deleteAll();
         baselineBasketRepository.deleteAll();
         customerOrderRepository.deleteAll();
         conversationStateRepository.deleteAll();
@@ -286,6 +290,61 @@ class CartConfirmationIntegrationTest extends AbstractIntegrationTest {
         List<CustomerOrder> orders = customerOrderRepository.findByUserIdOrderByCreatedAtDesc(user.getId());
         assertThat(orders).hasSize(1);
         assertThat(orders.getFirst().getItems()).hasSize(5);
+    }
+
+    /** Live: «хліб є» in the check-in, and the «Докласти» tap twenty minutes later brought two loaves. */
+    @Test
+    void theTopUpTapLeavesOutWhatTheCheckinSaidIsStillThere() throws Exception {
+        User user = onboardedUser();
+        baselineBasketRepository.save(BaselineBasket.builder()
+                .id(UUID.randomUUID())
+                .userId(user.getId())
+                .items(List.of(
+                        new BasketItem("b-chicken", "Філе курчати", "кг", BigDecimal.ONE, new BigDecimal("700")),
+                        new BasketItem("b-milk", "Молоко", "шт", new BigDecimal("2"), new BigDecimal("46")),
+                        new BasketItem("b-bread", "Хліб", "шт", BigDecimal.ONE, new BigDecimal("28"))))
+                .confirmedAt(Instant.now())
+                .isCurrent(true)
+                .build());
+        checkinRepository.save(com.silporestockai.entity.Checkin.builder()
+                .id(UUID.randomUUID())
+                .userId(user.getId())
+                .rawInputText("хліб є")
+                .parsedDelta(new com.silporestockai.model.CheckinDelta(List.of("Хліб"), List.of(), List.of()))
+                .receivedAt(Instant.now())
+                .build());
+        String context = """
+                {"cartId":"cart-1","branchId":"branch-7","companyId":"company-3","deliveryType":"delivery","items":[]}""";
+        String refused = """
+                {"cartId":"cart-1","branchId":"branch-7","companyId":"company-3","deliveryType":"delivery",\
+                "items":[{"productId":"p-1","name":"Цибуля","unit":"кг","quantity":0.5,"price":25.5},\
+                {"productId":"p-2","name":"Гречка","unit":"кг","quantity":1,"price":48}],\
+                "total":73.5,"productsTotal":73.5,"validations":[\
+                {"level":"error","type":"order","message":"order.cost.min","context":{"orderCostMin":799}}],\
+                "checkoutWebLink":null,"checkoutMobileLink":null}""";
+        String toppedUp = """
+                {"cartId":"cart-1","branchId":"branch-7","companyId":"company-3","deliveryType":"delivery",\
+                "items":[{"productId":"p-1","name":"Цибуля","unit":"кг","quantity":0.5,"price":25.5},\
+                {"productId":"p-2","name":"Гречка","unit":"кг","quantity":1,"price":48},\
+                {"productId":"b-milk","name":"Молоко","unit":"шт","quantity":2,"price":46},\
+                {"productId":"b-chicken","name":"Філе курчати","unit":"кг","quantity":1,"price":700}],\
+                "total":865.5,"productsTotal":865.5,"validations":[],\
+                "checkoutWebLink":"https://silpo.ua/checkout/cart-1","checkoutMobileLink":"silpo://checkout/cart-1"}""";
+        MCP.respondToToolInOrder("silpo_get_shopping_cart_by_id", context, refused, context, context, toppedUp);
+        cartConfirmationService.present(user, shoppingList());
+
+        tapButton(1, CartMessageService.CALLBACK_TOP_UP);
+
+        List<JsonNode> adds = MCP.callArguments("silpo_add_or_update_cart_products");
+        assertThat(adds).hasSize(2);
+        List<String> toppedUpIds = new java.util.ArrayList<>();
+        adds.get(1)
+                .path("products")
+                .forEach(product -> toppedUpIds.add(product.path("productId").asText()));
+        assertThat(toppedUpIds).contains("b-milk", "b-chicken").doesNotContain("b-bread");
+        assertThat(textOf(TELEGRAM.sentMessages().getLast()))
+                .doesNotContain("Хліб")
+                .contains("865.50");
     }
 
     /** Without a baseline there is nothing to top up from, so the button is not offered and the message says so. */

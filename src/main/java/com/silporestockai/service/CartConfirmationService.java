@@ -57,6 +57,7 @@ public class CartConfirmationService {
     private static final ObjectMapper MAPPER = new ObjectMapper().findAndRegisterModules();
 
     private final CartBuildingService cartBuildingService;
+    private final InventoryTrendService inventoryTrendService;
     private final ObservabilityService observabilityService;
     private final CustomerOrderRepository customerOrderRepository;
     private final BaselineBasketRepository baselineBasketRepository;
@@ -195,7 +196,10 @@ public class CartConfirmationService {
         }
         CartSummary topped;
         try {
-            topped = cartBuildingService.topUp(user.getId(), summary);
+            // What the last check-in said is still there stays out — «хліб є» twenty minutes earlier, and the
+            // tap must not answer with two loaves. Same rule as the reorder's automatic top-up.
+            topped = cartBuildingService.topUp(
+                    user.getId(), summary, new java.util.HashSet<>(inventoryTrendService.getStillHave(user.getId())));
         } catch (RuntimeException e) {
             log.error("could not top cart {} up for user {}", summary.cartId(), user.getId(), e);
             observabilityService.recordFailureMessage("cart_topup", "unexpected");
