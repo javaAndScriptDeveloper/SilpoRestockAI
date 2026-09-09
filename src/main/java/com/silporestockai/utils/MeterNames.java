@@ -34,6 +34,15 @@ public final class MeterNames {
     public static final String PROMOTION_SHARE_OVERALL = "komora.promotion.share.overall";
     public static final String PROMOTION_REVENUE_OVERALL = "komora.promotion.revenue.overall";
     public static final String PROMOTION_CATEGORIES = "komora.promotion.categories";
+    /** Task 75: intent→order speed, per intent and as an {@code ALL} row, read off the table. */
+    public static final String INTENT_ORDER_MEDIAN = "komora.intent.order.median";
+
+    public static final String INTENT_ORDERS = "komora.intent.orders";
+    /** Task 37's pitch numbers as gauges: check-in prompts vs answers, reorders by edited, longest unedited run. */
+    public static final String CHECKINS = "komora.checkins";
+
+    public static final String REORDERS = "komora.reorders";
+    public static final String TRUST_STREAK = "komora.trust.streak";
 
     // --- Counters, timers and summaries, recorded at the call site ---
     public static final String ONBOARDING_STARTED = "komora.onboarding.started";
@@ -49,6 +58,8 @@ public final class MeterNames {
     public static final String CLAUDE_CALL = "komora.claude.call";
     public static final String FAILURE_MESSAGE = "komora.failure.message";
     public static final String INTENT_CLASSIFIED = "komora.intent.classified";
+    /** Task 75: the timer from a routed sentence to the confirmed order it produced, tagged by intent. */
+    public static final String INTENT_ORDER = "komora.intent.order";
 
     // --- Tag keys, so a dashboard filter and the code that sets it cannot drift ---
     public static final String TAG_TYPE = "type";
@@ -66,9 +77,14 @@ public final class MeterNames {
     public static final String TAG_EVENT = "event";
     public static final String TAG_CATEGORY = "category";
     public static final String TAG_METHOD = "method";
+    public static final String TAG_INTENT = "intent";
+    public static final String TAG_EDITED = "edited";
 
     /** The tag value the combined («обидва пули») rollup series carries, so one panel can pick it out. */
     public static final String POOL_ALL = "ALL";
+
+    /** The {@code intent} tag value of the row that folds every intent together. */
+    public static final String INTENT_ALL = "ALL";
 
     private MeterNames() {}
 }

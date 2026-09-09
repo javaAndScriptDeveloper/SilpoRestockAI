@@ -22,6 +22,12 @@ import java.util.List;
  * @param medianToFirstOrder median onboarding→first confirmed order, or null when nobody has ordered yet
  * @param fastestToFirstOrder the quickest one, or null
  * @param promotions per-placement funnel counts
+ * @param intentOrders intent→order speed per intent plus the {@code ALL} row (task 75)
+ * @param checkinPromptsSent check-in questions the bot has asked, across every household
+ * @param checkinsAnswered check-in answers received
+ * @param reordersUnedited reorder proposals confirmed exactly as proposed
+ * @param reordersEdited reorder proposals the household changed before confirming
+ * @param trustStreakMax the longest run of unedited confirmations any household has
  */
 public record ObservabilitySnapshot(
         long usersRegistered,
@@ -34,10 +40,17 @@ public record ObservabilitySnapshot(
         long unresolvedLines,
         Duration medianToFirstOrder,
         Duration fastestToFirstOrder,
-        List<PromotionEventCount> promotions) {
+        List<PromotionEventCount> promotions,
+        List<IntentOrderStat> intentOrders,
+        long checkinPromptsSent,
+        long checkinsAnswered,
+        long reordersUnedited,
+        long reordersEdited,
+        int trustStreakMax) {
 
     /** The value the gauges are registered against before the first refresh runs — all zero, nothing null. */
     public static ObservabilitySnapshot empty() {
-        return new ObservabilitySnapshot(0, 0, 0, 0, List.of(), 0, 0, 0, null, null, List.of());
+        return new ObservabilitySnapshot(
+                0, 0, 0, 0, List.of(), 0, 0, 0, null, null, List.of(), List.of(), 0, 0, 0, 0, 0);
     }
 }

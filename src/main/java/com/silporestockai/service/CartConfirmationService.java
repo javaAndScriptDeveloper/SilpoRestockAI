@@ -22,6 +22,7 @@ import com.silporestockai.repository.CustomerOrderRepository;
 import com.silporestockai.service.telegram.CartMessageService;
 import com.silporestockai.service.telegram.TelegramOutboundService;
 import java.math.RoundingMode;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -368,6 +369,10 @@ public class CartConfirmationService {
         // total is the one the household actually approved.
         observabilityService.recordConfirmedOrder(
                 order.getType(), order.getTotal(), summary.items().size());
+        if (order.getTriggerIntent() != null && order.getRequestedAt() != null) {
+            observabilityService.recordIntentToOrder(
+                    order.getTriggerIntent(), Duration.between(order.getRequestedAt(), order.getConfirmedAt()));
+        }
         shoppingListService.markOrdered(user.getId());
         if (order.getType() == OrderType.INITIAL) {
             storeBaseline(user.getId(), order);

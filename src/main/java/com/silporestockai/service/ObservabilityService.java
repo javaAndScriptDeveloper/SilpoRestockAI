@@ -3,6 +3,8 @@ package com.silporestockai.service;
 import com.silporestockai.config.ObservabilityProperties;
 import com.silporestockai.entity.PartnerPromotion;
 import com.silporestockai.model.FirstOrderDelay;
+import com.silporestockai.model.IntentOrderDelay;
+import com.silporestockai.model.IntentOrderStat;
 import com.silporestockai.model.ObservabilitySnapshot;
 import com.silporestockai.model.OnboardingCompletedEvent;
 import com.silporestockai.model.OrderStatus;
@@ -11,9 +13,11 @@ import com.silporestockai.model.OrderType;
 import com.silporestockai.model.PromotionEventCount;
 import com.silporestockai.model.PromotionMetrics;
 import com.silporestockai.model.PromotionRollup;
+import com.silporestockai.repository.CheckinRepository;
 import com.silporestockai.repository.ConversationStateRepository;
 import com.silporestockai.repository.CustomerOrderRepository;
 import com.silporestockai.repository.PartnerPromotionEventRepository;
+import com.silporestockai.repository.TrustLevelRepository;
 import com.silporestockai.repository.UserProfileRepository;
 import com.silporestockai.repository.UserRepository;
 import com.silporestockai.utils.MeterNames;
@@ -29,7 +33,9 @@ import java.time.Clock;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.function.ToDoubleFunction;
@@ -64,6 +70,8 @@ public class ObservabilityService {
     private final CustomerOrderRepository customerOrderRepository;
     private final ConversationStateRepository conversationStateRepository;
     private final PartnerPromotionEventRepository partnerPromotionEventRepository;
+    private final CheckinRepository checkinRepository;
+    private final TrustLevelRepository trustLevelRepository;
     private final PromotionMetricsService promotionMetricsService;
     private final Clock clock;
 
@@ -82,6 +90,11 @@ public class ObservabilityService {
     private MultiGauge overallShareGauge;
     private MultiGauge overallRevenueGauge;
     private MultiGauge categoriesGauge;
+
+    /** Task 75: intent→order speed. Tag values are intent names, so rows are re-registered on every refresh. */
+    private MultiGauge intentMedianGauge;
+
+    private MultiGauge intentCountGauge;
 
     /**
      * Registers every gauge against the snapshot holder. No database access here on purpose: bean ordering relative to
@@ -118,6 +131,31 @@ public class ObservabilityService {
 
         firstOrder("median", s -> s.medianToFirstOrder());
         firstOrder("fastest", s -> s.fastestToFirstOrder());
+
+        // Task 37's pitch table, as series: the guest-value section of the business dashboard divides these.
+        stat(MeterNames.CHECKINS, "Check-in questions the bot asked", "prompted", s -> s.checkinPromptsSent());
+        stat(MeterNames.CHECKINS, "Check-in answers received", "answered", s -> s.checkinsAnswered());
+        Gauge.builder(MeterNames.REORDERS, snapshot, holder -> holder.get().reordersUnedited())
+                .description("Reorder proposals confirmed exactly as proposed")
+                .tag(MeterNames.TAG_EDITED, "false")
+                .register(meterRegistry);
+        Gauge.builder(MeterNames.REORDERS, snapshot, holder -> holder.get().reordersEdited())
+                .description("Reorder proposals the household changed before confirming")
+                .tag(MeterNames.TAG_EDITED, "true")
+                .register(meterRegistry);
+        stat(
+                MeterNames.TRUST_STREAK,
+                "Longest run of unedited confirmations any household has",
+                "max",
+                s -> s.trustStreakMax());
+
+        intentMedianGauge = MultiGauge.builder(MeterNames.INTENT_ORDER_MEDIAN)
+                .description("Median time from a routed sentence to the confirmed order it produced")
+                .baseUnit("seconds")
+                .register(meterRegistry);
+        intentCountGauge = MultiGauge.builder(MeterNames.INTENT_ORDERS)
+                .description("Confirmed orders a chat intent asked for")
+                .register(meterRegistry);
 
         promotionGauge = MultiGauge.builder(MeterNames.PROMOTION_EVENTS)
                 .description("Partner placement funnel, by event")
@@ -164,6 +202,7 @@ public class ObservabilityService {
         elapsed.sort(Comparator.naturalOrder());
 
         List<PromotionEventCount> promotions = partnerPromotionEventRepository.funnelCounts();
+        List<IntentOrderStat> intentOrders = intentOrderStats(customerOrderRepository.intentOrderDelays());
         snapshot.set(new ObservabilitySnapshot(
                 userRepository.count(),
                 userProfileRepository.count(),
@@ -176,7 +215,26 @@ public class ObservabilityService {
                 customerOrderRepository.unresolvedCartLines(),
                 MetricsService.median(elapsed),
                 elapsed.isEmpty() ? null : elapsed.getFirst(),
-                promotions));
+                promotions,
+                intentOrders,
+                userRepository.checkinPromptsSent(),
+                checkinRepository.count(),
+                customerOrderRepository.countByStatusAndEditedBeforeConfirm(OrderStatus.CONFIRMED, false),
+                customerOrderRepository.countByStatusAndEditedBeforeConfirm(OrderStatus.CONFIRMED, true),
+                trustLevelRepository.longestUneditedStreak()));
+
+        intentMedianGauge.register(
+                intentOrders.stream()
+                        .map(stat -> MultiGauge.Row.of(Tags.of(MeterNames.TAG_INTENT, stat.intent()), (double)
+                                stat.median().toSeconds()))
+                        .toList(),
+                true);
+        intentCountGauge.register(
+                intentOrders.stream()
+                        .map(stat ->
+                                MultiGauge.Row.of(Tags.of(MeterNames.TAG_INTENT, stat.intent()), (double) stat.count()))
+                        .toList(),
+                true);
 
         // Tag values here are data, not code, so this set has to be re-registered rather than declared once.
         promotionGauge.register(
@@ -194,6 +252,39 @@ public class ObservabilityService {
                 true);
 
         refreshPlacementGauges();
+    }
+
+    /**
+     * Intent→order speed per intent, plus one {@code ALL} row over every qualifying order (task 75).
+     *
+     * <p>A confirmation stamped before its own request — clock skew, or a row edited by hand — is skipped rather than
+     * counted as instant. An intent with nothing left after that publishes no row: «No data» is the truth, a zero
+     * would read as «confirmed in no time at all».
+     */
+    static List<IntentOrderStat> intentOrderStats(List<IntentOrderDelay> delays) {
+        Map<String, List<Duration>> byIntent = new LinkedHashMap<>();
+        List<Duration> all = new ArrayList<>();
+        for (IntentOrderDelay delay : delays) {
+            if (delay.confirmedAt().isBefore(delay.requestedAt())) {
+                continue;
+            }
+            Duration took = Duration.between(delay.requestedAt(), delay.confirmedAt());
+            byIntent.computeIfAbsent(delay.intent(), intent -> new ArrayList<>())
+                    .add(took);
+            all.add(took);
+        }
+        List<IntentOrderStat> stats = new ArrayList<>();
+        byIntent.forEach((intent, durations) -> stats.add(statOf(intent, durations)));
+        if (!all.isEmpty()) {
+            stats.add(statOf(MeterNames.INTENT_ALL, all));
+        }
+        return stats;
+    }
+
+    private static IntentOrderStat statOf(String intent, List<Duration> durations) {
+        List<Duration> sorted = new ArrayList<>(durations);
+        sorted.sort(Comparator.naturalOrder());
+        return new IntentOrderStat(intent, sorted.size(), MetricsService.median(sorted));
     }
 
     /**
@@ -313,6 +404,16 @@ public class ObservabilityService {
                 .increment();
     }
 
+    /**
+     * A chat intent's order was confirmed, this long after the sentence arrived (task 75). The histogram behind
+     * the technical dashboard's per-hour p95; the business dashboard reads the restart-safe median gauge instead.
+     */
+    public void recordIntentToOrder(String intent, Duration took) {
+        meterRegistry
+                .timer(MeterNames.INTENT_ORDER, MeterNames.TAG_INTENT, intent)
+                .record(took);
+    }
+
     /** How a cart build ended, and how long it took. */
     public void recordCartBuild(String outcome, Duration took) {
         meterRegistry
@@ -366,6 +467,13 @@ public class ObservabilityService {
                 .description(description)
                 .baseUnit(unit)
                 .tag(MeterNames.TAG_TYPE, type)
+                .register(meterRegistry);
+    }
+
+    private void stat(String name, String description, String stat, ToDoubleFunction<ObservabilitySnapshot> read) {
+        Gauge.builder(name, snapshot, holder -> read.applyAsDouble(holder.get()))
+                .description(description)
+                .tag(MeterNames.TAG_STAT, stat)
                 .register(meterRegistry);
     }
 

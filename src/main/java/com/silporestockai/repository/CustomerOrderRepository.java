@@ -2,6 +2,7 @@ package com.silporestockai.repository;
 
 import com.silporestockai.entity.CustomerOrder;
 import com.silporestockai.model.FirstOrderDelay;
+import com.silporestockai.model.IntentOrderDelay;
 import com.silporestockai.model.OrderStatus;
 import com.silporestockai.model.OrderTotals;
 import java.util.List;
@@ -107,4 +108,18 @@ public interface CustomerOrderRepository extends JpaRepository<CustomerOrder, UU
             group by o.userId, u.createdAt
             """)
     List<FirstOrderDelay> firstOrderDelays();
+
+    /** Every confirmed order a chat intent asked for, with the two timestamps intent→order speed is made of (task 75). */
+    @Query("""
+            select new com.silporestockai.model.IntentOrderDelay(o.triggerIntent, o.requestedAt, o.confirmedAt)
+            from CustomerOrder o
+            where o.status = com.silporestockai.model.OrderStatus.CONFIRMED
+              and o.triggerIntent is not null
+              and o.requestedAt is not null
+              and o.confirmedAt is not null
+            """)
+    List<IntentOrderDelay> intentOrderDelays();
+
+    /** Reorder proposals by whether the household edited them — only reorders set the flag at all. */
+    long countByStatusAndEditedBeforeConfirm(OrderStatus status, Boolean editedBeforeConfirm);
 }

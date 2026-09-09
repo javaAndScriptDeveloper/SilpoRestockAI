@@ -31,6 +31,7 @@ import com.silporestockai.service.telegram.ReorderMessageService;
 import com.silporestockai.service.telegram.TelegramOutboundService;
 import java.time.Clock;
 import java.time.DayOfWeek;
+import java.time.Duration;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -295,6 +296,10 @@ public class ReorderConfirmationService {
         customerOrderRepository.save(order);
         observabilityService.recordConfirmedOrder(
                 order.getType(), cart.total(), cart.items().size());
+        if (order.getTriggerIntent() != null && order.getRequestedAt() != null) {
+            observabilityService.recordIntentToOrder(
+                    order.getTriggerIntent(), Duration.between(order.getRequestedAt(), order.getConfirmedAt()));
+        }
 
         if (edited) {
             supersedeBaseline(user.getId(), cart);

@@ -22,4 +22,8 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     @Query("select u from User u where exists "
             + "(select 1 from BaselineBasket b where b.userId = u.id and b.isCurrent = true)")
     List<User> findAllWithCurrentBaseline();
+
+    /** Check-in questions asked across every household — the denominator of the response rate (task 37). */
+    @Query("select coalesce(sum(u.checkinPromptsSent), 0) from User u")
+    long checkinPromptsSent();
 }

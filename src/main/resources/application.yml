@@ -84,6 +84,7 @@ management:
         komora.mcp.call: 100ms,250ms,500ms,1s,2s,5s,10s,30s
         komora.claude.call: 500ms,1s,2s,5s,10s,20s,45s,90s
         komora.cart.build: 1s,5s,10s,20s,45s,90s,180s
+        komora.intent.order: 30s,1m,2m,5m,10m,30m,1h,6h
 
 # Sensible defaults applied to every Resilience4j instance; Feign clients pick these up by client name.
 resilience4j:

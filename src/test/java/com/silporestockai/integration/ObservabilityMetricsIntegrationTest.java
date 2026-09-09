@@ -5,9 +5,11 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.silporestockai.entity.CategoryResolutionLog;
+import com.silporestockai.entity.Checkin;
 import com.silporestockai.entity.CustomerOrder;
 import com.silporestockai.entity.PartnerPromotion;
 import com.silporestockai.entity.PartnerPromotionEvent;
+import com.silporestockai.entity.TrustLevel;
 import com.silporestockai.entity.User;
 import com.silporestockai.entity.UserProfile;
 import com.silporestockai.model.BasketItem;
@@ -17,9 +19,11 @@ import com.silporestockai.model.PartnerPromotionEventType;
 import com.silporestockai.model.PartnerPromotionStatus;
 import com.silporestockai.model.PromotionType;
 import com.silporestockai.repository.CategoryResolutionLogRepository;
+import com.silporestockai.repository.CheckinRepository;
 import com.silporestockai.repository.CustomerOrderRepository;
 import com.silporestockai.repository.PartnerPromotionEventRepository;
 import com.silporestockai.repository.PartnerPromotionRepository;
+import com.silporestockai.repository.TrustLevelRepository;
 import com.silporestockai.repository.UserProfileRepository;
 import com.silporestockai.repository.UserRepository;
 import com.silporestockai.service.ObservabilityService;
@@ -69,8 +73,16 @@ class ObservabilityMetricsIntegrationTest extends AbstractIntegrationTest {
     @Autowired
     private CategoryResolutionLogRepository categoryResolutionLogRepository;
 
+    @Autowired
+    private CheckinRepository checkinRepository;
+
+    @Autowired
+    private TrustLevelRepository trustLevelRepository;
+
     @BeforeEach
     void clearOrders() {
+        checkinRepository.deleteAll();
+        trustLevelRepository.deleteAll();
         categoryResolutionLogRepository.deleteAll();
         promotionEventRepository.deleteAll();
         promotionRepository.deleteAll();
@@ -217,6 +229,110 @@ class ObservabilityMetricsIntegrationTest extends AbstractIntegrationTest {
         // Two resolutions and no candidate counts worth measuring: no baseline, therefore no lift series at all.
         // A zero here would read as «this placement achieved nothing» rather than «we do not know».
         assertThat(body).doesNotContain("komora_promotion_lift{");
+    }
+
+    /**
+     * Task 75: intent→order speed as the guest-value section reads it — a median per intent plus an ALL row, from
+     * the table rather than from this process, so a restart between the sentence and the dashboard changes nothing.
+     */
+    @Test
+    void publishesIntentToOrderMedianPerIntentAndOverall() throws Exception {
+        User user = newUser(4_075_001L);
+        intentOrder(user.getId(), "HANGOVER_RELIEF", 90);
+        intentOrder(user.getId(), "HANGOVER_RELIEF", 150);
+        intentOrder(user.getId(), "DISH_INGREDIENTS_ORDER", 400);
+        // A weekly cart: no intent, so it must not appear anywhere in these series.
+        confirmedOrder(user.getId(), OrderType.INITIAL, new BigDecimal("900.00"), new BigDecimal("900.00"), 3);
+
+        observabilityService.refresh();
+        String body = scrape();
+
+        assertThat(valueOf(body, "komora_intent_order_median_seconds", "intent=\"HANGOVER_RELIEF\""))
+                .isEqualTo(120.0);
+        assertThat(valueOf(body, "komora_intent_order_median_seconds", "intent=\"DISH_INGREDIENTS_ORDER\""))
+                .isEqualTo(400.0);
+        assertThat(valueOf(body, "komora_intent_order_median_seconds", "intent=\"ALL\""))
+                .isEqualTo(150.0);
+        assertThat(valueOf(body, "komora_intent_orders", "intent=\"ALL\"")).isEqualTo(3.0);
+        assertThat(valueOf(body, "komora_intent_orders", "intent=\"HANGOVER_RELIEF\""))
+                .isEqualTo(2.0);
+    }
+
+    @Test
+    void noIntentOrdersMeansNoIntentSeriesRatherThanZero() throws Exception {
+        observabilityService.refresh();
+        assertThat(scrape()).doesNotContain("komora_intent_order_median_seconds{");
+    }
+
+    @Test
+    void recordsTheIntentToOrderTimerAtConfirmation() throws Exception {
+        observabilityService.recordIntentToOrder("BLACKOUT", java.time.Duration.ofSeconds(42));
+
+        String body = scrape();
+
+        assertThat(body).contains("komora_intent_order_seconds_count{").contains("intent=\"BLACKOUT\"");
+        // The SLO buckets in application.yml are what a p95-per-hour panel reads.
+        assertThat(body).contains("komora_intent_order_seconds_bucket{");
+    }
+
+    /** Task 37's pitch numbers, which until now lived only in {@code make metrics}, as gauges the dashboard can read. */
+    @Test
+    void publishesCheckinReorderAndTrustGaugesForTheGuestSection() throws Exception {
+        User user = newUser(4_075_002L);
+        user.setCheckinPromptsSent(5);
+        userRepository.save(user);
+        checkinRepository.save(Checkin.builder()
+                .id(UUID.randomUUID())
+                .userId(user.getId())
+                .rawInputText("молоко закінчилось")
+                .receivedAt(Instant.now())
+                .build());
+        reorder(user.getId(), false);
+        reorder(user.getId(), false);
+        reorder(user.getId(), true);
+        trustLevelRepository.save(TrustLevel.builder()
+                .id(UUID.randomUUID())
+                .userId(user.getId())
+                .consecutiveUneditedConfirmations(4)
+                .build());
+
+        observabilityService.refresh();
+        String body = scrape();
+
+        assertThat(valueOf(body, "komora_checkins", "stat=\"prompted\"")).isEqualTo(5.0);
+        assertThat(valueOf(body, "komora_checkins", "stat=\"answered\"")).isEqualTo(1.0);
+        assertThat(valueOf(body, "komora_reorders", "edited=\"false\"")).isEqualTo(2.0);
+        assertThat(valueOf(body, "komora_reorders", "edited=\"true\"")).isEqualTo(1.0);
+        assertThat(valueOf(body, "komora_trust_streak", "stat=\"max\"")).isEqualTo(4.0);
+    }
+
+    private void intentOrder(UUID userId, String intent, long secondsToConfirm) {
+        Instant confirmedAt = Instant.now();
+        customerOrderRepository.save(CustomerOrder.builder()
+                .id(UUID.randomUUID())
+                .userId(userId)
+                .type(OrderType.AD_HOC)
+                .items(List.of(item(new BigDecimal("120.00"))))
+                .status(OrderStatus.CONFIRMED)
+                .total(new BigDecimal("820.00"))
+                .triggerIntent(intent)
+                .requestedAt(confirmedAt.minusSeconds(secondsToConfirm))
+                .createdAt(confirmedAt.minusSeconds(secondsToConfirm / 2))
+                .confirmedAt(confirmedAt)
+                .build());
+    }
+
+    private void reorder(UUID userId, boolean edited) {
+        customerOrderRepository.save(CustomerOrder.builder()
+                .id(UUID.randomUUID())
+                .userId(userId)
+                .type(OrderType.SCHEDULED_REORDER)
+                .items(List.of(item(new BigDecimal("80.00"))))
+                .status(OrderStatus.CONFIRMED)
+                .editedBeforeConfirm(edited)
+                .createdAt(Instant.now().minus(1, ChronoUnit.HOURS))
+                .confirmedAt(Instant.now())
+                .build());
     }
 
     private void resolution(UUID userId, String line, String productId, UUID promotionId, Integer candidates) {
