@@ -1369,24 +1369,24 @@ runtime.
 The image is `ghcr.io/javaandscriptdeveloper/silporestockai`, tagged `latest` (what Watchtower follows) and
 `sha-<short>` (what a rollback pins to).
 
-### One-time setup, after the first successful publish
+### Package visibility — check it once
 
-**GHCR creates a new package as private.** Watchtower has no credentials, so until this is changed it gets
-`denied` on every poll and nothing ever deploys — with no error on the server beyond Watchtower's own log.
-Do this once, right after the first green run on `main`:
+The package inherited **public** from the public repository on its first publish, which is what Watchtower
+needs: it carries no credentials by design. The image holds no secrets, since every value is injected from
+`.env.prod` at runtime, so public costs nothing.
 
-1. Open <https://github.com/javaAndScriptDeveloper/SilpoRestockAI/pkgs/container/silporestockai>
-2. *Package settings* → *Danger Zone* → **Change visibility** → *Public*
-
-Then confirm it from anywhere, with no login:
+Worth re-checking if CD ever goes quiet, because a private package fails in the least visible way possible:
+Watchtower gets `denied` on every poll, nothing deploys, and the app keeps serving the old image perfectly
+happily. The only evidence is in Watchtower's own log.
 
 ```bash
-docker manifest inspect ghcr.io/javaandscriptdeveloper/silporestockai:latest >/dev/null && echo "public, Watchtower can pull it"
+# From anywhere, with no login. Success means Watchtower can pull it.
+docker manifest inspect ghcr.io/javaandscriptdeveloper/silporestockai:latest >/dev/null && echo public
 ```
 
-The image holds no secrets — every value is injected from `.env.prod` at runtime — so public costs nothing.
-If you would rather keep it private, give Watchtower `REPO_USER` and a `REPO_PASS` token with the
-`read:packages` scope **and nothing wider**, and add them to `.env.prod` and the `watchtower` service.
+If it is ever private, either flip it back — package page → *Package settings* → *Danger Zone* →
+*Change visibility* → *Public* — or give Watchtower `REPO_USER` plus a `REPO_PASS` token holding the
+`read:packages` scope **and nothing wider**, never one that can also write packages or read the repository.
 
 ### The polling delay, stated as a number
 
@@ -1429,7 +1429,18 @@ docker inspect -f '{{.State.StartedAt}}' komora-app   # did it actually restart?
 ```
 
 `Only checking containers using enable label` in Watchtower's first lines is the confirmation that its
-scope is right. A scan should report `Scanned=1`.
+scope is right. A quiet scan reports `Scanned=1 Updated=0`; a deploy looks like this, and was verified
+against the real registry on 2026-09-09 before any server existed:
+
+```
+Found new ghcr.io/javaandscriptdeveloper/silporestockai:latest image (a34e65d8392f)
+Stopping /komora-app (1c6d08070c00) with SIGTERM
+Creating /komora-app
+Removing image 4a492746ff57
+Session done  Failed=0 Scanned=1 Updated=1
+```
+
+`Scanned=1` in that line is the safety property: Postgres and Caddy were never candidates.
 
 ### Known limits, stated rather than hidden
 
