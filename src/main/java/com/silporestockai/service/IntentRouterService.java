@@ -5,6 +5,7 @@ import com.silporestockai.client.stt.SpeechToTextClient;
 import com.silporestockai.entity.MealPlan;
 import com.silporestockai.entity.ShoppingListItem;
 import com.silporestockai.entity.User;
+import com.silporestockai.service.telegram.HelpContent;
 import com.silporestockai.service.telegram.TelegramOutboundService;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -32,35 +33,6 @@ import org.springframework.stereotype.Service;
 public class IntentRouterService {
 
     private static final double CONFIDENCE_THRESHOLD = 0.6;
-
-    private static final String HELP_TEXT = """
-            Кнопки внизу:
-            📝 Список — поточний список покупок: замовити або змінити.
-            📦 Замовлення — що з останнім замовленням: статус, сума, час доставки.
-            🗓 Заплановані — разові замовлення, які ще не виконав: змінити або скасувати.
-            🧾 Анкета — склад сім'ї, дієта, бюджет.
-            ❓ Інструкція — це повідомлення.
-            💬 Фідбек — напиши нам, що не так або що покращити; одне повідомлення, без обробки.
-
-            Усе інше — просто напиши. Наприклад:
-            — «Замов до п'ятниці вино та сир зі знижкою» — разове замовлення поза тижневим планом.
-            — «Що треба докупити?» — зберу дозамовлення того, що закінчується.
-            — «Прибери молоко зі списку, додай яйця» — правка поточного списку.
-            — «Зроби список як минулого разу» — покажу твої останні замовлення в «Сільпо», візьму обране за основу.
-            — «Де моє замовлення?» — статус і час доставки останнього замовлення (те саме, що кнопка «Замовлення»).
-            — «Замов усе для карбонари» (або фото готової страви з таким підписом) — зберу інгредієнти на одну страву.
-            — «Я захворів, гастрит» — тимчасово щадне харчування, потім сам поверну звичайне.
-            — «Зроби менш калорійним» — той самий раціон, менше калорій.
-            — «Хочу набрати масу» — план під набір маси.
-            — «Повертаємось до звичайного раціону» — вимкнути будь-який спецрежим.
-            — «Шукай тільки українського виробника» — фільтр на всі наступні пошуки.
-            — «Голова після вчорашнього» — мінералка й сорбенти, найближча доставка.
-            — «Світло вимкнули» — їжа без плити й холодильника.
-            — «Що їмо в середу?» — раціон по днях.
-            — «Підключи Google Календар» — вноситиму доставки в календар.
-
-            Компанією: додай мене в груповий чат — зберу напої на всіх за спільною згодою. Кожен пише реплаєм, \
-            що п'є, організатор закриває список, я пропоную, усі тиснуть 👍 — і кошик у «Сільпо» організатора.""";
 
     private final ClaudeApiClient claudeApiClient;
     private final SpeechToTextClient speechToTextClient;
@@ -122,7 +94,7 @@ public class IntentRouterService {
 
     /** The static "❓ Інструкція" content — a persistent-menu button, so it never needs a classification call. */
     public void sendHelp(User user) {
-        telegramOutboundService.sendMessage(user.getTelegramChatId(), HELP_TEXT);
+        telegramOutboundService.sendMessage(user.getTelegramChatId(), HelpContent.FULL);
     }
 
     /** Whether a voice note can be routed at all — decides what the routing layer says to one when it cannot. */
