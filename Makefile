@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 .PHONY: help run dev demo mcp-log test build format check db-up db-down up down image clean metrics promotions \
-	alloy-up alloy-down alloy-logs dashboard observability-local-up observability-local-down \
+	alloy-up alloy-down alloy-logs dashboard dashboards-json observability-local-up observability-local-down \
 	deploy prod-up prod-down prod-logs prod-ps webhook webhook-info
 
 # The production stack (task 59). Its own compose project name lives in docker-compose.prod.yml, so these
@@ -79,18 +79,24 @@ alloy-down: ## Stop Grafana Alloy
 alloy-logs: ## Follow Alloy's logs — where a rejected Grafana Cloud token shows up
 	docker compose --profile observability logs -f alloy
 
-dashboard: ## Push observability/grafana/komora-dashboard.json to Grafana (needs GRAFANA_URL + GRAFANA_API_TOKEN)
+dashboard: ## Push every observability/grafana/*.json dashboard to Grafana (needs GRAFANA_URL + GRAFANA_API_TOKEN)
 	@set -a; . ./$(ENV_FILE); set +a; \
-	jq -n --slurpfile d observability/grafana/komora-dashboard.json \
-	   '{dashboard: ($$d[0] + {id: null}), overwrite: true, message: "komora observability"}' \
-	| curl -sf -X POST -H "Authorization: Bearer $$GRAFANA_API_TOKEN" -H "Content-Type: application/json" \
-	    --data-binary @- "$$GRAFANA_URL/api/dashboards/db" \
-	| jq -r '"pushed: " + .url' \
-	|| echo "no push: are GRAFANA_URL and GRAFANA_API_TOKEN set in .env?"
+	for f in observability/grafana/*.json; do \
+	  jq -n --slurpfile d $$f \
+	     '{dashboard: ($$d[0] + {id: null}), overwrite: true, message: "komora dashboards"}' \
+	  | curl -sf -X POST -H "Authorization: Bearer $$GRAFANA_API_TOKEN" -H "Content-Type: application/json" \
+	      --data-binary @- "$$GRAFANA_URL/api/dashboards/db" \
+	  | jq -r '"pushed: " + .url' \
+	  || echo "no push for $$f: are GRAFANA_URL and GRAFANA_API_TOKEN set in .env?"; \
+	done
 
-observability-local-up: ## Throwaway Prometheus+Grafana rendering the same dashboard, no cloud token needed
+dashboards-json: ## Regenerate observability/grafana/*.json from build-dashboards.py (never hand-edit the JSON)
+	python3 observability/grafana/build-dashboards.py
+
+observability-local-up: ## Throwaway Prometheus+Grafana rendering the same two dashboards, no cloud token needed
 	docker compose -f observability/local/docker-compose.yml up -d
-	@echo "Grafana: http://localhost:3000/d/komora-observability  (anonymous admin)"
+	@echo "Business:  http://localhost:3000/d/komora-business  (anonymous admin)"
+	@echo "Technical: http://localhost:3000/d/komora-observability"
 
 observability-local-down: ## Tear the local observability harness down
 	docker compose -f observability/local/docker-compose.yml down -v

@@ -17,10 +17,11 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 
 /**
- * The committed Grafana dashboard queries metrics this application actually publishes (task 54).
+ * The committed Grafana dashboards query metrics this application actually publishes (tasks 54 and 75).
  *
  * <p>This is the cheap guard against the standard way a checked-in dashboard rots: a meter gets renamed, nothing
  * fails, and the panel quietly shows «No data» until somebody notices during a pitch. Parsing the JSON and mapping
@@ -28,10 +29,15 @@ import org.junit.jupiter.api.Test;
  *
  * <p>It deliberately does not check PromQL semantics — only that every name is real. An aggregation being wrong is
  * caught by looking at the dashboard; a name being wrong is not.
+ *
+ * <p>Task 75 adds the structural promises the two dashboards make: the business one has a guest section with no
+ * money in it and a Silpo section that leads with Attributed Revenue; the technical one has MCP RED per tool.
  */
 class DashboardJsonTest {
 
-    private static final Path DASHBOARD = Path.of("observability/grafana/komora-dashboard.json");
+    private static final Path DIRECTORY = Path.of("observability/grafana");
+    private static final Path BUSINESS = DIRECTORY.resolve("komora-business.json");
+    private static final Path TECHNICAL = DIRECTORY.resolve("komora-observability.json");
 
     /** Any {@code komora_…} identifier appearing in a PromQL expression. */
     private static final Pattern SERIES = Pattern.compile("komora_[a-z0-9_]+");
@@ -58,60 +64,99 @@ class DashboardJsonTest {
             "_seconds_max");
 
     @Test
-    void everySeriesTheDashboardQueriesIsAMeterTheAppPublishes() throws IOException {
+    void everySeriesEitherDashboardQueriesIsAMeterTheAppPublishes() throws IOException {
         Set<String> known = publishedMeterNames();
-        Set<String> queried = seriesReferencedByTheDashboard();
-
-        assertThat(queried).isNotEmpty();
-        Set<String> unknown = new TreeSet<>();
-        for (String series : queried) {
-            if (!isKnown(series, known)) {
-                unknown.add(series);
+        for (Path dashboard : dashboards()) {
+            Set<String> queried = seriesReferencedBy(dashboard);
+            assertThat(queried).as(dashboard.toString()).isNotEmpty();
+            Set<String> unknown = new TreeSet<>();
+            for (String series : queried) {
+                if (!isKnown(series, known)) {
+                    unknown.add(series);
+                }
             }
+            assertThat(unknown)
+                    .as(dashboard + " queries metrics that no MeterNames constant declares — either the meter was "
+                            + "renamed and the dashboard was not, or the panel was written against a metric that "
+                            + "was never implemented")
+                    .isEmpty();
         }
-        assertThat(unknown)
-                .as("dashboard panels query metrics that no MeterNames constant declares — either the meter was "
-                        + "renamed and the dashboard was not, or the panel was written against a metric that was "
-                        + "never implemented")
-                .isEmpty();
     }
 
     @Test
-    void theDashboardBindsItsDatasourceThroughAVariableSoOneFileFitsBothGrafanas() throws IOException {
-        JsonNode dashboard = new ObjectMapper().readTree(Files.readString(DASHBOARD));
-
-        JsonNode variable = dashboard.path("templating").path("list").get(0);
-        assertThat(variable.path("type").asText()).isEqualTo("datasource");
-        assertThat(variable.path("query").asText()).isEqualTo("prometheus");
-        // Hardcoding a datasource uid would tie the file to one Grafana; the local harness and Grafana Cloud have
-        // different ones, and the whole point is that the same file renders in both.
-        assertThat(Files.readString(DASHBOARD)).contains("${DS}");
-        assertThat(dashboard.path("uid").asText()).isEqualTo("komora-observability");
+    void exactlyTwoDashboardsExistAndEachBindsItsDatasourceThroughAVariable() throws IOException {
+        assertThat(dashboards()).containsExactlyInAnyOrder(BUSINESS, TECHNICAL);
+        assertThat(read(BUSINESS).path("uid").asText()).isEqualTo("komora-business");
+        assertThat(read(TECHNICAL).path("uid").asText()).isEqualTo("komora-observability");
+        for (Path path : dashboards()) {
+            JsonNode variable = read(path).path("templating").path("list").get(0);
+            assertThat(variable.path("type").asText()).isEqualTo("datasource");
+            assertThat(variable.path("query").asText()).isEqualTo("prometheus");
+            // Hardcoding a datasource uid would tie the file to one Grafana; the local harness and Grafana Cloud
+            // have different ones, and the whole point is that the same file renders in both.
+            assertThat(Files.readString(path)).contains("${DS}");
+        }
     }
 
     /**
-     * The partner section's acceptance criteria, as far as a file can carry them (task 64).
-     *
-     * <p>What a reader has to get in ten seconds cannot be asserted here. What can: that the words doing the
-     * explaining are present, that the stage percentage cannot render as a bar broken past its own bound, and that
-     * the raw event log is no longer what the section leads with.
+     * The business dashboard's two sections, as far as a file can carry the promise: the guest section carries no
+     * money at all, and the Silpo section leads with the featuring money.
      */
     @Test
-    void thePartnerSectionExplainsItselfWithoutNarration() throws IOException {
-        JsonNode dashboard = new ObjectMapper().readTree(Files.readString(DASHBOARD));
-        String whole = Files.readString(DASHBOARD);
+    void theBusinessDashboardKeepsMoneyOutOfTheGuestSection() throws IOException {
+        JsonNode dashboard = read(BUSINESS);
+        List<JsonNode> rows = dashboard.path("panels").findParents("type").stream()
+                .filter(panel -> "row".equals(panel.path("type").asText()))
+                .toList();
+        assertThat(rows)
+                .extracting(row -> row.path("title").asText())
+                .anyMatch(title -> title.contains("A ·"))
+                .anyMatch(title -> title.contains("B ·"));
+
+        for (JsonNode panel : panelsUnderRow(dashboard, "A ·")) {
+            String unit =
+                    panel.path("fieldConfig").path("defaults").path("unit").asText();
+            assertThat(unit)
+                    .as(
+                            "guest panel «%s» carries a currency unit",
+                            panel.path("title").asText())
+                    .doesNotStartWith("currency");
+            assertThat(panel.toString())
+                    .as(
+                            "guest panel «%s» queries a money series",
+                            panel.path("title").asText())
+                    .doesNotContain("_uah")
+                    .doesNotContain("₴");
+        }
+        List<String> silpoTitles = new ArrayList<>();
+        panelsUnderRow(dashboard, "B ·")
+                .forEach(panel -> silpoTitles.add(panel.path("title").asText()));
+        assertThat(silpoTitles).anyMatch(title -> title.contains("Attributed Revenue"));
+        assertThat(silpoTitles).anyMatch(title -> title.contains("PAID_PARTNER"));
+        assertThat(silpoTitles).anyMatch(title -> title.contains("OWN_BRAND_MARGIN_BOOST"));
+        assertThat(silpoTitles).anyMatch(title -> title.contains("GMV"));
+        // The guest section's own headline: the new speed metric, per intent.
+        assertThat(panelsUnderRow(dashboard, "A ·"))
+                .anyMatch(panel -> panel.toString().contains("komora_intent_order_median_seconds"));
+    }
+
+    /** Task 64's promises, carried over into the rebuilt featuring block. */
+    @Test
+    void theFeaturingBlockExplainsItselfWithoutNarration() throws IOException {
+        JsonNode dashboard = read(BUSINESS);
+        List<JsonNode> all = panels(dashboard);
 
         // The industry name for FSR, so anyone who has bought retail media recognises the number instantly.
-        assertThat(whole).contains("аналог Share of Shelf у retail media");
-        // Both pools are their own visual area, never one blended bar.
-        assertThat(titles(dashboard)).anyMatch(title -> title.contains("PAID_PARTNER"));
-        assertThat(titles(dashboard)).anyMatch(title -> title.contains("OWN_BRAND_MARGIN_BOOST"));
+        assertThat(all.stream()
+                        .filter(panel -> panel.path("title").asText().contains("Featured Share Rate"))
+                        .map(panel -> panel.path("description").asText()))
+                .anyMatch(description -> description.contains("Share of Shelf"));
 
-        List<JsonNode> conversion = panels(dashboard).stream()
+        List<JsonNode> conversion = all.stream()
                 .filter(panel -> panel.path("title").asText().contains("Conversion Rate"))
                 .toList();
         assertThat(conversion)
-                .as("stage-to-stage percentages must be labelled with the business term")
+                .as("stage-to-stage percentages must be labelled with the business term, once per pool")
                 .hasSize(2);
         for (JsonNode panel : conversion) {
             // The live run produced 125 %: the bar clamps, the printed value stays true, and the description says
@@ -120,15 +165,32 @@ class DashboardJsonTest {
                     .isEqualTo(100);
             assertThat(panel.path("description").asText()).contains("не суворо вкладена");
         }
+    }
 
-        JsonNode rawTable = panels(dashboard).stream()
-                .filter(panel -> "table".equals(panel.path("type").asText()))
-                .filter(panel -> panel.path("targets").toString().contains("komora_promotion_events"))
-                .findFirst()
-                .orElseThrow(() -> new AssertionError("the raw event table should still exist for drill-down"));
-        assertThat(parentRowIsCollapsed(dashboard, rawTable))
-                .as("the raw event log stays available but must not lead the section")
-                .isTrue();
+    @Test
+    void theTechnicalDashboardLeadsWithMcpRedPerTool() throws IOException {
+        JsonNode dashboard = read(TECHNICAL);
+        JsonNode first = dashboard.path("panels").get(0);
+        assertThat(first.path("type").asText()).isEqualTo("row");
+        assertThat(first.path("title").asText()).contains("RED");
+        List<String> expressions = expressions(dashboard);
+        assertThat(expressions)
+                .anyMatch(expr -> expr.contains("komora_mcp_call_seconds_count") && expr.contains("by (tool)"))
+                .anyMatch(
+                        expr -> expr.contains("komora_mcp_call_seconds_bucket") && expr.contains("histogram_quantile"))
+                .anyMatch(expr -> expr.contains("komora_claude_call_seconds"));
+    }
+
+    private static List<Path> dashboards() throws IOException {
+        try (Stream<Path> files = Files.list(DIRECTORY)) {
+            return files.filter(path -> path.toString().endsWith(".json"))
+                    .sorted()
+                    .toList();
+        }
+    }
+
+    private static JsonNode read(Path path) throws IOException {
+        return new ObjectMapper().readTree(Files.readString(path));
     }
 
     /** Every panel, including the ones nested inside a collapsed row. */
@@ -141,23 +203,26 @@ class DashboardJsonTest {
         return all;
     }
 
-    private static List<String> titles(JsonNode dashboard) {
-        return panels(dashboard).stream()
-                .map(panel -> panel.path("title").asText())
-                .toList();
-    }
-
-    private static boolean parentRowIsCollapsed(JsonNode dashboard, JsonNode panel) {
-        for (JsonNode row : dashboard.path("panels")) {
-            if ("row".equals(row.path("type").asText()) && row.path("collapsed").asBoolean()) {
-                for (JsonNode child : row.path("panels")) {
-                    if (child == panel) {
-                        return true;
-                    }
+    /**
+     * The panels that sit under a row whose title contains the marker — the ones that follow it in the top-level
+     * list until the next row, plus any nested inside it when the row is collapsed.
+     */
+    private static List<JsonNode> panelsUnderRow(JsonNode dashboard, String marker) {
+        List<JsonNode> under = new ArrayList<>();
+        boolean inside = false;
+        for (JsonNode panel : dashboard.path("panels")) {
+            if ("row".equals(panel.path("type").asText())) {
+                inside = panel.path("title").asText().contains(marker);
+                if (inside) {
+                    panel.path("panels").forEach(under::add);
                 }
+                continue;
+            }
+            if (inside) {
+                under.add(panel);
             }
         }
-        return false;
+        return under;
     }
 
     private static boolean isKnown(String series, Set<String> known) {
@@ -188,10 +253,9 @@ class DashboardJsonTest {
         return names;
     }
 
-    private static Set<String> seriesReferencedByTheDashboard() throws IOException {
-        JsonNode dashboard = new ObjectMapper().readTree(Files.readString(DASHBOARD));
+    private static Set<String> seriesReferencedBy(Path dashboard) throws IOException {
         Set<String> series = new TreeSet<>();
-        for (String expr : expressions(dashboard)) {
+        for (String expr : expressions(read(dashboard))) {
             Matcher matcher = SERIES.matcher(expr);
             while (matcher.find()) {
                 series.add(matcher.group());

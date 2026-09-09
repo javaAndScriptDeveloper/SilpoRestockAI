@@ -1,0 +1,1917 @@
+{
+  "uid": "komora-business",
+  "title": "Комора — Business",
+  "description": "Дві секції: A — цінність для гостя (сині плитки, без грошей), B — цінність і revenue для «Сільпо» (зелені плитки). Кожна панель у своєму описі називає заяву з «Selling Points» або критерій журі, який вона доводить.",
+  "tags": [
+    "komora",
+    "business",
+    "pitch"
+  ],
+  "editable": true,
+  "graphTooltip": 1,
+  "timezone": "browser",
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "version": 1,
+  "time": {
+    "from": "now-7d",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "10s",
+      "30s",
+      "1m",
+      "5m",
+      "15m"
+    ]
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "DS",
+        "label": "Datasource",
+        "type": "datasource",
+        "query": "prometheus",
+        "hide": 0,
+        "current": {},
+        "refresh": 1
+      },
+      {
+        "name": "env",
+        "label": "Середовище",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS}"
+        },
+        "definition": "label_values(komora_users_registered, env)",
+        "query": {
+          "query": "label_values(komora_users_registered, env)",
+          "refId": "env"
+        },
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "refresh": 2,
+        "sort": 1,
+        "hide": 0
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": [],
+  "panels": [
+    {
+      "id": 2,
+      "type": "row",
+      "title": "🧑‍🍳  A · Цінність для гостя — час і довіра, без жодної гривні",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 3,
+      "type": "bargauge",
+      "title": "Домогосподарства: старт → профіль → перше замовлення",
+      "description": "Доказ для критерію «Валідація та масштабування»: скільки людей дійшли від /start до реального замовлення. Кожна смуга — кількість домогосподарств на цьому етапі, з бази, не з лічильника процесу.",
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 8,
+        "h": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(komora_users_registered{env=~\"$env\"})",
+          "legendFormat": "Написали /start",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "max(komora_users_onboarded{env=~\"$env\"})",
+          "legendFormat": "Заповнили анкету",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          }
+        },
+        {
+          "refId": "C",
+          "expr": "max(komora_users_ordered{env=~\"$env\"})",
+          "legendFormat": "Підтвердили замовлення",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "valueMode": "color",
+        "showUnfilled": true,
+        "namePlacement": "top",
+        "sizing": "auto",
+        "minVizWidth": 8,
+        "minVizHeight": 16,
+        "text": {}
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Нових анкет за період",
+      "description": "Зростання: завершених онбордингів у вибраному часовому вікні (лічильник процесу, тому після перезапуску рахує з нуля — абсолютні цифри ліворуч).",
+      "gridPos": {
+        "x": 8,
+        "y": 1,
+        "w": 4,
+        "h": 3
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(komora_onboarding_completed_total{env=~\"$env\"}[$__range]))",
+          "legendFormat": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "wideLayout": true,
+        "text": {}
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Активних за 7 днів",
+      "description": "«Цикл живий, не разова новинка»: домогосподарства, які писали боту за останній тиждень.",
+      "gridPos": {
+        "x": 12,
+        "y": 1,
+        "w": 4,
+        "h": 3
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(komora_users_active{env=~\"$env\", window=\"7d\"})",
+          "legendFormat": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "wideLayout": true,
+        "text": {}
+      }
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Онбординг → перше замовлення (медіана)",
+      "description": "Selling Points, таблиця #37, рядок 1: «від першого «привіт» до реального замовлення — N хвилин, не днів». Один раз на домогосподарство; повторювана швидкість — панель праворуч.",
+      "gridPos": {
+        "x": 8,
+        "y": 4,
+        "w": 8,
+        "h": 3
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(komora_onboarding_first_order_seconds{env=~\"$env\", stat=\"median\"})",
+          "legendFormat": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "unit": "dtdurations",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "wideLayout": true,
+        "text": {}
+      }
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "Намір → замовлення (медіана)",
+      "description": "НОВА метрика (#75) для «мінімум часу на їжу»: від речення в чаті («голова після вчорашнього», «замов усе для карбонари», «що треба докупити?», «світло вимкнули») до підтвердженого замовлення. Повторювана — одна цифра на кожне замовлення, — а не одноразова, як онбординг→перше замовлення. Годинник стартує до виклику класифікатора, тож «думання» агента входить у число.",
+      "gridPos": {
+        "x": 16,
+        "y": 1,
+        "w": 8,
+        "h": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(komora_intent_order_median_seconds{env=~\"$env\", intent=\"ALL\"})",
+          "legendFormat": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "unit": "dtdurations",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "wideLayout": true,
+        "text": {
+          "valueSize": 64
+        }
+      }
+    },
+    {
+      "id": 8,
+      "type": "bargauge",
+      "title": "Намір → замовлення за типом наміру (медіана)",
+      "description": "Той самий годинник, розкладений за наміром із #31: «гастрит, похмілля, п'ятничні знижки — жоден із цих сценаріїв не проєктувався окремо. Один агент, один роутер намірів». AD_HOC_SCHEDULED_PURCHASE рахується від свіпу, що запустив покупку, а не від речення «до п'ятниці» — дедлайн обирає людина.",
+      "gridPos": {
+        "x": 0,
+        "y": 7,
+        "w": 8,
+        "h": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (intent) (komora_intent_order_median_seconds{env=~\"$env\", intent!=\"ALL\"})",
+          "legendFormat": "{{intent}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "unit": "dtdurations",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "valueMode": "color",
+        "showUnfilled": true,
+        "namePlacement": "top",
+        "sizing": "auto",
+        "minVizWidth": 8,
+        "minVizHeight": 16,
+        "text": {}
+      }
+    },
+    {
+      "id": 9,
+      "type": "stat",
+      "title": "Дозамовлень підтверджено без правок",
+      "description": "Точність = довіра: «K з N дозамовлень підтверджено як запропоновано — агент вчиться» (Selling Points, рядок 3). Частка дозамовлень, які людина підтвердила, не змінивши жодного рядка.",
+      "gridPos": {
+        "x": 8,
+        "y": 7,
+        "w": 4,
+        "h": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * sum(komora_reorders{env=~\"$env\", edited=\"false\"}) / sum(komora_reorders{env=~\"$env\"})",
+          "legendFormat": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "unit": "percent",
+          "decimals": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "wideLayout": true,
+        "text": {}
+      }
+    },
+    {
+      "id": 10,
+      "type": "stat",
+      "title": "Найдовша серія без правок",
+      "description": "Друге число за історією точності: найдовший ланцюжок поспіль підтверджених без правок замовлень у одного домогосподарства (trust_level.consecutive_unedited_confirmations).",
+      "gridPos": {
+        "x": 12,
+        "y": 7,
+        "w": 4,
+        "h": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(komora_trust_streak{env=~\"$env\", stat=\"max\"})",
+          "legendFormat": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "wideLayout": true,
+        "text": {}
+      }
+    },
+    {
+      "id": 11,
+      "type": "stat",
+      "title": "Чек-іни: відповіли",
+      "description": "Залученість: «на K з N запитів «що лишилось» люди відповіли — цикл живий» (Selling Points, рядок 2). Чесна примітка: на тестовому 2-хвилинному інтервалі запитів багато, відповідей — скільки є; для пітчу цитуй вибірку поруч, не лише відсоток.",
+      "gridPos": {
+        "x": 16,
+        "y": 7,
+        "w": 4,
+        "h": 3
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * sum(komora_checkins{env=~\"$env\", stat=\"answered\"}) / sum(komora_checkins{env=~\"$env\", stat=\"prompted\"})",
+          "legendFormat": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "unit": "percent",
+          "decimals": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "wideLayout": true,
+        "text": {}
+      }
+    },
+    {
+      "id": 12,
+      "type": "stat",
+      "title": "Чек-іни: відповідей / запитів",
+      "description": "Вибірка за відсотком ліворуч — «K з N», бо «75 %» без «з чого» не доказ.",
+      "gridPos": {
+        "x": 16,
+        "y": 10,
+        "w": 4,
+        "h": 3
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(komora_checkins{env=~\"$env\", stat=\"answered\"})",
+          "legendFormat": "відповідей",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "sum(komora_checkins{env=~\"$env\", stat=\"prompted\"})",
+          "legendFormat": "запитів",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "wideLayout": true,
+        "text": {}
+      }
+    },
+    {
+      "id": 13,
+      "type": "stat",
+      "title": "Позицій списку знайдено в каталозі",
+      "description": "«94 % рядків списку стають реальним SKU, а решта — чесне «не знайшов», не чужий товар» (Selling Points, рядок 4). Частка рядків усіх зібраних кошиків, для яких «Сільпо» знайшло товар.",
+      "gridPos": {
+        "x": 20,
+        "y": 7,
+        "w": 4,
+        "h": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * sum(komora_orders_lines{env=~\"$env\", result=\"resolved\"}) / sum(komora_orders_lines{env=~\"$env\"})",
+          "legendFormat": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "unit": "percent",
+          "decimals": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "wideLayout": true,
+        "text": {}
+      }
+    },
+    {
+      "id": 14,
+      "type": "row",
+      "title": "💰  B · Цінність і revenue для «Сільпо» — гроші",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 13,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 15,
+      "type": "stat",
+      "title": "GMV — підтверджені замовлення",
+      "description": "Критерій «Цінність для бізнесу», крок 13.7 сценарію: «підтвердити замовлення в Telegram — і через 30 с GMV на дашборді змінюється». Сума збережених total підтверджених замовлень (доставка включно). Чесна межа: замовлення без збереженої суми не входять — їх кількість праворуч.",
+      "gridPos": {
+        "x": 0,
+        "y": 14,
+        "w": 8,
+        "h": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(komora_orders_gmv_uah{env=~\"$env\"})",
+          "legendFormat": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          },
+          "unit": "currencyUAH",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "wideLayout": true,
+        "text": {
+          "valueSize": 64
+        }
+      }
+    },
+    {
+      "id": 16,
+      "type": "stat",
+      "title": "Середній чек",
+      "description": "GMV / кількість підтверджених замовлень зі збереженою сумою. Selling Points, розділ «Grafana-дашборд»: «гості/GMV/середній чек наживо».",
+      "gridPos": {
+        "x": 8,
+        "y": 14,
+        "w": 4,
+        "h": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(komora_orders_gmv_uah{env=~\"$env\"}) / sum(komora_orders_confirmed{env=~\"$env\"})",
+          "legendFormat": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          },
+          "unit": "currencyUAH",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "wideLayout": true,
+        "text": {}
+      }
+    },
+    {
+      "id": 17,
+      "type": "stat",
+      "title": "Підтверджених замовлень",
+      "description": "«Чи це реальні гроші»: кількість підтверджених замовлень у базі, усіх типів.",
+      "gridPos": {
+        "x": 12,
+        "y": 14,
+        "w": 4,
+        "h": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(komora_orders_confirmed{env=~\"$env\"})",
+          "legendFormat": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          },
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "wideLayout": true,
+        "text": {}
+      }
+    },
+    {
+      "id": 18,
+      "type": "stat",
+      "title": "Знижок «Сільпо» у кошиках",
+      "description": "«Економія — цифра самого «Сільпо»»: сума subDiscount підтверджених кошиків — перевага акційних позицій при виборі, не власний каталог знижок.",
+      "gridPos": {
+        "x": 16,
+        "y": 14,
+        "w": 4,
+        "h": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(komora_orders_savings_uah{env=~\"$env\"})",
+          "legendFormat": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          },
+          "unit": "currencyUAH",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "wideLayout": true,
+        "text": {}
+      }
+    },
+    {
+      "id": 19,
+      "type": "stat",
+      "title": "Замовлень без збереженої суми",
+      "description": "Покриття GMV: підтверджені замовлення, у яких сума не збережена (до задачі #54). Має бути 0 на свіжому прогоні; якщо ні — GMV занижений рівно на них, і ця панель каже про це вголос.",
+      "gridPos": {
+        "x": 20,
+        "y": 14,
+        "w": 4,
+        "h": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(komora_orders_value_missing{env=~\"$env\"})",
+          "legendFormat": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          },
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "wideLayout": true,
+        "text": {}
+      }
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "Підтверджено замовлень за типом, за годину",
+      "description": "Кадр «воно рухається»: перше замовлення (INITIAL), дозамовлення (SCHEDULED_REORDER) і разові (AD_HOC) — стовпчик на годину, коли їх підтвердили. Це лічильник процесу: після перезапуску починає з нуля.",
+      "gridPos": {
+        "x": 0,
+        "y": 20,
+        "w": 24,
+        "h": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (type) (increase(komora_orders_confirmations_total{env=~\"$env\"}[1h]))",
+          "legendFormat": "{{type}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 2,
+            "fillOpacity": 80,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisPlacement": "auto",
+            "lineInterpolation": "smooth"
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 21,
+      "type": "row",
+      "title": "💰  B · Фічеринг: Featured Share Rate і Attributed Revenue — скільки грошей робить розміщення",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 26,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 22,
+      "type": "stat",
+      "title": "Attributed Revenue — усі розміщення",
+      "description": "Головна цифра монетизації (#63/#64): реальні гривні рядків саме промотованого товару в підтверджених замовленнях (ціна × кількість), не вартість усього кошика і не оцінка. Те, що retail media називає Attributed Sales. Платні розміщення і власні марки разом; нижче — окремо.",
+      "gridPos": {
+        "x": 0,
+        "y": 27,
+        "w": 8,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(komora_promotion_revenue_overall_uah{env=~\"$env\", type=\"ALL\"})",
+          "legendFormat": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          },
+          "unit": "currencyUAH",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "wideLayout": true,
+        "text": {
+          "valueSize": 64
+        }
+      }
+    },
+    {
+      "id": 23,
+      "type": "stat",
+      "title": "Featured Share Rate — усі розміщення",
+      "description": "Аналог Share of Shelf у retail media: частка розв'язань категорії, яку виграв промотований товар, від усіх розв'язань цієї категорії (включно з рядками, де розміщення не мало права виграти через обмеження господарства — тобто чесна, занижена частка). «Власна марка «Сільпо» отримує 94 % категорії молока — і це порахована частка, не покази».",
+      "gridPos": {
+        "x": 8,
+        "y": 27,
+        "w": 6,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * max(komora_promotion_share_overall{env=~\"$env\", type=\"ALL\"})",
+          "legendFormat": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          },
+          "unit": "percent",
+          "decimals": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "wideLayout": true,
+        "text": {}
+      }
+    },
+    {
+      "id": 24,
+      "type": "bargauge",
+      "title": "Attributed Revenue за пулом",
+      "description": "PAID_PARTNER — зовнішній партнер платить за частку категорії; OWN_BRAND_MARGIN_BOOST — той самий двигун для власних high-margin брендів «Сільпо», без зовнішнього партнера. Два бізнеси, ніколи не одна змішана цифра.",
+      "gridPos": {
+        "x": 14,
+        "y": 27,
+        "w": 5,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (type) (komora_promotion_revenue_overall_uah{env=~\"$env\", type!=\"ALL\"})",
+          "legendFormat": "{{type}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          },
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "currencyUAH",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "valueMode": "color",
+        "showUnfilled": true,
+        "namePlacement": "top",
+        "sizing": "auto",
+        "minVizWidth": 8,
+        "minVizHeight": 16,
+        "text": {}
+      }
+    },
+    {
+      "id": 25,
+      "type": "bargauge",
+      "title": "Featured Share Rate за пулом",
+      "description": "Частка категорій окремо для платних розміщень і для власних марок.",
+      "gridPos": {
+        "x": 19,
+        "y": 27,
+        "w": 5,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * max by (type) (komora_promotion_share_overall{env=~\"$env\", type!=\"ALL\"})",
+          "legendFormat": "{{type}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          },
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "percent",
+          "max": 100,
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "valueMode": "color",
+        "showUnfilled": true,
+        "namePlacement": "top",
+        "sizing": "auto",
+        "minVizWidth": 8,
+        "minVizHeight": 16,
+        "text": {}
+      }
+    },
+    {
+      "id": 26,
+      "type": "bargauge",
+      "title": "PAID_PARTNER · Featured Share Rate і lift за брендом",
+      "description": "Кожен партнер: його частка категорії (FSR) і lift — на скільки пунктів частка вища за органічний базлайн (виміряний, коли органічних розв'язань ≥ 5, інакше апроксимований як 1/кандидатів; метод підписаний у komora_promotion_baseline). Немає базлайну — немає смуги lift, а не нуль.",
+      "gridPos": {
+        "x": 0,
+        "y": 34,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * max by (partner, category) (komora_promotion_share{env=~\"$env\", type=\"PAID_PARTNER\"})",
+          "legendFormat": "FSR · {{partner}} / {{category}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "100 * max by (partner, category) (komora_promotion_lift{env=~\"$env\", type=\"PAID_PARTNER\"})",
+          "legendFormat": "lift, п.п. · {{partner}} / {{category}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          },
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "percent",
+          "max": 100,
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "valueMode": "color",
+        "showUnfilled": true,
+        "namePlacement": "top",
+        "sizing": "auto",
+        "minVizWidth": 8,
+        "minVizHeight": 16,
+        "text": {}
+      }
+    },
+    {
+      "id": 27,
+      "type": "bargauge",
+      "title": "PAID_PARTNER · Attributed Revenue за брендом",
+      "description": "Гривні рядків саме цього товару в підтверджених замовленнях. Рядок без збереженої ціни не рахується як нуль — він порахований окремо у звіті make promotions.",
+      "gridPos": {
+        "x": 0,
+        "y": 41,
+        "w": 12,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (partner, product) (komora_promotion_revenue_uah{env=~\"$env\", type=\"PAID_PARTNER\"})",
+          "legendFormat": "{{partner}} · {{product}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          },
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "currencyUAH",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "valueMode": "color",
+        "showUnfilled": true,
+        "namePlacement": "top",
+        "sizing": "auto",
+        "minVizWidth": 8,
+        "minVizHeight": 16,
+        "text": {}
+      }
+    },
+    {
+      "id": 28,
+      "type": "bargauge",
+      "title": "PAID_PARTNER · Conversion Rate між стадіями",
+      "description": "Conversion Rate — універсальний термін воронки: показ → у кошику, у кошику → підтверджене замовлення, по кожному бренду. Воронка не суворо вкладена: підтверджене замовлення записується для кожного активного розміщення, товар якого був у замовленні, навіть якщо той кошик не дав події «у кошику» (дозамовлення, минуле замовлення) — тому «кошик → замовлення» може перевищити 100 %. Смуга впирається в 100, число поруч справжнє.",
+      "gridPos": {
+        "x": 0,
+        "y": 46,
+        "w": 12,
+        "h": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * sum by (partner) (komora_promotion_events{env=~\"$env\", type=\"PAID_PARTNER\", event=\"ADDED_TO_CART\"}) / sum by (partner) (komora_promotion_events{env=~\"$env\", type=\"PAID_PARTNER\", event=\"IMPRESSION\"})",
+          "legendFormat": "показ → кошик · {{partner}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "100 * sum by (partner) (komora_promotion_events{env=~\"$env\", type=\"PAID_PARTNER\", event=\"CONFIRMED_ORDER\"}) / sum by (partner) (komora_promotion_events{env=~\"$env\", type=\"PAID_PARTNER\", event=\"ADDED_TO_CART\"})",
+          "legendFormat": "кошик → замовлення · {{partner}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          },
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "percent",
+          "max": 100,
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "valueMode": "color",
+        "showUnfilled": true,
+        "namePlacement": "top",
+        "sizing": "auto",
+        "minVizWidth": 8,
+        "minVizHeight": 16,
+        "text": {}
+      }
+    },
+    {
+      "id": 29,
+      "type": "bargauge",
+      "title": "OWN_BRAND_MARGIN_BOOST · Featured Share Rate і lift за брендом",
+      "description": "Кожен бренд: його частка категорії (FSR) і lift — на скільки пунктів частка вища за органічний базлайн (виміряний, коли органічних розв'язань ≥ 5, інакше апроксимований як 1/кандидатів; метод підписаний у komora_promotion_baseline). Немає базлайну — немає смуги lift, а не нуль.",
+      "gridPos": {
+        "x": 12,
+        "y": 34,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * max by (partner, category) (komora_promotion_share{env=~\"$env\", type=\"OWN_BRAND_MARGIN_BOOST\"})",
+          "legendFormat": "FSR · {{partner}} / {{category}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "100 * max by (partner, category) (komora_promotion_lift{env=~\"$env\", type=\"OWN_BRAND_MARGIN_BOOST\"})",
+          "legendFormat": "lift, п.п. · {{partner}} / {{category}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          },
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "percent",
+          "max": 100,
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "valueMode": "color",
+        "showUnfilled": true,
+        "namePlacement": "top",
+        "sizing": "auto",
+        "minVizWidth": 8,
+        "minVizHeight": 16,
+        "text": {}
+      }
+    },
+    {
+      "id": 30,
+      "type": "bargauge",
+      "title": "OWN_BRAND_MARGIN_BOOST · Attributed Revenue за брендом",
+      "description": "Гривні рядків саме цього товару в підтверджених замовленнях. Рядок без збереженої ціни не рахується як нуль — він порахований окремо у звіті make promotions.",
+      "gridPos": {
+        "x": 12,
+        "y": 41,
+        "w": 12,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (partner, product) (komora_promotion_revenue_uah{env=~\"$env\", type=\"OWN_BRAND_MARGIN_BOOST\"})",
+          "legendFormat": "{{partner}} · {{product}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          },
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "currencyUAH",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "valueMode": "color",
+        "showUnfilled": true,
+        "namePlacement": "top",
+        "sizing": "auto",
+        "minVizWidth": 8,
+        "minVizHeight": 16,
+        "text": {}
+      }
+    },
+    {
+      "id": 31,
+      "type": "bargauge",
+      "title": "OWN_BRAND_MARGIN_BOOST · Conversion Rate між стадіями",
+      "description": "Conversion Rate — універсальний термін воронки: показ → у кошику, у кошику → підтверджене замовлення, по кожному бренду. Воронка не суворо вкладена: підтверджене замовлення записується для кожного активного розміщення, товар якого був у замовленні, навіть якщо той кошик не дав події «у кошику» (дозамовлення, минуле замовлення) — тому «кошик → замовлення» може перевищити 100 %. Смуга впирається в 100, число поруч справжнє.",
+      "gridPos": {
+        "x": 12,
+        "y": 46,
+        "w": 12,
+        "h": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * sum by (partner) (komora_promotion_events{env=~\"$env\", type=\"OWN_BRAND_MARGIN_BOOST\", event=\"ADDED_TO_CART\"}) / sum by (partner) (komora_promotion_events{env=~\"$env\", type=\"OWN_BRAND_MARGIN_BOOST\", event=\"IMPRESSION\"})",
+          "legendFormat": "показ → кошик · {{partner}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "100 * sum by (partner) (komora_promotion_events{env=~\"$env\", type=\"OWN_BRAND_MARGIN_BOOST\", event=\"CONFIRMED_ORDER\"}) / sum by (partner) (komora_promotion_events{env=~\"$env\", type=\"OWN_BRAND_MARGIN_BOOST\", event=\"ADDED_TO_CART\"})",
+          "legendFormat": "кошик → замовлення · {{partner}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          },
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "percent",
+          "max": 100,
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "valueMode": "color",
+        "showUnfilled": true,
+        "namePlacement": "top",
+        "sizing": "auto",
+        "minVizWidth": 8,
+        "minVizHeight": 16,
+        "text": {}
+      }
+    }
+  ]
+}

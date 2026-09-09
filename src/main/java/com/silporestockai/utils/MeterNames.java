@@ -4,9 +4,10 @@ package com.silporestockai.utils;
  * Every Micrometer meter name the app publishes, in one place (task 54).
  *
  * <p>Two things depend on these strings agreeing across the codebase and the committed Grafana dashboard: the
- * instrumentation that registers them, and {@code grafana/komora-dashboard.json}'s PromQL. A test parses the dashboard
- * and asserts every {@code komora_*} series it queries maps back to a constant here, which is what catches the usual
- * failure of a committed dashboard — a panel querying a metric that was renamed or never existed.
+ * instrumentation that registers them, and the PromQL in {@code observability/grafana/*.json} (two dashboards since
+ * task 75). A test parses each dashboard and asserts every {@code komora_*} series it queries maps back to a constant
+ * here, which is what catches the usual failure of a committed dashboard — a panel querying a metric that was renamed
+ * or never existed.
  *
  * <p>Names are dot-separated and unitless; the unit goes in {@code baseUnit(...)} so Prometheus appends the suffix
  * itself and nothing ends up called {@code _uah_uah}.
