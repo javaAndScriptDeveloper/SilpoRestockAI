@@ -1245,18 +1245,22 @@ chmod 600 .env.prod
 the app's healthcheck, and then verifies the *public* URL: 405 on the webhook path, 200 on the WebApp
 form, 404 on `/actuator` (proving actuator is not exposed). A failure prints the app log and exits 1.
 
-**If step 4 dies during "build image"** it is almost certainly the Gradle build being OOM-killed. Either
-add swap on the server:
+By default it **pulls the image CI published** rather than compiling on the server (§20), so step 4 takes
+seconds and the server never needs a Gradle toolchain or the RAM for one. This requires a green CI run on
+`main` to exist — on the very first deploy, before anything has been published, use `--build`.
+
+**`./scripts/deploy.sh --build`** compiles the image on the box instead. If that dies, it is almost
+certainly the Gradle build being OOM-killed on a small VPS. Either add swap:
 
 ```bash
 fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
 ```
 
-or build on your laptop and skip building on the server entirely:
+or build on your laptop and ship the image, skipping the server-side build entirely:
 
 ```bash
-docker save silpo-restock-ai:latest | ssh <host> 'docker load'
-ssh <host> 'cd komora && ./scripts/deploy.sh --no-build'
+docker save ghcr.io/javaandscriptdeveloper/silporestockai:latest | ssh <host> 'docker load'
+ssh <host> 'cd komora && make prod-up'
 ```
 
 ### Then
@@ -1290,9 +1294,11 @@ ssh <host> 'cd komora && ./scripts/deploy.sh --no-build'
 
 | | |
 |---|---|
-| `make deploy` | pull, rebuild, restart, verify |
-| `make prod-ps` | status + health of all three containers |
+| `make deploy` | `git pull`, pull the CI image, restart, verify |
+| `make prod-pull` | deploy the newest published image right now, without waiting for Watchtower (§20) |
+| `make prod-ps` | status + health of all four containers |
 | `make prod-logs` | follow the app log |
+| `docker logs -f komora-watchtower` | is CD actually deploying? (§20) |
 | `make webhook-info` | why is the bot silent? |
 | `docker exec komora-app curl -s localhost:8081/actuator/health` | app health. It is on the **management** port, which is published nowhere — `localhost:8080` on the host is the app port and answers 404 for `/actuator/*`, which is the point |
 | `curl localhost:8080/telegram/webhook` | the app itself, bypassing Caddy (loopback-only mapping; `APP_LOCAL_PORT` in `.env.prod`) |
@@ -1339,6 +1345,92 @@ Found by actually running the prod stack locally, which is the point of doing it
   `docker compose -f docker-compose.prod.yml --env-file .env.prod exec -T db pg_dump -U komora komora > backup.sql`.
 - Deploying rebuilds the image on the server, so a deploy takes minutes and the app is down for the last
   ~30 seconds of it. Don't deploy during the pitch.
+
+## 20. Continuous deployment (task 69)
+
+Once §19's server exists, you stop deploying by hand. Push to `main`, and about two minutes later the
+server is running it.
+
+```
+push to main ─► CI: spotlessCheck + ./gradlew build ─► (only if green) build image ─► push to ghcr.io
+                                                                                          │
+                          server: Watchtower polls ghcr.io every 60s ◄────────────────────┘
+                                          │
+                                          └─► pulls :latest, recreates komora-app, drops the old image
+```
+
+**Nothing connects inbound to the server, and there is no SSH key in GitHub Secrets.** CI only pushes to a
+registry; the server only pulls from one. The publish job authenticates with the workflow's built-in
+`GITHUB_TOKEN`, scoped to `packages: write` on that job alone — a credential that is minted per run and
+expires with it, so there is nothing to store or rotate. Watchtower needs no credentials at all, because
+the GHCR package is public and the image contains no secrets: every value comes from `.env.prod` at
+runtime.
+
+The image is `ghcr.io/javaandscriptdeveloper/silporestockai`, tagged `latest` (what Watchtower follows) and
+`sha-<short>` (what a rollback pins to).
+
+### The polling delay, stated as a number
+
+A push is live in **60–150 seconds**: CI's test-and-build takes the bulk of it, then Watchtower waits up to
+its 60-second interval. That is fine for a hackathon and wrong for incident response — nothing here
+guarantees a deploy, tells you it failed, or lets you watch it happen from CI. If you need a specific
+change live at a specific moment, do not push and wait. Deploy it:
+
+```bash
+# Do not wait for the poll — pull and restart now.
+make prod-pull
+
+# The same thing without make:
+docker compose -f docker-compose.prod.yml --env-file .env.prod pull app
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d app
+```
+
+`make deploy` also does it, plus a `git pull` and the full public-URL verification.
+
+### Rolling back
+
+There is no rollback automation, by design. Pin the previous image and restart:
+
+```bash
+# Find the tag you want — every green build on main has one.
+# https://github.com/javaAndScriptDeveloper/SilpoRestockAI/pkgs/container/silporestockai
+echo 'APP_IMAGE=ghcr.io/javaandscriptdeveloper/silporestockai:sha-1a2b3c4' >> .env.prod
+make prod-pull
+```
+
+A pinned tag never moves, so this also **stops Watchtower deploying anything** — which is exactly what you
+want during a demo. Delete the line and `make prod-pull` to resume.
+
+### Watching it work
+
+```bash
+docker logs -f komora-watchtower              # "Found new image" is the line that matters
+docker inspect -f '{{.Config.Image}}' komora-app
+docker inspect -f '{{.State.StartedAt}}' komora-app   # did it actually restart?
+```
+
+`Only checking containers using enable label` in Watchtower's first lines is the confirmation that its
+scope is right. A scan should report `Scanned=1`.
+
+### Known limits, stated rather than hidden
+
+- **Watchtower updates the app and nothing else**, by label. That is deliberate: an unattended Postgres
+  major-version upgrade would destroy the database. Postgres and Caddy are updated by editing their pinned
+  tags in `docker-compose.prod.yml` like any other change.
+- **Watchtower needs the Docker socket**, which is effectively root on the host. That is inherent to how it
+  works, not something configuration can remove. It is why the image it trusts comes from a registry only
+  this repository's CI can publish to.
+- **`DOCKER_API_VERSION: "1.44"` in the compose file is load-bearing.** Watchtower's last release is from
+  November 2023 and negotiates Docker API 1.25; Docker 25 and later refuse anything below 1.44. Without it
+  every scan fails with `client version 1.25 is too old` and *nothing ever deploys* — silently, because the
+  app keeps running the old image quite happily. If a future daemon raises its floor again, raise this
+  number or move to a maintained fork.
+- **A deploy is a restart**, so in-flight requests drop. A Telegram update that arrives during those few
+  seconds is retried by Telegram, so this is survivable, but do not deploy during the pitch.
+- **`latest` is a race.** Two pushes in quick succession mean whichever CI run finishes last wins,
+  regardless of commit order. Pin `APP_IMAGE` if that matters.
+- **A failed deploy is silent.** Nothing notifies you. `docker logs komora-watchtower` is the only place
+  it shows up.
 
 ## Cleanup
 
