@@ -89,6 +89,19 @@ class ShoppingListDiffServiceTest {
         assertThat(delta.removed()).extracting(ShoppingListDelta.Line::name).containsExactly("Сир кисломолочний");
     }
 
+    /** Live: «Рис: 1 → 1000 г» — the same kilogram written differently. */
+    @Test
+    void aKilogramAndAThousandGramsAreTheSameQuantity() {
+        ShoppingListDelta delta = service.diff(
+                List.of(item("Рис", 1, "кг"), item("Молоко", 1, "л")),
+                List.of(item("Рис", 1000, "г"), item("Молоко", 2000, "мл")));
+
+        assertThat(delta.quantityChanged())
+                .extracting(ShoppingListDelta.QuantityChange::name)
+                .containsExactly("Молоко");
+        assertThat(delta.unchangedCount()).isEqualTo(1);
+    }
+
     @Test
     void matchingIsCaseAndWhitespaceInsensitive() {
         ShoppingListDelta delta = service.diff(List.of(item("  Молоко ", 1, "л")), List.of(item("молоко", 1, "л")));

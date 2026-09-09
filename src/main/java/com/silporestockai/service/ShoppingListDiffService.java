@@ -39,7 +39,7 @@ public class ShoppingListDiffService {
             ShoppingListItem before = previousByName.get(entry.getKey());
             if (before == null) {
                 unmatchedCurrent.add(entry.getValue());
-            } else if (quantityDiffers(before.getQuantity(), entry.getValue().getQuantity())) {
+            } else if (quantityDiffers(before, entry.getValue())) {
                 quantityChanged.add(change(before, entry.getValue()));
             } else {
                 unchangedCount++;
@@ -57,7 +57,7 @@ public class ShoppingListDiffService {
             ShoppingListItem before = takeRename(unmatchedPrevious, after);
             if (before == null) {
                 added.add(lineOf(after));
-            } else if (quantityDiffers(before.getQuantity(), after.getQuantity())) {
+            } else if (quantityDiffers(before, after)) {
                 quantityChanged.add(change(before, after));
             } else {
                 unchangedCount++;
@@ -124,11 +124,29 @@ public class ShoppingListDiffService {
         return byName;
     }
 
-    private static boolean quantityDiffers(BigDecimal before, BigDecimal after) {
-        if (before == null || after == null) {
-            return before != after;
+    /**
+     * Compared in base units: the model writes «1 кг» one week and «1000 г» the next, and a delta that reads
+     * «Рис: 1 → 1000 г» is a unit change, not a quantity change. Kilograms and litres become grams and millilitres;
+     * anything else is compared as written.
+     */
+    private static boolean quantityDiffers(ShoppingListItem before, ShoppingListItem after) {
+        BigDecimal a = inBaseUnits(before.getQuantity(), before.getUnit());
+        BigDecimal b = inBaseUnits(after.getQuantity(), after.getUnit());
+        if (a == null || b == null) {
+            return a != b;
         }
-        return before.compareTo(after) != 0;
+        return a.compareTo(b) != 0;
+    }
+
+    private static BigDecimal inBaseUnits(BigDecimal quantity, String unit) {
+        if (quantity == null) {
+            return null;
+        }
+        String u = unit == null ? "" : unit.trim().toLowerCase(Locale.ROOT);
+        return switch (u) {
+            case "кг", "kg", "л", "l" -> quantity.multiply(BigDecimal.valueOf(1000));
+            default -> quantity;
+        };
     }
 
     private static ShoppingListDelta.Line lineOf(ShoppingListItem item) {
