@@ -151,6 +151,7 @@ public class CartBuildingService {
         List<String> markers = NOT_GROCERIES_FOR_PEOPLE.stream()
                 .filter(marker -> !asked.contains(marker))
                 .toList();
+        List<String> variantMarkers = variantsABareLineDoesNotMean(asked);
         List<JsonNode> kept = new ArrayList<>();
         for (JsonNode candidate : availableOnly(candidates)) {
             String name = McpResponses.findString(candidate, McpResponses.NAME)
@@ -158,6 +159,13 @@ public class CartBuildingService {
                     .toLowerCase(Locale.ROOT);
             if (markers.stream().anyMatch(name::contains)) {
                 log.debug("dropping «{}» as a candidate for «{}»: not groceries for people", name, requestedName);
+                continue;
+            }
+            if (variantMarkers.stream().anyMatch(name::contains)) {
+                log.info(
+                        "dropping «{}» as a candidate for «{}»: not the plain variant the line means",
+                        name,
+                        requestedName);
                 continue;
             }
             Optional<BigDecimal> stock = McpResponses.findNumber(candidate, McpResponses.STOCK);
@@ -173,6 +181,54 @@ public class CartBuildingService {
             kept.add(candidate);
         }
         return kept;
+    }
+
+    /**
+     * A bare staple and the words that mark a variant the line did not ask for.
+     *
+     * <p>Deterministic for the same reason as stock: the matcher prompt says a bare «Рис» is plain white rice and
+     * anything else is -1, and the fast model still took «Рис Sacramento червоний» three times in one night and
+     * «Origini Карнаролі білий класичний» at ₴449 once — the name says «білий», after all. The branch this account
+     * shops in has no plain rice at all; the honest line is «Не знайшов: Рис», and a candidate that is a different
+     * product is not a candidate. A line that names the variant itself («рис басматі») keeps it.
+     */
+    private static final Map<String, List<String>> VARIANTS_A_BARE_LINE_DOES_NOT_MEAN = Map.of(
+            "рис",
+            List.of(
+                    "червон",
+                    "чорн",
+                    "рожев",
+                    "бур",
+                    "коричнев",
+                    "дик",
+                    "різот",
+                    "карнарол",
+                    "арборіо",
+                    "басмат",
+                    "жасмин",
+                    "суміш",
+                    "спеці",
+                    "суші"),
+            "локшина",
+            List.of("швидкого приготування", "з соусом"),
+            "макарони",
+            List.of("швидкого приготування", "з соусом"));
+
+    static List<String> variantsABareLineDoesNotMean(String asked) {
+        String bare = asked.trim();
+        for (Map.Entry<String, List<String>> entry : VARIANTS_A_BARE_LINE_DOES_NOT_MEAN.entrySet()) {
+            String staple = entry.getKey();
+            if (!(bare.equals(staple) || bare.startsWith(staple + " "))) {
+                continue;
+            }
+            // «рис басматі» names the variant: nothing to drop. A plain name with no colour in it («Рис
+            // Sacramento») is plain rice and stays — only a named variant is refused, never an unmarked one.
+            if (entry.getValue().stream().anyMatch(bare::contains)) {
+                return List.of();
+            }
+            return entry.getValue();
+        }
+        return List.of();
     }
 
     /** The shelf tags of each line's candidates, in Silpo's own order, as the matcher wants them. */
