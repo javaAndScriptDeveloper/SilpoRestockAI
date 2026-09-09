@@ -44,8 +44,16 @@ services:
   app:
     build:
       context: .
-    image: silpo-restock-ai:latest
+    # Default to what CI publishes (task 69). The `build:` above stays for the offline fallback:
+    # `docker compose pull app` then `up -d` uses the pulled image and skips the build, while
+    # `deploy.sh --build` builds here instead. Pin this to a :sha-xxxxxxx tag in .env.prod to roll back,
+    # or to freeze this box against further pushes while the jury is watching.
+    image: ${APP_IMAGE:-ghcr.io/javaandscriptdeveloper/silporestockai:latest}
     container_name: komora-app
+    labels:
+      # Watchtower's opt-in. It is on the app and on NOTHING else in this file: an unattended Postgres
+      # major-version upgrade would destroy the database, and restarting Caddy re-negotiates TLS.
+      com.centurylinklabs.watchtower.enable: "true"
     depends_on:
       db:
         condition: service_healthy
@@ -136,6 +144,36 @@ services:
     environment:
       # Substituted into the Caddyfile's {$DOMAIN} at startup — the domain is never committed.
       DOMAIN: ${DOMAIN:?DOMAIN must be set in .env.prod}
+    restart: unless-stopped
+
+  # Pull-based CD (task 69). Watchtower polls ghcr.io outbound and restarts the app when `latest` moves, so
+  # the server needs no inbound access and CI needs no SSH key — that is the entire point of it.
+  #
+  # It needs the Docker socket, which is effectively root on this host. That is inherent to how Watchtower
+  # works and cannot be configured away; it is the reason the image it trusts comes from a registry only
+  # this repository's CI can publish to. Mounted read-only, which costs nothing.
+  watchtower:
+    image: containrrr/watchtower:1.7.1
+    container_name: komora-watchtower
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      # Not optional, and not obvious. Watchtower 1.7.1 (Nov 2023, the last release) negotiates Docker API
+      # 1.25, and Docker 25+ refuses anything below 1.44 — every scan fails with "client version 1.25 is
+      # too old" and nothing is ever deployed. Pinning the client version here is what makes it work; 1.44
+      # is Docker 25's API and is satisfied by every daemon since. If a future daemon raises its floor
+      # again, raise this number, or move to a maintained fork of Watchtower.
+      DOCKER_API_VERSION: "1.44"
+      # Update ONLY containers carrying com.centurylinklabs.watchtower.enable=true — which is the app,
+      # and deliberately not the database or the proxy. Verified: a scan reports Scanned=1.
+      WATCHTOWER_LABEL_ENABLE: "true"
+      # Drop the superseded image after a successful update; a demo VPS disk fills up fast otherwise.
+      WATCHTOWER_CLEANUP: "true"
+      # Seconds. 60 puts a green build on the server in roughly two minutes. Raising it costs only
+      # patience — the manual fallback in RUNBOOK §20 bypasses the wait entirely.
+      WATCHTOWER_POLL_INTERVAL: ${WATCHTOWER_POLL_INTERVAL:-60}
+      # So its timestamps line up with the app's.
+      TZ: Europe/Kyiv
     restart: unless-stopped
 
   # Grafana Alloy, as in docker-compose.yml but scraping the app over the compose network rather than the
