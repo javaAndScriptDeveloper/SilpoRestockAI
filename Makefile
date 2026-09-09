@@ -1,6 +1,11 @@
 .DEFAULT_GOAL := help
 .PHONY: help run dev demo mcp-log test build format check db-up db-down up down image clean metrics promotions \
-	alloy-up alloy-down alloy-logs dashboard observability-local-up observability-local-down
+	alloy-up alloy-down alloy-logs dashboard observability-local-up observability-local-down \
+	deploy prod-up prod-down prod-logs prod-ps webhook webhook-info
+
+# The production stack (task 59). Its own compose project name lives in docker-compose.prod.yml, so these
+# never touch the development containers above, and .env.prod never mixes with .env.
+PROD := docker compose -f docker-compose.prod.yml --env-file .env.prod
 
 # Prefer .env if present, otherwise fall back to the committed example.
 ENV_FILE := $(if $(wildcard .env),.env,.env.example)
@@ -89,3 +94,26 @@ observability-local-up: ## Throwaway Prometheus+Grafana rendering the same dashb
 
 observability-local-down: ## Tear the local observability harness down
 	docker compose -f observability/local/docker-compose.yml down -v
+
+# --- Production (task 59). Run these ON THE SERVER; they need .env.prod, which never leaves it. ---
+
+deploy: ## Deploy on the server: pull, build, restart, verify (see docs/RUNBOOK.md "Deploy checklist")
+	./scripts/deploy.sh
+
+prod-up: ## Start the production stack without pulling or rebuilding
+	$(PROD) up -d
+
+prod-down: ## Stop the production stack. Keeps the volumes — never add -v to this
+	$(PROD) down
+
+prod-logs: ## Follow the production app log
+	$(PROD) logs -f app
+
+prod-ps: ## Status and health of the production containers
+	$(PROD) ps
+
+webhook: ## Point Telegram at the DOMAIN in .env.prod (the app also does this itself at every boot)
+	./scripts/set-webhook.sh
+
+webhook-info: ## What Telegram thinks the webhook is, incl. last_error_message — "why is the bot silent?"
+	./scripts/set-webhook.sh --info

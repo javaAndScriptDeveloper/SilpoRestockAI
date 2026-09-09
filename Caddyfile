@@ -1,0 +1,48 @@
+# Caddy in front of Комора (task 59).
+#
+# Caddy is here for one reason: Telegram refuses to deliver a webhook, and refuses to open a WebApp,
+# over anything but HTTPS on a real domain. Caddy obtains and renews a Let's Encrypt certificate on its
+# own, with no certbot, no cron, and no renewal step in the deploy script.
+#
+# {$DOMAIN} is substituted from the environment when Caddy parses this file, so the domain lives in
+# .env.prod and is never committed. docker-compose.prod.yml passes it in.
+#
+# Nothing here is site-specific beyond that name — pointing this at a different domain is one env var.
+
+{
+	# No `email` on purpose: Caddy registers an anonymous ACME account, which is fine for a demo window
+	# far shorter than a 90-day certificate. Adding an address here would make the deploy fail whenever
+	# the variable is empty, which is a worse failure than not getting expiry mail.
+	#
+	# Uncomment to obtain untrusted staging certificates instead — Let's Encrypt rate-limits failed
+	# real-certificate attempts hard, so use this while a DNS record is still propagating.
+	# acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+}
+
+{$DOMAIN} {
+	# Caddy resolves `app` through Docker's compose network. Port 8080 is the application port;
+	# the management port (8081, actuator) is deliberately NOT proxied, so /actuator/prometheus and
+	# the household counts it exposes are unreachable from the internet.
+	reverse_proxy app:8080 {
+		# The client's real address, for the app's logs. Caddy sets X-Forwarded-{For,Proto,Host} itself.
+		header_up X-Real-IP {remote_host}
+	}
+
+	# Telegram opens the onboarding WebApp inside its own webview and enforces HTTPS on it. HSTS keeps a
+	# stray http:// link from ever reaching the app in the clear.
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# Telegram's webview frames the WebApp page, so no X-Frame-Options / frame-ancestors here:
+		# denying framing would break onboarding, which is the reason the domain exists.
+		-Server
+	}
+
+	encode zstd gzip
+
+	log {
+		output stdout
+		format console
+	}
+}

@@ -8,3 +8,10 @@ build
 .DS_Store
 README.md
 docker-compose.yml
+docker-compose.prod.yml
+Caddyfile
+# Never ship secrets into the build context. The Dockerfile copies only gradle files and src/, so these
+# never reached an image layer anyway — this keeps them off the daemon entirely.
+.env
+.env.prod
+.env.local

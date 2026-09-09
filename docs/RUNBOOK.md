@@ -1200,6 +1200,142 @@ prove the code path, not the UX of three people tapping; (2) «Перейти д
 `delete from group_event;` cascades to participants, items and approvals. The organizer's draft
 `customer_order` (type `AD_HOC`) is cancelled like any other draft.
 
+## 19. Deploy checklist (task 59)
+
+Everything below the "on the server" line needs a server. Everything above it is already done and
+verified locally — the image builds, the whole stack runs in Docker, and the divergences between
+`./gradlew bootRun` and a container were found and fixed (see *What container-only breakage was already
+fixed*, further down).
+
+What the deployment looks like: **Caddy** terminates TLS on 80/443 and is the only thing the internet can
+reach; it proxies to the **app** on 8080; the app's actuator lives on 8081, which is published nowhere;
+**Postgres** publishes nothing and keeps its data in a named volume. All three restart unless stopped.
+
+### Before you touch the server
+
+1. **A domain.** Point an `A` record at the server's IPv4. A subdomain is fine (`komora.example.com`).
+   Wait for it to resolve before the first deploy — `dig +short A komora.example.com` must return the
+   server's IP. Let's Encrypt rate-limits *failed* authorizations, so a premature attempt costs an hour.
+2. **A production bot.** `/newbot` in @BotFather, and `/setprivacy` → Disable on it, or a group round
+   (§18) never sees the `@bot` mention that opens it. Keep its token separate from the development bot's:
+   whichever bot called `setWebhook` last is the one Telegram delivers to, and two bots on one URL is the
+   most common way a demo bot goes quiet.
+3. **A server.** Anything with Docker, a public IPv4, and ports 80/443 free. 2 GB RAM if you want to
+   build the image on it; 1 GB is enough if you build on your laptop and ship the image (see step 4 below).
+
+### On the server
+
+```bash
+# 1. Docker, if the image does not already have it
+curl -fsSL https://get.docker.com | sh
+
+# 2. The repo
+git clone <repo-url> komora && cd komora
+
+# 3. The secrets. Read the comments — every line says where to get the value.
+cp .env.prod.example .env.prod
+vim .env.prod          # DOMAIN + the five REQUIRED secrets, at minimum
+chmod 600 .env.prod
+
+# 4. Deploy. Idempotent: the same command for the first deploy and every update.
+./scripts/deploy.sh    # or: make deploy
+```
+
+`deploy.sh` refuses to start if a required variable is missing (it runs `compose config` first), waits for
+the app's healthcheck, and then verifies the *public* URL: 405 on the webhook path, 200 on the WebApp
+form, 404 on `/actuator` (proving actuator is not exposed). A failure prints the app log and exits 1.
+
+**If step 4 dies during "build image"** it is almost certainly the Gradle build being OOM-killed. Either
+add swap on the server:
+
+```bash
+fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
+```
+
+or build on your laptop and skip building on the server entirely:
+
+```bash
+docker save silpo-restock-ai:latest | ssh <host> 'docker load'
+ssh <host> 'cd komora && ./scripts/deploy.sh --no-build'
+```
+
+### Then
+
+5. **The webhook** normally needs nothing: the app calls `setWebhook` itself at every boot, and
+   `deploy.sh` prints the line proving it. If it did not, or you need to re-point it by hand:
+   ```bash
+   ./scripts/set-webhook.sh              # uses DOMAIN from .env.prod
+   ./scripts/set-webhook.sh --info       # url, pending_update_count, last_error_message
+   ./scripts/set-webhook.sh --delete     # stop delivery now, e.g. while the app is down
+   ```
+6. **Silpo OAuth.** The client id in `.env.example` is registered against `localhost` and will *reject*
+   `https://$DOMAIN/auth/silpo/callback`. Leave `SILPO_MCP_CLIENT_ID` blank on the server: the app
+   registers a fresh client on first use. Then copy the id it logged back into `.env.prod` so redeploys
+   reuse it instead of registering again:
+   ```bash
+   make prod-logs | grep -i "registered.*client"
+   ```
+7. **Google Calendar** (§14), if it is on: add `https://$DOMAIN/auth/google/callback` as an authorized
+   redirect URI in the Google Cloud console. The localhost one will not work here.
+8. **Walk §2 through §7 against the real URL** — onboarding, the WebApp form inside Telegram's webview
+   (this is the part that cannot be tested on localhost), Silpo login, a plan, a cart, a confirmation.
+9. **Metrics** (§16), if you want them: `make prod-logs` aside,
+   `docker compose -f docker-compose.prod.yml --env-file .env.prod --profile observability up -d alloy`.
+   Alloy scrapes the app's management port *inside* the compose network and pushes outbound, so this
+   opens no inbound port.
+10. **Put the link in "Selling Points та Пітч-аргументи"** — that is the acceptance criterion this whole
+    task exists for.
+
+### Day-to-day on the box
+
+| | |
+|---|---|
+| `make deploy` | pull, rebuild, restart, verify |
+| `make prod-ps` | status + health of all three containers |
+| `make prod-logs` | follow the app log |
+| `make webhook-info` | why is the bot silent? |
+| `docker exec komora-app curl -s localhost:8081/actuator/health` | app health. It is on the **management** port, which is published nowhere — `localhost:8080` on the host is the app port and answers 404 for `/actuator/*`, which is the point |
+| `curl localhost:8080/telegram/webhook` | the app itself, bypassing Caddy (loopback-only mapping; `APP_LOCAL_PORT` in `.env.prod`) |
+| `docker compose -f docker-compose.prod.yml --env-file .env.prod exec db psql -U komora komora` | psql |
+
+**Never `docker compose ... down -v` on this box.** `-v` drops the named volume, and with it every
+household, order, and stored Silpo token. A plain `down` is safe; so is `make prod-down`.
+
+### What container-only breakage was already fixed
+
+Found by actually running the prod stack locally, which is the point of doing it before there is a server:
+
+- **The demo call log could never be written.** `logback-spring.xml` writes `logs/mcp-calls.log` relative
+  to the working directory; the image's `/application` was root-owned while the process runs as `spring`,
+  so every boot printed a 40-line logback stack trace and task 55's pitch artifact had no file to read.
+  The Dockerfile now creates `/application/logs` owned by `spring`, and it is a named volume, so the call
+  history survives a redeploy.
+- **Every log timestamp was three hours off.** The container had no `TZ`, so it logged UTC next to a
+  Telegram chat showing Kyiv time. `TZ=Europe/Kyiv` is now set in the image. Business logic was never at
+  risk — the `Clock` bean and every date calculation name `Europe/Kyiv` explicitly, and every stored
+  instant is a `java.time.Instant`.
+- **No `curl` in the runtime image**, so no healthcheck was possible. It is installed now, and is also
+  what you reach for when SSH'd into the box.
+- **`GET /telegram/webhook` answered 500 with a stack trace at ERROR.** `GlobalExceptionHandler`'s
+  catch-all swallowed Spring's own `HttpRequestMethodNotSupportedException`. The webhook path is public by
+  necessity, so this was a scanner's worth of fake incidents in the log and a status code claiming the app
+  was broken. It answers 405 quietly now (`WrongHttpMethodIntegrationTest`).
+- **The prod compose stack hijacked the development one.** Both files sit in the same directory, so they
+  shared the default compose project name, and `up` on the prod file recreated the dev `db` container out
+  from under a running `make run`. `docker-compose.prod.yml` now declares `name: komora-prod`.
+- **`scripts/set-webhook.sh` ignored its argument.** It stored the domain in `$DOMAIN`, which sourcing
+  `.env.prod` then overwrote with the file's own `DOMAIN=`. It uses `$TARGET` now.
+
+### Known limits of this setup
+
+- `restart: unless-stopped` restarts a container that **exits**; plain Docker does not restart one that is
+  merely **unhealthy**. A hung-but-alive JVM would stay hung until someone runs `make prod-up`. Acceptable
+  for a demo window — say so rather than believing the healthcheck is a watchdog.
+- There is no backup. The database lives in one named volume on one box. Before anything risky:
+  `docker compose -f docker-compose.prod.yml --env-file .env.prod exec -T db pg_dump -U komora komora > backup.sql`.
+- Deploying rebuilds the image on the server, so a deploy takes minutes and the app is down for the last
+  ~30 seconds of it. Don't deploy during the pitch.
+
 ## Cleanup
 
 ### Start completely from scratch

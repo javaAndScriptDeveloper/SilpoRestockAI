@@ -22,6 +22,8 @@ Thumbs.db
 ### Env / secrets ###
 .env
 .env.local
+# The filled-in production secrets; it lives only on the server. .env.prod.example is committed.
+.env.prod
 *.log
 
 # Per-package CLAUDE.md files ship with the template as local guidance; only the

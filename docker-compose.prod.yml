@@ -1,0 +1,172 @@
+# Production stack for the demo host (task 59).
+#
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+#
+# or just `scripts/deploy.sh`, which does that plus the checks worth doing around it.
+#
+# Differences from docker-compose.yml, which stays the local-development file:
+#   - the app is a first-class service, not hidden behind a `full` profile;
+#   - Caddy terminates TLS and is the ONLY service publishing a port to the world;
+#   - actuator moves to its own port (8081) that is never published, so /actuator/prometheus
+#     and the household counts behind it stay inside the compose network;
+#   - Postgres keeps its data in a named volume and publishes nothing.
+#
+# Every service restarts unless stopped: the demo window runs for days and a reboot must not need a human.
+
+# Its own compose project, and not optional. Both files live in the same directory, so without this they
+# share the default project name derived from that directory — and `up` on this file then treats the dev
+# stack's `db` container as the same service, recreating it and cutting a running `make run` off from its
+# database. Naming the project keeps the two stacks completely separate, volumes included.
+name: komora-prod
+
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: komora-db
+    # Deliberately no `ports:`. Nothing outside the compose network needs the database; reach it with
+    #   docker compose -f docker-compose.prod.yml exec db psql -U "$POSTGRES_USER" "$POSTGRES_DB"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-komora}
+      POSTGRES_USER: ${POSTGRES_USER:-komora}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env.prod}
+      # Ukrainian product names and household notes live in this database.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    volumes:
+      - komora-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-komora} -d ${POSTGRES_DB:-komora}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  app:
+    build:
+      context: .
+    image: silpo-restock-ai:latest
+    container_name: komora-app
+    depends_on:
+      db:
+        condition: service_healthy
+    # Loopback only: Caddy proxies to `app:8080` over the compose network, and this mapping exists purely
+    # so `curl localhost:8080/...` works when SSH'd into the box. Binding 0.0.0.0 here would put the app
+    # on the public internet on port 8080 in plain HTTP, bypassing Caddy entirely.
+    ports:
+      - "127.0.0.1:${APP_LOCAL_PORT:-8080}:8080"
+    environment:
+      APP_NAME: ${APP_NAME:-silpo-restock-ai}
+      SPRING_PROFILES_ACTIVE: prod
+      SERVER_PORT: 8080
+      # Actuator on its own port, published nowhere. Alloy and the healthcheck reach it inside the network;
+      # Caddy proxies only 8080, so no /actuator path is reachable from the internet.
+      MANAGEMENT_PORT: 8081
+
+      # --- Database: reach it by compose service name, never localhost ---
+      DB_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-komora}
+      DB_USERNAME: ${POSTGRES_USER:-komora}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env.prod}
+
+      # --- Telegram ---
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?TELEGRAM_BOT_TOKEN must be set in .env.prod}
+      # The app re-registers the webhook on every boot (TelegramWebhookRegistrationService), which is what
+      # makes a redeploy self-healing. scripts/set-webhook.sh exists for the times you need it without one.
+      TELEGRAM_WEBHOOK_URL: https://${DOMAIN:?DOMAIN must be set in .env.prod}/telegram/webhook
+      TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET:?TELEGRAM_WEBHOOK_SECRET must be set in .env.prod}
+      TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-}
+      # Telegram only opens a WebApp over HTTPS on a real domain, which is the whole reason this task exists.
+      TELEGRAM_WEB_APP_BASE_URL: https://${DOMAIN}
+
+      # --- Silpo MCP ---
+      SILPO_MCP_CLIENT_ID: ${SILPO_MCP_CLIENT_ID:-}
+      # Must match a redirect URI registered with Silpo for this client id. A client registered against
+      # localhost will NOT accept this one — see .env.prod.example.
+      SILPO_MCP_REDIRECT_URI: https://${DOMAIN}/auth/silpo/callback
+      # Without this, stored Silpo tokens are encrypted with an ephemeral key and every restart logs
+      # every household out of Silpo.
+      SILPO_TOKEN_ENCRYPTION_KEY: ${SILPO_TOKEN_ENCRYPTION_KEY:?SILPO_TOKEN_ENCRYPTION_KEY must be set in .env.prod}
+
+      # --- Claude ---
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY must be set in .env.prod}
+      ANTHROPIC_WORKSPACE_ID: ${ANTHROPIC_WORKSPACE_ID:-}
+
+      # --- Optional integrations: blank disables each one cleanly, see .env.prod.example ---
+      STT_API_KEY: ${STT_API_KEY:-}
+      RESPEECHER_API_KEY: ${RESPEECHER_API_KEY:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_REDIRECT_URI: https://${DOMAIN}/auth/google/callback
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
+
+      # --- Observability (task 54) ---
+      KOMORA_ENV: ${KOMORA_ENV:-prod}
+
+      # --- Demo tuning ---
+      CHECKIN_INTERVAL: ${CHECKIN_INTERVAL:-3d}
+    volumes:
+      # The demo call log (task 58) and task 55's pitch artifact read this. Keeping it in a volume means a
+      # redeploy does not throw away the MCP call history the pitch is built from.
+      - komora-app-logs:/application/logs
+    healthcheck:
+      # Liveness for Docker's restart bookkeeping and for `depends_on: service_healthy`. Hits the management
+      # port inside the container, which is exactly what an external monitor would hit if we ever add one.
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8081/actuator/health | grep -q '\"status\":\"UP\"'"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      # Liquibase plus the MCP handshake make a cold boot slow; without this the container is restarted
+      # while it is still legitimately starting.
+      start_period: 120s
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: komora-caddy
+    depends_on:
+      - app
+    # The only public ports on the box. 80 is not optional: Let's Encrypt's HTTP-01 challenge needs it,
+    # and Caddy redirects it to 443 the rest of the time.
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    environment:
+      # Substituted into the Caddyfile's {$DOMAIN} at startup — the domain is never committed.
+      DOMAIN: ${DOMAIN:?DOMAIN must be set in .env.prod}
+    restart: unless-stopped
+
+  # Grafana Alloy, as in docker-compose.yml but scraping the app over the compose network rather than the
+  # host gateway. Behind a profile: without Grafana Cloud credentials it would only crash-loop.
+  #   docker compose -f docker-compose.prod.yml --env-file .env.prod --profile observability up -d alloy
+  alloy:
+    profiles: ["observability"]
+    image: grafana/alloy:v1.10.0
+    container_name: komora-alloy
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
+    volumes:
+      - ./observability/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - alloy-data:/var/lib/alloy/data
+    environment:
+      GRAFANA_CLOUD_PROM_URL: ${GRAFANA_CLOUD_PROM_URL:-}
+      GRAFANA_CLOUD_PROM_USER: ${GRAFANA_CLOUD_PROM_USER:-}
+      GRAFANA_CLOUD_PROM_TOKEN: ${GRAFANA_CLOUD_PROM_TOKEN:-}
+      KOMORA_ENV: ${KOMORA_ENV:-prod}
+      # The management port, not 8080 — /actuator/prometheus lives there in this file.
+      APP_METRICS_TARGET: app:8081
+    # No published port: Alloy's own UI would otherwise be open to the internet. Reach it, when debugging,
+    # through an SSH tunnel:  ssh -L 12345:localhost:12345 <host>  after adding a loopback mapping here.
+    restart: unless-stopped
+
+volumes:
+  komora-db-data:
+  komora-app-logs:
+  caddy-data:
+  caddy-config:
+  alloy-data:
