@@ -1369,6 +1369,25 @@ runtime.
 The image is `ghcr.io/javaandscriptdeveloper/silporestockai`, tagged `latest` (what Watchtower follows) and
 `sha-<short>` (what a rollback pins to).
 
+### One-time setup, after the first successful publish
+
+**GHCR creates a new package as private.** Watchtower has no credentials, so until this is changed it gets
+`denied` on every poll and nothing ever deploys — with no error on the server beyond Watchtower's own log.
+Do this once, right after the first green run on `main`:
+
+1. Open <https://github.com/javaAndScriptDeveloper/SilpoRestockAI/pkgs/container/silporestockai>
+2. *Package settings* → *Danger Zone* → **Change visibility** → *Public*
+
+Then confirm it from anywhere, with no login:
+
+```bash
+docker manifest inspect ghcr.io/javaandscriptdeveloper/silporestockai:latest >/dev/null && echo "public, Watchtower can pull it"
+```
+
+The image holds no secrets — every value is injected from `.env.prod` at runtime — so public costs nothing.
+If you would rather keep it private, give Watchtower `REPO_USER` and a `REPO_PASS` token with the
+`read:packages` scope **and nothing wider**, and add them to `.env.prod` and the `watchtower` service.
+
 ### The polling delay, stated as a number
 
 A push is live in **60–150 seconds**: CI's test-and-build takes the bulk of it, then Watchtower waits up to
