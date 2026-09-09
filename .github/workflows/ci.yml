@@ -49,3 +49,57 @@ jobs:
           name: coverage-report
           path: build/reports/jacoco/
           if-no-files-found: ignore
+
+  # Task 69. Build the image on every run — the Dockerfile breaks independently of the test suite, and the
+  # pull request is the cheapest place to catch that. Push only from a green main.
+  image:
+    # Sequential, deliberately: `needs` makes this wait for spotlessCheck and the full test suite, so an
+    # image is never published from a commit whose tests have not passed.
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # The one extra grant, scoped to this job alone. This is what replaces a stored registry credential:
+      # GITHUB_TOKEN is minted per run and expires with it, so there is no secret to rotate or to leak, and
+      # no SSH key anywhere in this pipeline.
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      # GHCR rejects an uppercase image path, and this repository's slug has capitals in it.
+      - name: Compute the lowercase image path
+        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        # Only when something is actually going to be pushed; a pull request build needs no credentials.
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Derive tags and labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          # `latest` is what Watchtower follows on the server; the sha tag is what a rollback pins to.
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,format=short
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # The Dockerfile compiles with Gradle inside its build stage. Without a cache that is a cold
+          # dependency download every run; with it, only changed sources are recompiled.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
