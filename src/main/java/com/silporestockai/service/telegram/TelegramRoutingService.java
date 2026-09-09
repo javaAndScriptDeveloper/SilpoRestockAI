@@ -3,6 +3,7 @@ package com.silporestockai.service.telegram;
 import com.silporestockai.config.TelegramProperties;
 import com.silporestockai.entity.User;
 import com.silporestockai.model.ConversationFlow;
+import com.silporestockai.model.OrderTrigger;
 import com.silporestockai.model.TelegramIncomingUpdate;
 import com.silporestockai.repository.UserRepository;
 import com.silporestockai.service.BlackoutModeService;
@@ -24,6 +25,7 @@ import com.silporestockai.service.ShoppingListBuilderService;
 import com.silporestockai.service.SpecialModeService;
 import com.silporestockai.service.UserAccountService;
 import com.silporestockai.service.onboarding.OnboardingFlowService;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -501,14 +503,14 @@ public class TelegramRoutingService {
             return;
         }
         if (incoming instanceof TelegramIncomingUpdate.Text reorder && matches(reorder.text(), "/reorder", "")) {
-            reorderConfirmationService.startNow(user);
+            reorderConfirmationService.startNow(user, OrderTrigger.of("REORDER", Instant.now()));
             return;
         }
         if (incoming instanceof TelegramIncomingUpdate.Text blackout && matches(blackout.text(), "/blackout", "")) {
             // Explicit only. Inferring an outage from a sentence and sending an unwanted order would land at the
             // worst possible moment, which is the one this mode exists for.
             telegramOutboundService.sendMessage(incoming.chatId(), "Збираю щось на поїсти без плити й холодильника.");
-            blackoutModeService.buildBlackoutOrder(user);
+            blackoutModeService.buildBlackoutOrder(user, OrderTrigger.of("BLACKOUT", Instant.now()));
             return;
         }
         if (incoming instanceof TelegramIncomingUpdate.Text text && matches(text.text(), "/calendar", "")) {

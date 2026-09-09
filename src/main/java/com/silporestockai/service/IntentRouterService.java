@@ -5,6 +5,7 @@ import com.silporestockai.client.stt.SpeechToTextClient;
 import com.silporestockai.entity.MealPlan;
 import com.silporestockai.entity.ShoppingListItem;
 import com.silporestockai.entity.User;
+import com.silporestockai.model.OrderTrigger;
 import com.silporestockai.service.telegram.HelpContent;
 import com.silporestockai.service.telegram.TelegramOutboundService;
 import java.io.IOException;
@@ -168,6 +169,9 @@ public class IntentRouterService {
      * rather than looping back through the router.
      */
     public boolean tryRoute(User user, String text, java.util.Set<String> unlessIntents) {
+        // The clock for intent→order speed (task 75) starts here, before the classification call, so the number
+        // includes the thinking and not just the shopping.
+        Instant receivedAt = Instant.now();
         ClassifiedIntent classified;
         try {
             classified = claudeApiClient.completeStructured(systemPrompt, withToday(text), ClassifiedIntent.class);
@@ -187,7 +191,7 @@ public class IntentRouterService {
             return false;
         }
         observabilityService.recordIntent("routed");
-        dispatch(user, text, classified, intent);
+        dispatch(user, text, classified, intent, receivedAt);
         return true;
     }
 
@@ -200,8 +204,9 @@ public class IntentRouterService {
         return text != null && DROP_UA_ONLY.matcher(text).find();
     }
 
-    private void dispatch(User user, String text, ClassifiedIntent classified, IntentType intent) {
+    private void dispatch(User user, String text, ClassifiedIntent classified, IntentType intent, Instant receivedAt) {
         log.info("user {} classified as {} (confidence {})", user.getId(), intent, classified.confidence());
+        OrderTrigger trigger = OrderTrigger.of(intent.name(), receivedAt);
         switch (intent) {
             case AD_HOC_SCHEDULED_PURCHASE -> scheduleAdHoc(user, classified);
             case SPECIAL_MODE_MEDICAL_GASTRITIS -> specialModeService.triggerGastritis(user);
@@ -210,7 +215,7 @@ public class IntentRouterService {
             case SPECIAL_MODE_LEANER ->
                 adjustPlan(user, "Зроби раціон менш калорійним. Людина написала: «" + text + "».");
             case SPECIAL_MODE_END -> specialModeService.cancel(user);
-            case REORDER -> reorderConfirmationService.startNow(user);
+            case REORDER -> reorderConfirmationService.startNow(user, trigger);
             case SPECIAL_MODE_MASS_GAIN -> {
                 telegramOutboundService.sendMessage(
                         user.getTelegramChatId(),
@@ -223,11 +228,11 @@ public class IntentRouterService {
             // One intent for both directions; the sentence says which. Setting rather than toggling: the same
             // request twice must not undo itself.
             case FILTER_UA_PRODUCER_ONLY -> specialModeService.setUaOnly(user, !asksToDropUaOnly(text));
-            case HANGOVER_RELIEF -> adHocOrderService.buildHangoverReliefOrder(user);
+            case HANGOVER_RELIEF -> adHocOrderService.buildHangoverReliefOrder(user, trigger);
             case BLACKOUT -> {
                 telegramOutboundService.sendMessage(
                         user.getTelegramChatId(), "Збираю щось на поїсти без плити й холодильника.");
-                blackoutModeService.buildBlackoutOrder(user);
+                blackoutModeService.buildBlackoutOrder(user, trigger);
             }
             case LIST_VIEW -> shoppingListBuilderService.showCurrentOrAsk(user);
             // Straight into the edit, skipping the "Що беремо на цей тиждень?" opener — the person already
@@ -245,7 +250,7 @@ public class IntentRouterService {
             // Read-only, and the short form: the sentence asked about one order, so answer about that one.
             // The «📦 Замовлення» button (task 57) asks the same service for the fuller view.
             case WHERE_IS_MY_ORDER -> orderHistoryService.showStatus(user, false);
-            case DISH_INGREDIENTS_ORDER -> dishRequestService.start(user, classified.themeDescription());
+            case DISH_INGREDIENTS_ORDER -> dishRequestService.start(user, classified.themeDescription(), trigger);
             case HELP -> sendHelp(user);
             case UNKNOWN -> askClarifyingQuestion(user);
         }

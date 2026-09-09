@@ -6,6 +6,7 @@ import com.silporestockai.client.claude.ClaudeApiClient;
 import com.silporestockai.entity.ShoppingListItem;
 import com.silporestockai.entity.User;
 import com.silporestockai.model.DishIngredients;
+import com.silporestockai.model.OrderTrigger;
 import com.silporestockai.model.OrderType;
 import com.silporestockai.model.PlannedIngredient;
 import com.silporestockai.repository.UserProfileRepository;
@@ -67,7 +68,7 @@ public class DishIngredientsService {
     }
 
     /** Generates the dish's shopping list for this household and puts the resulting cart up for confirmation. */
-    public void orderIngredients(User user, String dishName) {
+    public void orderIngredients(User user, String dishName, OrderTrigger trigger) {
         long chatId = user.getTelegramChatId();
         int servings = servingsFor(user.getId());
         DishIngredients dish;
@@ -110,7 +111,7 @@ public class DishIngredientsService {
                 chatId,
                 "Інгредієнти для «%s» на %d %s — збираю кошик."
                         .formatted(dishName, servings, servings == 1 ? "порцію" : servings < 5 ? "порції" : "порцій"));
-        if (cartConfirmationService.present(user, items, OrderType.AD_HOC)) {
+        if (cartConfirmationService.present(user, items, OrderType.AD_HOC, false, trigger)) {
             log.info("presented a {}-line ingredient cart for «{}» to user {}", items.size(), dishName, user.getId());
         } else {
             log.info("could not present an ingredient cart for «{}» to user {}", dishName, user.getId());

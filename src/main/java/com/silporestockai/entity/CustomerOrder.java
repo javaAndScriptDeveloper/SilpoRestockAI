@@ -101,4 +101,15 @@ public class CustomerOrder {
     /** How many lines the ₴799 minimum-order top-up added from the household's baseline (task 51). */
     @Column(name = "topped_up_count")
     private Integer toppedUpCount;
+
+    /**
+     * The router intent that asked for this order — {@code HANGOVER_RELIEF}, {@code REORDER}, … (task 75). Null for
+     * the weekly cart and the scheduled reorder cycle, which no sentence started.
+     */
+    @Column(name = "trigger_intent", length = 64)
+    private String triggerIntent;
+
+    /** When that request reached the app. Intent→order speed is {@code confirmedAt − requestedAt}. */
+    @Column(name = "requested_at")
+    private Instant requestedAt;
 }

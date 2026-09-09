@@ -2,6 +2,7 @@ package com.silporestockai.service;
 
 import com.silporestockai.entity.ScheduledAdHocTask;
 import com.silporestockai.entity.User;
+import com.silporestockai.model.OrderTrigger;
 import com.silporestockai.model.ScheduledAdHocTaskKind;
 import com.silporestockai.model.ScheduledAdHocTaskStatus;
 import com.silporestockai.repository.ScheduledAdHocTaskRepository;
@@ -60,7 +61,7 @@ public class AdHocScheduleService {
      * для карбонари" and the cart is a wait nobody asked for, and the row still exists — «Заплановані» shows it
      * under «Нещодавно виконав».
      */
-    public void scheduleDishIngredients(User user, String dishName) {
+    public void scheduleDishIngredients(User user, String dishName, OrderTrigger trigger) {
         ScheduledAdHocTask task = scheduledAdHocTaskRepository.save(ScheduledAdHocTask.builder()
                 .id(UUID.randomUUID())
                 .userId(user.getId())
@@ -73,7 +74,7 @@ public class AdHocScheduleService {
         telegramOutboundService.sendMessage(
                 user.getTelegramChatId(), "Зберу все для «%s» — секунду.".formatted(dishName));
         log.info("scheduled a dish-ingredients order for «{}» for user {}, firing now", dishName, user.getId());
-        fire(task, user);
+        fire(task, user, trigger);
     }
 
     /** Fires every {@code PENDING} task whose trigger time has passed. Returns how many fired. */
@@ -84,7 +85,8 @@ public class AdHocScheduleService {
             userRepository
                     .findById(task.getUserId())
                     .ifPresentOrElse(
-                            user -> fire(task, user),
+                            // A deadline the person chose is not latency: the clock starts at the sweep.
+                            user -> fire(task, user, OrderTrigger.of("AD_HOC_SCHEDULED_PURCHASE", Instant.now())),
                             () -> log.warn(
                                     "scheduled ad-hoc task {} has no matching user; leaving it pending", task.getId()));
         }
@@ -95,7 +97,7 @@ public class AdHocScheduleService {
     }
 
     /** Turns one task into one order, by kind, and marks it fired. */
-    private void fire(ScheduledAdHocTask task, User user) {
+    private void fire(ScheduledAdHocTask task, User user, OrderTrigger trigger) {
         // Claimed before the work, not after it. A dish order fires the moment it is scheduled and takes a model
         // call plus a cart build; live, a sweep tick landed inside that window, found the row still PENDING and
         // fired it a second time — two carts, two «Не зрозумів» — for one sentence. A task whose work fails goes
@@ -105,8 +107,9 @@ public class AdHocScheduleService {
         try {
             switch (task.getKind() == null ? ScheduledAdHocTaskKind.SNACK_THEME : task.getKind()) {
                 case SNACK_THEME ->
-                    adHocOrderService.buildAdHocOrder(user, task.getThemeDescription(), task.getTriggerAt());
-                case DISH_INGREDIENTS -> dishIngredientsService.orderIngredients(user, task.getThemeDescription());
+                    adHocOrderService.buildAdHocOrder(user, task.getThemeDescription(), task.getTriggerAt(), trigger);
+                case DISH_INGREDIENTS ->
+                    dishIngredientsService.orderIngredients(user, task.getThemeDescription(), trigger);
             }
         } catch (RuntimeException e) {
             task.setStatus(ScheduledAdHocTaskStatus.PENDING);

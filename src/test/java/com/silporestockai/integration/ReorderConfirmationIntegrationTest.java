@@ -16,6 +16,7 @@ import com.silporestockai.model.CheckinDelta;
 import com.silporestockai.model.DeltaOrder;
 import com.silporestockai.model.OfferedSlot;
 import com.silporestockai.model.OrderStatus;
+import com.silporestockai.model.OrderTrigger;
 import com.silporestockai.model.OrderType;
 import com.silporestockai.repository.BaselineBasketRepository;
 import com.silporestockai.repository.CheckinRepository;
@@ -244,9 +245,18 @@ class ReorderConfirmationIntegrationTest extends AbstractIntegrationTest {
                 .build());
     }
 
+    /** Task 75: the draft carries the trigger that started it, so confirmation can time intent→order. */
+    @Test
+    void reorderDraftCarriesTheTriggerThatStartedIt() {
+        needs(List.of("Молоко"));
+        present();
+        assertThat(draft().getTriggerIntent()).isEqualTo("REORDER");
+        assertThat(draft().getRequestedAt()).isNotNull();
+    }
+
     private void present() {
         DeltaOrder order = reorderService.buildScheduledDeltaOrder(user.getId());
-        reorderConfirmationService.present(user, order);
+        reorderConfirmationService.present(user, order, OrderTrigger.of("REORDER", Instant.now()));
     }
 
     private void tapButton(int updateId, String data) throws Exception {

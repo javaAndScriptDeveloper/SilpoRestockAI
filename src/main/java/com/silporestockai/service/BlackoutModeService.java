@@ -2,6 +2,7 @@ package com.silporestockai.service;
 
 import com.silporestockai.entity.ShoppingListItem;
 import com.silporestockai.entity.User;
+import com.silporestockai.model.OrderTrigger;
 import com.silporestockai.model.OrderType;
 import java.math.BigDecimal;
 import java.util.List;
@@ -49,9 +50,9 @@ public class BlackoutModeService {
     private final CartConfirmationService cartConfirmationService;
 
     /** Builds the emergency cart and puts it through the usual confirmation. Ad-hoc: the baseline is untouched. */
-    public void buildBlackoutOrder(User user) {
+    public void buildBlackoutOrder(User user, OrderTrigger trigger) {
         log.info("building a blackout order for user {}", user.getId());
-        cartConfirmationService.present(user, items(user.getId()), OrderType.AD_HOC);
+        cartConfirmationService.present(user, items(user.getId()), OrderType.AD_HOC, false, trigger);
     }
 
     private static List<ShoppingListItem> items(UUID userId) {

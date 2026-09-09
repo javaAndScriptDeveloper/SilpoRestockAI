@@ -14,6 +14,7 @@ import com.silporestockai.model.ConversationFlow;
 import com.silporestockai.model.OfferedSlot;
 import com.silporestockai.model.OrderConfirmedEvent;
 import com.silporestockai.model.OrderStatus;
+import com.silporestockai.model.OrderTrigger;
 import com.silporestockai.model.OrderType;
 import com.silporestockai.model.TelegramIncomingUpdate;
 import com.silporestockai.repository.BaselineBasketRepository;
@@ -92,6 +93,17 @@ public class CartConfirmationService {
 
     /** Same, for a request made «по знижці» — see {@code CartBuildingService.buildCart}. */
     public boolean present(User user, List<ShoppingListItem> items, OrderType type, boolean preferDiscounted) {
+        return present(user, items, type, preferDiscounted, null);
+    }
+
+    /**
+     * Same, for an order a chat intent asked for (task 75). The trigger is written onto the draft so that the
+     * confirmation, which runs in a later webhook, can measure how long the person waited from sentence to order.
+     *
+     * @param trigger which intent asked and when, or null for orders no sentence started
+     */
+    public boolean present(
+            User user, List<ShoppingListItem> items, OrderType type, boolean preferDiscounted, OrderTrigger trigger) {
         long chatId = user.getTelegramChatId();
         CartSummary summary;
         try {
@@ -148,6 +160,8 @@ public class CartConfirmationService {
                 .goodsTotal(summary.goodsTotal())
                 .savings(summary.savings())
                 .toppedUpCount(summary.toppedUpLines().size())
+                .triggerIntent(trigger == null ? null : trigger.intent())
+                .requestedAt(trigger == null ? null : trigger.requestedAt())
                 .createdAt(Instant.now())
                 .build());
 

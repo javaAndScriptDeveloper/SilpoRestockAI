@@ -18,6 +18,7 @@ import com.silporestockai.model.DeltaOrder;
 import com.silporestockai.model.OfferedSlot;
 import com.silporestockai.model.OrderConfirmedEvent;
 import com.silporestockai.model.OrderStatus;
+import com.silporestockai.model.OrderTrigger;
 import com.silporestockai.model.ReplacementOption;
 import com.silporestockai.model.ReplacementSuggestion;
 import com.silporestockai.model.TelegramIncomingUpdate;
@@ -99,13 +100,21 @@ public class ReorderConfirmationService {
      * (task 14's notes), so this is how a person — «що треба докупити?», or the typed {@code /reorder} — or a demo
      * starts one: the same delta the cycle would build, handed to the same confirmation.
      */
-    public void startNow(User user) {
+    public void startNow(User user, OrderTrigger trigger) {
         telegramOutboundService.sendMessage(user.getTelegramChatId(), "Дивлюсь, що треба докупити.");
-        present(user, reorderService.buildScheduledDeltaOrder(user.getId()));
+        present(user, reorderService.buildScheduledDeltaOrder(user.getId()), trigger);
     }
 
-    /** Chooses a slot, writes the draft, and shows the order. */
+    /** Chooses a slot, writes the draft, and shows the order — the scheduled cycle's entry, which no sentence started. */
     public void present(User user, DeltaOrder order) {
+        present(user, order, null);
+    }
+
+    /**
+     * Same, with the intent that asked for it (task 75), stored on the draft so the confirmation webhook can time
+     * sentence → confirmed order.
+     */
+    public void present(User user, DeltaOrder order, OrderTrigger trigger) {
         long chatId = user.getTelegramChatId();
         if (order.isEmpty()) {
             telegramOutboundService.sendMessage(chatId, reorderMessageService.nothingToOrderText());
@@ -134,6 +143,8 @@ public class ReorderConfirmationService {
                 .goodsTotal(order.cart().goodsTotal())
                 .savings(order.cart().savings())
                 .toppedUpCount(order.cart().toppedUpLines().size())
+                .triggerIntent(trigger == null ? null : trigger.intent())
+                .requestedAt(trigger == null ? null : trigger.requestedAt())
                 .createdAt(clock.instant())
                 .build());
 

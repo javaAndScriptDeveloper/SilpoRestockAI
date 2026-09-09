@@ -11,6 +11,7 @@ import com.silporestockai.entity.User;
 import com.silporestockai.entity.UserProfile;
 import com.silporestockai.model.BasketItem;
 import com.silporestockai.model.OrderStatus;
+import com.silporestockai.model.OrderTrigger;
 import com.silporestockai.model.OrderType;
 import com.silporestockai.repository.BaselineBasketRepository;
 import com.silporestockai.repository.ConversationStateRepository;
@@ -235,7 +236,11 @@ class AdHocOrderIntegrationTest extends AbstractIntegrationTest {
     void theThemeBecomesShopLinesAndTheOrdinaryCartPipelineResolvesThem() {
         CLAUDE.respondWithTexts(CHEESE_AND_WINE, MATCH_BOTH);
 
-        adHocOrderService.buildAdHocOrder(user, "сир та вино по знижці до п'ятниці", Instant.now());
+        adHocOrderService.buildAdHocOrder(
+                user,
+                "сир та вино по знижці до п'ятниці",
+                Instant.now(),
+                OrderTrigger.of("AD_HOC_SCHEDULED_PURCHASE", Instant.now()));
 
         assertThat(searchedTerms()).containsExactly("Сир твердий", "Вино червоне сухе");
         List<String> addedProductIds = new ArrayList<>();
@@ -264,7 +269,11 @@ class AdHocOrderIntegrationTest extends AbstractIntegrationTest {
     void askingForADiscountTellsTheMatcherToPreferPromotedCandidates() {
         CLAUDE.respondWithTexts(CHEESE_AND_WINE, MATCH_BOTH);
 
-        adHocOrderService.buildAdHocOrder(user, "сир та вино по знижці до п'ятниці", Instant.now());
+        adHocOrderService.buildAdHocOrder(
+                user,
+                "сир та вино по знижці до п'ятниці",
+                Instant.now(),
+                OrderTrigger.of("AD_HOC_SCHEDULED_PURCHASE", Instant.now()));
 
         String matcherLines =
                 CLAUDE.requests().get(1).path("messages").get(0).path("content").asText();
@@ -275,7 +284,11 @@ class AdHocOrderIntegrationTest extends AbstractIntegrationTest {
     void aThemeWithoutADiscountWordDoesNotAskForOne() {
         CLAUDE.respondWithTexts(CHEESE_AND_WINE, MATCH_BOTH);
 
-        adHocOrderService.buildAdHocOrder(user, "сир та вино на вечір", Instant.now());
+        adHocOrderService.buildAdHocOrder(
+                user,
+                "сир та вино на вечір",
+                Instant.now(),
+                OrderTrigger.of("AD_HOC_SCHEDULED_PURCHASE", Instant.now()));
 
         // The rule lives in the system prompt either way; the line itself carries the note only when asked.
         assertThat(CLAUDE.requests()
@@ -292,7 +305,11 @@ class AdHocOrderIntegrationTest extends AbstractIntegrationTest {
     void thePrefaceNamesTheLinesAndTheCartNamesTheSavings() {
         CLAUDE.respondWithTexts(CHEESE_AND_WINE, MATCH_BOTH);
 
-        adHocOrderService.buildAdHocOrder(user, "сир та вино по знижці", Instant.now());
+        adHocOrderService.buildAdHocOrder(
+                user,
+                "сир та вино по знижці",
+                Instant.now(),
+                OrderTrigger.of("AD_HOC_SCHEDULED_PURCHASE", Instant.now()));
 
         assertThat(TELEGRAM.sentMessages())
                 .anySatisfy(message -> assertThat(message.path("text").asText())
@@ -310,7 +327,8 @@ class AdHocOrderIntegrationTest extends AbstractIntegrationTest {
                 .getId();
         CLAUDE.respondWithTexts(CHEESE_AND_WINE, MATCH_BOTH);
 
-        adHocOrderService.buildAdHocOrder(user, "сир та вино", Instant.now());
+        adHocOrderService.buildAdHocOrder(
+                user, "сир та вино", Instant.now(), OrderTrigger.of("AD_HOC_SCHEDULED_PURCHASE", Instant.now()));
         tapButton(1, CartMessageService.CALLBACK_CONFIRM);
 
         assertThat(customerOrderRepository.findByUserIdAndStatus(user.getId(), OrderStatus.CONFIRMED))
@@ -331,7 +349,8 @@ class AdHocOrderIntegrationTest extends AbstractIntegrationTest {
     void aThemeThatYieldsNoLinesGetsAClearMessageAndNoOrder() {
         CLAUDE.respondWithText("{\"items\":[]}");
 
-        adHocOrderService.buildAdHocOrder(user, "щось", Instant.now());
+        adHocOrderService.buildAdHocOrder(
+                user, "щось", Instant.now(), OrderTrigger.of("AD_HOC_SCHEDULED_PURCHASE", Instant.now()));
 
         assertThat(customerOrderRepository.findByUserIdAndStatus(user.getId(), OrderStatus.DRAFT))
                 .isEmpty();
@@ -345,7 +364,7 @@ class AdHocOrderIntegrationTest extends AbstractIntegrationTest {
     @Test
     void hangoverReliefSearchesOneTermPerNeedWithSensibleQuantities() {
         CLAUDE.respondWithText(MATCH_WATER_AND_ISOTONIC);
-        adHocOrderService.buildHangoverReliefOrder(user);
+        adHocOrderService.buildHangoverReliefOrder(user, OrderTrigger.of("HANGOVER_RELIEF", Instant.now()));
 
         assertThat(searchedTerms()).containsExactly("вода мінеральна", "ізотонік", "сорбент");
         var added = MCP.callArguments("silpo_add_or_update_cart_products")
@@ -356,10 +375,24 @@ class AdHocOrderIntegrationTest extends AbstractIntegrationTest {
         assertThat(added.get(1).path("quantity").asInt()).isEqualTo(2);
     }
 
+    /** Task 75: the draft remembers who asked and when, so confirmation can measure intent→order speed. */
+    @Test
+    void hangoverDraftRemembersWhichIntentAskedForItAndWhen() {
+        CLAUDE.respondWithText(MATCH_WATER_AND_ISOTONIC);
+        Instant asked = Instant.now().minusSeconds(4).truncatedTo(java.time.temporal.ChronoUnit.MILLIS);
+        adHocOrderService.buildHangoverReliefOrder(user, OrderTrigger.of("HANGOVER_RELIEF", asked));
+
+        CustomerOrder draft = customerOrderRepository
+                .findByUserIdAndStatus(user.getId(), OrderStatus.DRAFT)
+                .getFirst();
+        assertThat(draft.getTriggerIntent()).isEqualTo("HANGOVER_RELIEF");
+        assertThat(draft.getRequestedAt()).isEqualTo(asked);
+    }
+
     @Test
     void hangoverReliefIsHonestAboutWhatWasNotFoundRatherThanFailingSilently() {
         CLAUDE.respondWithText(MATCH_WATER_AND_ISOTONIC);
-        adHocOrderService.buildHangoverReliefOrder(user);
+        adHocOrderService.buildHangoverReliefOrder(user, OrderTrigger.of("HANGOVER_RELIEF", Instant.now()));
 
         CustomerOrder draft = customerOrderRepository
                 .findByUserIdAndStatus(user.getId(), OrderStatus.DRAFT)

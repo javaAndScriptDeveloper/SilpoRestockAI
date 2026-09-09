@@ -1,0 +1,22 @@
+databaseChangeLog:
+  - changeSet:
+      id: 033-order-trigger
+      author: komora
+      comment: >-
+        Task 75: intent-to-order speed. The router knew which intent built an order and when the sentence
+        arrived, but nothing wrote it down, so «намір → замовлення» could not be measured after the fact —
+        only onboarding→first order (task 37), which is one number per household, measured once.
+
+        Nullable, no backfill: an order the weekly list or the reorder cycle built has no request time at
+        all, and the intent orders confirmed before this change genuinely lost theirs. The gauges skip
+        rows where either column is null rather than inventing a duration.
+      changes:
+        - addColumn:
+            tableName: customer_order
+            columns:
+              - column:
+                  name: trigger_intent
+                  type: VARCHAR(64)
+              - column:
+                  name: requested_at
+                  type: TIMESTAMP WITH TIME ZONE

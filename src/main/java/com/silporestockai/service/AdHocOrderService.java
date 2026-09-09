@@ -3,6 +3,7 @@ package com.silporestockai.service;
 import com.silporestockai.client.claude.ClaudeApiClient;
 import com.silporestockai.entity.ShoppingListItem;
 import com.silporestockai.entity.User;
+import com.silporestockai.model.OrderTrigger;
 import com.silporestockai.model.OrderType;
 import com.silporestockai.model.ShoppingListDraft;
 import com.silporestockai.repository.UserProfileRepository;
@@ -81,7 +82,11 @@ public class AdHocOrderService {
      * Turns the theme into a short shop list and hands it to the usual confirmation as an {@link OrderType#AD_HOC}
      * cart. {@code targetDateTime} is accepted for task 31's contract; scheduling already decided when to run this.
      */
-    public void buildAdHocOrder(User user, String themeDescription, Instant targetDateTime) {
+    /**
+     * @param trigger which intent asked for this and when (task 75) — for a purchase the sweep fires, the sweep
+     *     moment, since «до п'ятниці» is a deadline the person chose, not latency
+     */
+    public void buildAdHocOrder(User user, String themeDescription, Instant targetDateTime, OrderTrigger trigger) {
         long chatId = user.getTelegramChatId();
         String theme = themeDescription == null || themeDescription.isBlank() ? "щось смачне" : themeDescription.trim();
         List<ShoppingListItem> items = linesFor(user.getId(), theme);
@@ -102,7 +107,7 @@ public class AdHocOrderService {
                                                 .map(AdHocOrderService::describe)
                                                 .toList()),
                                 preferDiscounted ? " (де є акція — беру акційне)" : ""));
-        cartConfirmationService.present(user, items, OrderType.AD_HOC, preferDiscounted);
+        cartConfirmationService.present(user, items, OrderType.AD_HOC, preferDiscounted, trigger);
         log.info("presented an ad-hoc cart of {} lines for «{}» to user {}", items.size(), theme, user.getId());
     }
 
@@ -111,7 +116,7 @@ public class AdHocOrderService {
      * promotion-driven — availability, not price, is the point — and the earliest offered delivery slot is the
      * standard flow's own default.
      */
-    public void buildHangoverReliefOrder(User user) {
+    public void buildHangoverReliefOrder(User user, OrderTrigger trigger) {
         List<ShoppingListItem> items = HANGOVER_RELIEF_LINES.stream()
                 .map(line -> ShoppingListItem.builder()
                         .id(UUID.randomUUID())
@@ -121,7 +126,7 @@ public class AdHocOrderService {
                         .unit("шт")
                         .build())
                 .toList();
-        cartConfirmationService.present(user, items, OrderType.AD_HOC);
+        cartConfirmationService.present(user, items, OrderType.AD_HOC, false, trigger);
         log.info("presented a hangover-relief cart to user {}", user.getId());
     }
 

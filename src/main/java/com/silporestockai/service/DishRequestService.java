@@ -3,9 +3,11 @@ package com.silporestockai.service;
 import com.silporestockai.entity.ConversationState;
 import com.silporestockai.entity.User;
 import com.silporestockai.model.ConversationFlow;
+import com.silporestockai.model.OrderTrigger;
 import com.silporestockai.model.TelegramButton;
 import com.silporestockai.model.TelegramIncomingUpdate;
 import com.silporestockai.service.telegram.TelegramOutboundService;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -30,6 +32,9 @@ public class DishRequestService {
     public static final String CALLBACK_YES = "dish:yes";
     public static final String CALLBACK_NO = "dish:no";
 
+    /** The router's name for this intent — the tag intent→order speed is filed under (task 75). */
+    private static final String INTENT = "DISH_INGREDIENTS_ORDER";
+
     private static final String STEP_AWAITING_DISH = "AWAITING_DISH";
     private static final String STEP_AWAITING_CONFIRM = "AWAITING_CONFIRM";
     private static final String KEY_DISH = "dishName";
@@ -40,12 +45,12 @@ public class DishRequestService {
     private final TelegramOutboundService telegramOutboundService;
 
     /** Entry from a sentence: the dish the classifier extracted, or nothing. */
-    public void start(User user, String dishName) {
+    public void start(User user, String dishName, OrderTrigger trigger) {
         if (dishName == null || dishName.isBlank()) {
             askForDish(user.getTelegramChatId());
             return;
         }
-        proceed(user, dishName.trim());
+        proceed(user, dishName.trim(), trigger);
     }
 
     /** Entry from a photo (with a caption the router read as this intent): identify, then ask. */
@@ -76,8 +81,9 @@ public class DishRequestService {
             case TelegramIncomingUpdate.ButtonTap tap -> {
                 telegramOutboundService.answerCallback(tap.callbackQueryId());
                 Object remembered = state.getContext().get(KEY_DISH);
+                // The tap is the request the clock starts from (task 75): the earlier sentence only named a dish.
                 if (awaitingConfirm && CALLBACK_YES.equals(tap.data()) && remembered != null) {
-                    proceed(user, remembered.toString());
+                    proceed(user, remembered.toString(), OrderTrigger.of(INTENT, Instant.now()));
                 } else if (awaitingConfirm && CALLBACK_NO.equals(tap.data())) {
                     askForDish(chatId);
                 } else {
@@ -90,7 +96,7 @@ public class DishRequestService {
                 if (name.isBlank()) {
                     askForDish(chatId);
                 } else {
-                    proceed(user, name);
+                    proceed(user, name, OrderTrigger.of(INTENT, Instant.now()));
                 }
             }
             case TelegramIncomingUpdate.Photo photo -> {
@@ -114,8 +120,8 @@ public class DishRequestService {
     }
 
     /** The conversation is over; the cart confirmation that follows owns the state from here. */
-    private void proceed(User user, String dishName) {
+    private void proceed(User user, String dishName, OrderTrigger trigger) {
         conversationStateService.save(user.getTelegramChatId(), ConversationFlow.NONE, null, Map.of());
-        adHocScheduleService.scheduleDishIngredients(user, dishName);
+        adHocScheduleService.scheduleDishIngredients(user, dishName, trigger);
     }
 }
