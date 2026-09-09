@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.validation.FieldError;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -53,6 +54,17 @@ public class GlobalExceptionHandler {
     public ProblemDetail handleMissingResource(NoResourceFoundException ex) {
         log.debug("No static resource: {}", ex.getResourcePath());
         return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, "Not found");
+    }
+
+    /**
+     * Neither is a crawler sending {@code GET /telegram/webhook}, or a browser opening any other POST-only URL.
+     * Without this the catch-all below answers 500 with a full stack trace at ERROR — on a public host that is
+     * both the wrong status (405 is the answer) and a steady stream of noise from whoever scans the domain.
+     */
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ProblemDetail handleMethodNotSupported(HttpRequestMethodNotSupportedException ex) {
+        log.debug("Method not supported: {}", ex.getMessage());
+        return ProblemDetail.forStatusAndDetail(HttpStatus.METHOD_NOT_ALLOWED, "Method not allowed");
     }
 
     @ExceptionHandler(Exception.class)
