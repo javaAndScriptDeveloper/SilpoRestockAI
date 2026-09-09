@@ -1266,3 +1266,41 @@ fixed it on the rebuild (`1e8f65d`), and the same words are in the deterministic
 Four «Як справи з їжею?» in eight minutes made the pass-1 transcript unreadable. Ten minutes is still short
 enough to reach step 7 inside a pass. `make metrics` must be re-run after the knobs are reverted before any
 check-in number goes into the pitch.
+
+## Session 18 — 2026-09-10 (night): task 75, decisions taken without asking
+
+### The scheduled purchase's clock starts at the sweep, not at the sentence
+«Замов до п'ятниці вино та сир» names a deadline the person chose. Measuring from the sentence would report the
+wait they asked for as our latency. So `AD_HOC_SCHEDULED_PURCHASE` is timed from the sweep that fires it, and the
+panel description says so. Every other intent is timed from the moment the text reached the router, before the
+classification call, so the model's thinking is inside the number.
+
+### `/reorder` and `/blackout` count as intents
+A slash command is a request in every sense the metric cares about. They file under the same intent name as the
+sentence (`REORDER`, `BLACKOUT`) rather than a separate «command» tag — a second tag value would split a
+four-row sample for no pitch sentence that needs the split.
+
+### The weekly cart and the reorder cycle carry no trigger
+«Замовити» under the list is a button on a plan, not a sentence; the scheduled reorder cycle is a timer. Task 37's
+onboarding → first order already covers the first cart, and the check-in interval is the reorder cycle's clock.
+Timing them as «intent → order» would inflate the metric with things nobody asked for in a sentence.
+
+### No per-order edit count exists, so the accuracy story has two numbers, not three
+The task asks for «edits-per-order where meaningful». `edited_before_confirm` is a boolean only reorders set, and
+`trust_level.consecutive_unedited_confirmations` is a streak. The dashboard shows the unedited share and the
+longest streak; inventing an average edit count from a boolean would be a number with no data behind it.
+
+### `env` became a dashboard variable
+Alloy stamps `env` on every series and the app tags it too. A rehearsal laptop and the deployed box pushing at the
+same time would otherwise sum into one GMV. Default is All; RUNBOOK 16 says when to pin it.
+
+### The generator is committed, the JSON is derived
+1 500 lines of hand-edited JSON is how a dashboard rots. `build-dashboards.py` is the source; `make dashboards-json`
+regenerates; `DashboardJsonTest` guards the names and the section promises. Both Grafanas provision the same
+files, which is what the task's «not manually clicked together twice» asks for.
+
+### Task 75 goes to In review, not Done
+Every acceptance criterion a machine can check is checked (names, sections, live medians equal to SQL, hosted =
+local = file). The one that cannot — «a viewer can tell which section they are looking at without reading» — is
+yours: the tiles are blue in A and green in B on purpose.
+

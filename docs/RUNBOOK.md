@@ -979,11 +979,25 @@ answers a query badly, the fix is the curated list in `BlackoutModeService`, not
 
 ---
 
-## 16. Metrics and the Grafana dashboard (task 54)
+## 16. Metrics and the two Grafana dashboards (tasks 54, 75)
 
 The app publishes Prometheus metrics at `/actuator/prometheus`. Grafana Alloy scrapes that locally and
 pushes them outbound to Grafana Cloud — push, not pull, because a demo box behind a rotating tunnel has
 no address anyone can scrape.
+
+**The two live dashboards (task 75):**
+
+| | Hosted | Local harness |
+|---|---|---|
+| Business — гість (A, сині плитки) / «Сільпо» (B, зелені) | <https://charmingaphid2632.grafana.net/d/komora-business> | <http://localhost:3000/d/komora-business> |
+| Technical — MCP RED per tool, Claude, agent, process | <https://charmingaphid2632.grafana.net/d/komora-observability> | <http://localhost:3000/d/komora-observability> |
+
+Both come from `observability/grafana/*.json`, and the JSON comes from `observability/grafana/build-dashboards.py`.
+**Never hand-edit the JSON**: edit the script, `make dashboards-json`, run `DashboardJsonTest`, commit both, then
+`make dashboard` to push. The local harness provisions the same directory through Grafana's file provider, so
+after a regeneration `docker restart komora-grafana` reloads it. The `env` variable at the top of each dashboard
+comes from Alloy's `external_labels` and the app's own `management.metrics.tags.env`; pick the demo box's value
+there if a rehearsal laptop is pushing at the same time, or the GMV of both would sum.
 
 ### Check the numbers are real, without any cloud account
 
@@ -992,15 +1006,40 @@ make run
 curl -s localhost:8080/actuator/prometheus | grep '^komora_' | sort
 ```
 
-Absolute levels (`komora_users_registered`, `komora_orders_gmv_uah`, …) come from the database and are
-rebuilt every 30 s, so they survive a restart — a counter would read zero after every `make run`, which
-is exactly wrong for "GMV since launch". Rates and latencies (`komora_mcp_call_seconds`,
-`komora_claude_call_seconds`, `komora_cart_*`) are recorded in-process and start empty on each boot;
-drive a real session first or they will not be there at all.
+Absolute levels (`komora_users_registered`, `komora_orders_gmv_uah`, `komora_checkins`, `komora_reorders`,
+`komora_intent_order_median_seconds`, …) come from the database and are rebuilt every 30 s, so they
+survive a restart — a counter would read zero after every `make run`, which is exactly wrong for "GMV since
+launch". Rates and latencies (`komora_mcp_call_seconds`, `komora_claude_call_seconds`, `komora_cart_*`,
+`komora_intent_order_seconds`) are recorded in-process and start empty on each boot; drive a real session
+first or they will not be there at all.
 
 > **A fresh database prints zeros, and zeros are not results.** `komora_orders_value_missing` is the
 > honest companion to the GMV panel: it counts confirmed orders with no stored total — rows written
-> before task 54 added the columns. Those are excluded from GMV rather than counted as ₴0.
+> before task 54 added the columns. Those are excluded from GMV rather than counted as ₴0. Likewise an
+> intent with no confirmed order publishes **no** `komora_intent_order_median_seconds` row: «No data» on
+> the panel is the truth, a zero would read as «confirmed in no time».
+
+### Intent → order speed (task 75): what it measures and how to check it
+
+`customer_order.trigger_intent` / `requested_at` are written on the draft by every intent-routed order
+(`HANGOVER_RELIEF`, `BLACKOUT`, `REORDER`, `DISH_INGREDIENTS_ORDER`, `AD_HOC_SCHEDULED_PURCHASE`); the
+weekly cart and the scheduled reorder cycle have none. The clock starts when the sentence reaches the router,
+before the classification call; for a purchase the sweep fires, at the sweep. Confirmation records the timer
+and the next refresh recomputes the medians:
+
+```sql
+SELECT trigger_intent, count(*),
+       floor(extract(epoch FROM percentile_cont(0.5)
+             WITHIN GROUP (ORDER BY confirmed_at - requested_at))) AS median_s
+FROM customer_order
+WHERE status = 'CONFIRMED' AND trigger_intent IS NOT NULL AND requested_at IS NOT NULL
+GROUP BY trigger_intent;
+```
+
+`komora_intent_order_median_seconds{intent="…"}` must equal `median_s` exactly (whole seconds, floored, which
+is what `Duration.toSeconds()` does), and `{intent="ALL"}` the same over all those rows together. Verified
+2026-09-10 on four live intents: BLACKOUT 214 s, DISH_INGREDIENTS_ORDER 28 s, HANGOVER_RELIEF 17 s, REORDER
+13 s, ALL 23 s — the SQL and the scrape agreed on every row.
 
 ### Cross-check GMV against the order table by hand
 
@@ -1038,32 +1077,31 @@ line-for-line with the basket — that the write site is wired to the right fiel
 
 ### Push to Grafana Cloud
 
-**The live dashboard:**
-<https://charmingaphid2632.grafana.net/d/komora-observability/komora-e28094-observability>
-
 Fill the `GRAFANA_CLOUD_*` block in `.env` (see `.env.example` for where each value comes from), then:
 
 ```bash
 make alloy-up      # http://localhost:12345 — the scrape target should read UP
 make alloy-logs    # where a rejected token shows itself
-make dashboard     # pushes observability/grafana/komora-dashboard.json, prints the URL
+make dashboard     # pushes every observability/grafana/*.json, prints both URLs
 ```
 
 On the tunnelled demo box also set `MANAGEMENT_PORT=8081`: otherwise one public tunnel serves GMV and
 household counts to whoever finds the URL, which is the concern `METRICS_TOKEN` exists for.
 
-### Render the dashboard with no cloud token at all
+### Render the dashboards with no cloud token at all
 
 ```bash
 make run                        # in another shell
-make observability-local-up     # http://localhost:3000/d/komora-observability
+make observability-local-up     # prints both local URLs
 make observability-local-down
 ```
 
 A throwaway Prometheus + Grafana that Alloy pushes into using **the same `config.alloy` and the same
 dashboard JSON**. It proves the config parses, the scrape reaches an app on the host, and the panels
 render against real data. It proves nothing about Grafana Cloud's endpoint or token — say so if you use
-a screenshot from here.
+a screenshot from here. Grafana renders panels lazily, so a screenshot from a background browser tab comes
+back blank; verify a panel by running its PromQL against `localhost:9090/api/v1/query` and look at the
+picture with your own eyes.
 
 ---
 
