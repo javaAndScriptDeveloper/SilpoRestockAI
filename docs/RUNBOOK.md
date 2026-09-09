@@ -695,6 +695,19 @@ bot's side of the conversation:
 | Pick a different one, then tap «Підтвердити» | Confirmation text unchanged in shape, but the delivery slot booked with Silpo is the one just picked — open the checkout link and confirm the window shown there matches |
 | Tap «Підтвердити» without ever opening «Інший час» | Works exactly as before task 34 — no extra Silpo call, no behavior change |
 
+### Task 70: verify the one-time capability teaser
+
+Criterion 3 of task 70 is a fresh-onboarding check. A profile-only reset is enough — delete the
+`user_profile` row and the chat's `conversation_state` row, keep `mcp_oauth_token` and the orders — then
+run onboarding from `/start`. `capability_reveal_sent_at` on `user_profile` is what makes it a one-off, so
+a profile deleted this way starts over; a profile merely edited does not.
+
+| Do this | Expect |
+|---|---|
+| Finish a fresh onboarding and wait for the first plan | Four messages, unprompted, in this order: «Записав. Готую перший план», «План на тиждень готовий…», «Ось що пропоную взяти…» with its buttons, then the teaser «Поки що ти бачив тільки тижневий план…» |
+| Tap «🧾 Анкета», change one answer, tap «Так, оновити» | A second plan and list arrive; the teaser does not, and `capability_reveal_sent_at` keeps its original value |
+| Tap «❓ Інструкція» | The full instruction, byte-for-byte as before task 70 — five of its example lines are the same constants the teaser renders (`HelpContent`), so drift between them is not possible |
+
 ---
 
 ## 8. The scheduled check-in
