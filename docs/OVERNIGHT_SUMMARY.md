@@ -999,3 +999,111 @@ not three phones; and the payment. Both are on the RUNBOOK list for the owner.
 **Notion edits:** task 68 → In review with a dated note; demo script gets step 13.8 and a changelog line; selling
 points get a «Компанія, не домогосподарство» section — the group round is the first feature that brings the bot
 new people rather than serving one household better.
+
+# Session 16 — «до перемоги»: two live passes through the whole demo script, 2026-09-08/09 (night)
+
+**Method.** Every step of «Сценарій демо-запису» driven by hand in a real Telegram Web chat against the real Silpo
+MCP, with the backend console and the local Grafana beside it, and the four jury questions asked at each step
+(value to the guest, value to Silpo, is it obvious in ten seconds, can it be proved). Anything broken *or merely
+unconvincing* was fixed on the spot, re-verified on the same step, and committed on its own. Pass 1 ran
+23:30–02:30, pass 2 (from Act 1, fresh profile, orders kept so the GMV and the funnel keep their history) from
+02:30. Decisions are in `docs/OVERNIGHT_QUESTIONS.md` → Session 16; the live checks in RUNBOOK → Session 16.
+
+## Pass 1 — bugs (one commit each)
+
+- **Reorder died on out-of-stock baseline lines** («Сільпо тимчасово не відповідає» for a `product.offer.stock.max`
+  refusal) → the cart heals itself once: the line is removed with `silpo_remove_cart_products`, the cart re-read,
+  the requested line named under «немає на складі» (`0552702`).
+- **Reorder searched by the baseline's catalog name**, which finds exactly the product that just ran out → the
+  household's own word (`requestedName`) is the search term (same commit).
+- **Top-up landed ₴22 short** after healing removed what it had just added → two more rounds past the tried lines
+  (`22fde31`).
+- **A request typed over «Що беремо на цей тиждень?»** became a list description («що їмо в середу?» → a list of
+  those words) → the router pre-check the check-in already had (`ff98c58`).
+- **Two check-in prompts a minute apart** when Telegram timed out after delivering → stamp before send (`d36e8bf`).
+- **«замов усе для карбонари» fired twice and came back empty** (sweep found the row still PENDING mid-build; the
+  model answered a known dish with no ingredients) → claim before work, prompt rule (`43f266b`).
+- **The group tag never reached the webhook** — Telegram privacy mode, not the bot; session 15 had concluded the
+  opposite because the add itself is a service message → intro asks for admin, boot WARN, docs (`bffae67`).
+- **Group dead ends**: «тегни мене ще раз» while a round is open is ignored by design; an unpriced proposal during a
+  Silpo outage blamed the organizer's account → state-aware hint, «спробуй ще», `catalogUnavailable` (same commit).
+- **Pitch metrics said «з 39»**; the live server exposes 40 (`0e593ae`).
+
+## Pass 1 — product improvements
+
+- Inline keyboards wrap into rows: eight delivery windows and four list buttons in one row were unreadable
+  (`feeda70`).
+- «Зазирнув у твій акаунт «Сільпо» — сім'я, обмеження, історія замовлень, улюблені товари» before the enrichment
+  result: four MCP calls used to hide behind «людей удома: 1» (`8cd854c`).
+- Matcher: everyday product for a generic line (hake, not ₴559 salmon), a discount on a delicacy is not «по знижці»
+  (Jacob's Creek Reserve, Comte ₴1500/kg), «ізотонік» is not an energy drink (`8cd854c`, `67d5fb9`).
+- One cart text with «+» on the topped-up lines instead of the cart listed twice (`8fd0505`).
+- Plurals: «за 11 з 23 позицій».
+- «Дивлюсь твої замовлення в «Сільпо» — секунду» before the order-history read; a slow Silpo left the request
+  hanging 92 s in silence (`625c8ab`).
+
+## Pass 2 — bugs
+
+- **The greeting's «Під'єднати Сільпо» is a dead end after ten minutes or one restart.** Tapped twelve minutes after
+  /start (the browser extension was down in between — the kind of pause a jury member also takes): consent page,
+  callback, «Не вдалось підключити… натисни кнопку підключення в Telegram» — the very button that had just failed.
+  After a restart the in-memory state map is empty and the chat would not be told at all. Now every failed callback
+  pushes a fresh button, an expired state says «застаріло», the state carries its owner as a prefix so a restart
+  still knows whom to tell, and a state nobody owns gets a page that says /start (`e618230`). Verified live: stale
+  state → fresh button in the chat → consent → «✅ підключено» → enrichment.
+- **Four scheduled check-in prompts lost to DNS** («Temporary failure in name resolution» for api.telegram.org from
+  the home router, 03:43–04:31) while every user-triggered send in the same hour went through. A failure in name
+  resolution or connection set-up delivered nothing, so it is retried once after 1.5 s; timeouts and Bot API errors
+  are not, because a duplicate is worse than a gap (`3f0d6ac`). Not verifiable live — DNS cannot be broken on
+  demand — the predicate is unit-tested.
+- **The top-up contradicted the check-in.** «молоко закінчилося, хліб є» → a delta of one milk and fourteen «+»
+  lines to clear ₴799, «Хліб … 2 шт» among them. The reorder now hands the top-up the check-in's «still have»
+  names (`16f7684`). Verified live: the same sentence a minute later topped up with chicken, no bread.
+- **A check-in prompt inside a plan generation**, twice: between «Записав. Готую перший план» and the plan, and
+  between «Розумію, гастрит…» and the gastritis list. The sweep now keeps quiet for two minutes after the chat's
+  state last moved. Verified by test; live the next prompts came only after the exchanges had settled.
+- **The «Докласти» button had the same blind spot** as the reorder's top-up: «хліб є» twenty minutes earlier,
+  and the hangover kit's top-up brought «+ Хліб … 2 шт» (`1f5a381`). Verified live on the next hangover kit and
+  again on the group round's cart.
+
+## Pass 2 — product improvements
+
+- **A renamed line is the same line in a plan delta.** «зроби менш калорійним» answered «+9 позицій, −7 позицій»
+  where four pairs were renames («Масло вершкове» → «Вершкове масло», «Індиче філе» → «Філе індички», «Какао» →
+  «Какао порошок», «Заморожені ягоди» → «Ягоди заморожені») — on the one message whose point is «рівно що
+  змінилось». Leftover lines now pair by word stems in any order, then by containment («Риба» / «Філе риби»)
+  (`7be0add`). Verified live: «Хліб цільнозерновий: 3 → 2 шт» instead of a remove and an add.
+
+## Pass 2 — what held, second half
+
+Check-in prompt at 04:46 and «молоко закінчилося, хліб є» → «Записав. Ще є: Хліб «Київхліб»… Немає: Молоко
+«Премія»…»; «що треба докупити?» → a delta of one milk in 8 s; «я захворів, гастрит…» → classified, «Розумію,
+гастрит. Перемикаю на щадне харчування», a 19-line list with «~1377.44 грн за 8 з 19 позицій»; the hangover kit
+(water ×2 and a sorbent, «Не знайшов: ізотонік», 15 s); «замов сир з вином по знижці до п'ятниці» → scheduled, fired
+on the next sweep, «Комо» at ₴142 and Pilot's Wines at ₴254 with ₴75 of discounts — the everyday rule holds where
+pass 1 had Comte and Reserve; «світло вимкнули» → ten no-cooking lines, «Не знайшов: банани»; «зроби менш
+калорійним» / «шукай тільки українського виробника» / «я в порядку, повертай звичайний раціон» each answered at
+once; and the group round: a real tag opened it, one real and two synthetic replies, «Всі відповіли», a proposal in
+20 s naming who asked for what, three 👍, «✅ Усі 3 погодились», the cart in the private chat, a top-up to ₴981 and
+«Підтвердити» → «🎉 @notatlast підтвердив замовлення». Eleven confirmed orders, GMV ₴14 745 by the end of the pass.
+
+## Observations, not fixed
+
+- The matcher still reaches for premium in a blackout kit («Сир «Фоль Епі», нарізка» at ₴309) — the everyday rule
+  is in the prompt; the branch's «нарізка» candidates may all be premium. Worth one more look before the recording.
+- A plan line came back as «Зелень petrушка» — the model's own typo, Latin letters inside a Ukrainian word.
+  Rare; the list is editable.
+- A ₴124 reorder delta still lists fourteen «+» lines to clear Silpo's ₴799 minimum — honest and explained under
+  the list, but a long message; self-pickup as the other way out remains session 6's open follow-up.
+- Ten check-in prompts in one transcript are the 2-minute and 10-minute knobs, not the product; revert before
+  `make metrics`.
+
+## Pass 2 — what held
+
+Greeting; fresh-button connect; enrichment (four tools, one Claude call, «Там поки порожньо, тож запитаю сам»);
+the form (cooking question first, 1/1 adults, budget); plan in 34 s with 25 lines and «~2615.33 грн за 15 з 25
+позицій»; «що їмо в середу?» straight to Wednesday with the seven-day strip; the weekly cart — first attempt fell
+on a real Silpo outage (a 60 s search timeout, two refused add calls) and the bot said «Спробуй ще раз за хвилину»
+and kept the list; the retry built 25 of 25 in 43 s at ₴2711.38 with ₴297.65 of Silpo's own discounts, pollock
+not salmon, «Премія» milk; 27 delivery windows two per row; «Підтвердити» → checkout link, and GMV on the
+dashboard moved from ₴11 052 to ₴13 764 within seconds.

@@ -1420,6 +1420,24 @@ Every row of the demo script (steps 1–13.7) was driven by hand in Telegram Web
 | Send a voice note with `STT_API_KEY` set | Transcribed and routed like text |
 | Before a recording: `: > logs/mcp-calls.log` | The suite no longer writes there, but earlier sessions did |
 
+### Session 16: the «до перемоги» passes through Telegram Web, and what each fix looks like live
+
+Two full passes of the demo script on 2026-09-08/09 against the real Silpo MCP (summary in
+`docs/OVERNIGHT_SUMMARY.md` → Session 16). Each row is one fix and the one-minute check that shows it:
+
+| Do this | Expect |
+|---|---|
+| «Замовити» → «Інший час» | The delivery windows come as rows of two, not eight buttons in one line; the list's four buttons sit two per row; the calendar's seven day buttons stay in one strip |
+| Wait 11 minutes after /start (or restart the app), then tap the greeting's «Під'єднати Сільпо» | The browser page says «Це посилання застаріло» (or «Не вдалось підключити» after a restart) and the chat immediately gets «…ось свіжа кнопка» with a working «Під'єднати Сільпо»; the second tap connects and the enrichment message follows |
+| A brand-new tap within ten minutes | Unchanged: consent page → «✅ Акаунт «Сільпо» підключено» → «Зазирнув у твій акаунт «Сільпо» — сім'я, обмеження, історія замовлень, улюблені товари» before the form buttons |
+| «Список» → «Що беремо на цей тиждень?» → type «що їмо в середу?» instead of a list | The calendar for Wednesday, not a list built from those words; the list question is re-asked afterwards |
+| A small order (dish, hangover) under ₴799 with the baseline's cheapest lines out of stock | The cart heals: the out-of-stock line is removed, a second and third top-up round reaches past it, the cart text shows top-up lines inline with a «+» prefix and one sentence explaining them |
+| «замов усе для карбонари» | One «Зберу все…», one «Інгредієнти для «карбонара» на 2 порції», one cart with at least pasta, eggs, cheese and bacon — never two carts, never «Не зрозумів» |
+| «зроби список як минулого разу» | «Дивлюсь твої замовлення в «Сільпо» — секунду» at once, then the honest «Не бачу минулих замовлень» (or the order buttons on an account with history) |
+| Group: tag the bot with privacy mode on and no admin rights | Nothing — that is Telegram, not the bot. Promote it to admin (or `/setprivacy` → Disable) and the same tag opens the round; the intro now asks for admin when `getMe` reports privacy mode |
+| Group: reply «спробуй ще» to a proposal that came without prices | A new proposal; the unpriced text names «Сільпо» not answering, not a missing account |
+| `CHECKIN_INTERVAL=2m` and a Telegram timeout on the prompt | One prompt, not two — the stamp is written before the send |
+
 ### Session 6: what a cart says now, and what to check with your own eyes
 
 Everything below was driven live on 2026-09-06 through synthetic webhooks; the parts that need a phone are

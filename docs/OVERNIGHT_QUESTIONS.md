@@ -1161,3 +1161,82 @@ re-register on every restart and orphan the stored token. Added to the demo scri
   made the current baseline by SQL afterwards.
 - Telegram Web's composer kept the previous draft, so two step-13 phrases reached the bot concatenated
   («зроби менш калорійнимшукай тільки…») and classified at 0.4–0.5. Cleared before each send from then on.
+
+### The group round: privacy mode is why the tag never arrived
+Telegram bots default to privacy mode, which withholds every plain «@bot …» from the webhook (`getWebhookInfo`
+showed nothing pending while the tag sat in the group). Session 15 concluded the opposite from a run in which
+the bot had just been added — the add itself is a service message and always arrives. Decision: the intro asks
+to be made an administrator when `getMe` reports privacy mode on; the app WARNs at boot; the RUNBOOK names
+BotFather `/setprivacy` → Disable as the production fix. **For the owner:** `/setprivacy` on the production bot
+before the recording, or promote it in the demo group — admin status is per group, privacy-off is per bot.
+
+### The group round's dead ends got exits
+After a failed proposal the hint said «тегни мене ще раз» — with a round open that tag is ignored by design,
+so the group was stuck. Now the hint depends on the round's state, and a reply «спробуй ще» on the proposal
+regenerates it. While Silpo was down the unpriced proposal blamed the organizer («ще не підключено «Сільпо»»);
+`GroupProposal.catalogUnavailable` separates «no account» from «catalog did not answer», and the copy says which.
+
+### A check-in prompt is recorded before Telegram is called
+The send timed out on our side after the message had been delivered; nothing was stamped, and the next sweep
+asked the same household again a minute later. `lastCheckinPromptSentAt` is now saved before `sendMessage`.
+A prompt that genuinely never leaves costs one interval of silence — the cheaper mistake.
+
+### A scheduled task is claimed before its work starts
+«замов усе для карбонари» fired the row at once and the one-minute sweep found it still PENDING mid-build:
+two carts, two «Не зрозумів». `AdHocScheduleService.fire` marks FIRED first and reverts to PENDING only when the
+work throws. Also the dish prompt: the model answered a known dish with an empty ingredient list; it now must
+name the dish's core ingredients and rounds one portion up to two.
+
+### The order-history read says what it is doing first
+«зроби список як минулого разу» waited 92 s in silence while `silpo_get_my_online_orders` ran into its 60 s
+timeout. One line — «Дивлюсь твої замовлення в «Сільпо» — секунду» — before the two history calls, like every
+other flow that waits on the catalog. The 60 s per-call timeout itself was left alone: the same minute a
+`silpo_get_my_shopping_cart` took 31.9 s and succeeded.
+
+### Pass 2, step 1: the greeting's connect button is a dead end after ten minutes or one restart
+The greeting embeds a login state that `silpo.mcp.login-state-ttl` (10 m) kills, and the pending map is
+in-memory, so a restart kills every state at once. Live: tapped twelve minutes after /start → Silpo consent →
+callback page «Не вдалось підключити… натисни кнопку підключення в Telegram» — pointing at the very button that
+had just failed and would again; after a restart the chat would not even have been told (the owner lookup goes
+through the same map). Two decisions, neither reopening the in-memory design: (1) every failed callback pushes a
+fresh «Під'єднати Сільпо» button into the chat, and an expired state says «застаріло» rather than «не вдалось»;
+(2) the state is now `<userId>.<random>` — the prefix names whom to tell when the map is empty, the random half
+still authenticates the callback; expired states are also kept a day longer for the same reason. The TTL itself
+stays at 10 m. **Open, for the owner:** a jury member who taps the greeting an hour later now gets a working
+second button, but still one wasted tap — a longer TTL (30 m?) is a one-line `.env` change if that matters.
+
+### Not a bug: three check-in prompts lost to this box's DNS
+03:43, 03:54 and 04:20 — every failed prompt tonight was `UnknownHostException: api.telegram.org: Temporary
+failure in name resolution` on the scheduler thread; the same minutes cost the Notion proxy and the Chrome
+extension their connections. The stamp-before-send rule (session 16, above) means each such failure costs one
+interval of silence rather than a duplicate; a definite failure like this one could in principle un-stamp itself,
+but the earlier live case — a timeout *after* delivery — throws the same way, and a duplicate is the worse of the
+two. The Silpo outage at 03:26 (60 s search timeout, two refused add calls) was the same weather.
+
+**Then a fourth one at 04:31, and the pattern became a fix (`3f0d6ac`):** four scheduler sends lost, zero
+user-triggered sends lost, in the same hour. Whatever the router does, an `UnknownHostException` or a
+`ConnectException` provably delivered nothing, so those two (and no-route) are now retried once after 1.5 s in
+`TelegramOutboundService.execute`. Timeouts and Bot API errors are still not retried — the stamp-before-send rule
+stands for them. Could not be verified live (DNS cannot be made to fail on demand); the predicate is unit-tested.
+
+### Pass 2, step 8: the top-up must not contradict the check-in
+«молоко закінчилося, хліб є» → one milk, fourteen «+» lines, «Хліб … 2 шт» among them. The delta was right; the
+top-up read the baseline blind, cheapest first, and bread is cheap. The reorder now hands the top-up the
+check-in's «still have» names and they are skipped in every round (`16f7684`). Verified live: the same sentence a
+minute later topped up with chicken instead. Not changed: the top-up still lists fourteen lines for a ₴124 delta —
+that is Silpo's ₴799 minimum, honestly explained under the list; the alternative (self-pickup) is still session
+6's open follow-up.
+
+### Pass 2, steps 2 and 9: no check-in prompt inside a plan generation
+Twice in one night the prompt landed between «Записав. Готую перший план» and the plan (03:21), and between
+«Розумію, гастрит. Перемикаю…» and the gastritis list (05:00): the flow had just closed and a plan being generated
+is no flow at all. Rather than a new conversation step (a text arriving during it would be misread as a list
+description) the sweep now keeps quiet for two minutes after the chat's state last moved — the person is
+mid-exchange or a plan is on its way, and the agent speaking first can wait for the next sweep. With the default
+three-day interval and hourly sweep this costs nothing; with the 2-minute demo knob it is what makes the
+transcript readable.
+
+### Pass 2 runs with `CHECKIN_INTERVAL=10m`, not 2m
+Four «Як справи з їжею?» in eight minutes made the pass-1 transcript unreadable. Ten minutes is still short
+enough to reach step 7 inside a pass. `make metrics` must be re-run after the knobs are reverted before any
+check-in number goes into the pitch.
