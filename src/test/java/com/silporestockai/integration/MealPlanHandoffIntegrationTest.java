@@ -226,9 +226,53 @@ class MealPlanHandoffIntegrationTest extends AbstractIntegrationTest {
                 .contains("\nЧт: ")
                 .contains("\nНд: ")
                 .doesNotContain("Понеділок:");
-        assertThat(TELEGRAM.sentMessages().getLast().path("text").asText())
-                .contains("Ось що пропоную взяти")
+        // The list is no longer the last message — task 70's one-time teaser follows it — so look it up by content.
+        assertThat(TELEGRAM.sentMessages().stream()
+                        .map(sent -> sent.path("text").asText())
+                        .filter(text -> text.contains("Ось що пропоную взяти")))
+                .singleElement()
+                .asString()
                 .contains("Всього 5 позицій");
+    }
+
+    /**
+     * Task 70. A household that has only seen a plan does not know free text works at all, so the teaser follows
+     * the list unprompted — and only the first time, because re-editing «Анкета» comes back through here.
+     */
+    @Test
+    void teachesWhatElseItUnderstandsOnceTheFirstPlanIsOut() {
+        UUID userId = profiledUser();
+        CLAUDE.respondWithText(fullWeekJson());
+
+        mealPlanHandoffService.generateFirstPlan(userId);
+
+        String teaser = TELEGRAM.sentMessages().getLast().path("text").asText();
+        assertThat(teaser).contains("Я розумію й звичайні прохання").contains("❓ Інструкція");
+
+        TELEGRAM.reset();
+        CLAUDE.respondWithText(fullWeekJson());
+        mealPlanHandoffService.generateFirstPlan(userId);
+
+        assertThat(TELEGRAM.sentMessages().stream()
+                        .map(message -> message.path("text").asText())
+                        .filter(text -> text.contains("Я розумію й звичайні прохання"))
+                        .count())
+                .isZero();
+    }
+
+    /** A plan that never arrived teaches nothing — there is no first plan to follow yet. */
+    @Test
+    void doesNotTeachAnythingWhenTheFirstPlanFailed() {
+        UUID userId = profiledUser();
+        CLAUDE.respondWithText("{\"days\":[]}");
+
+        mealPlanHandoffService.generateFirstPlan(userId);
+
+        assertThat(TELEGRAM.sentMessages().stream()
+                        .map(message -> message.path("text").asText())
+                        .filter(text -> text.contains("Я розумію й звичайні прохання"))
+                        .count())
+                .isZero();
     }
 
     /**
@@ -251,7 +295,13 @@ class MealPlanHandoffIntegrationTest extends AbstractIntegrationTest {
         mealPlanHandoffService.retry(userRepository.findById(userId).orElseThrow());
 
         assertThat(mealPlanRepository.count()).isEqualTo(1);
-        assertThat(TELEGRAM.sentMessages().getLast().path("text").asText()).contains("Ось що пропоную взяти");
+        // Not the last message any more: the retry is also this household's first plan, so task 70's teaser
+        // follows the list — a failed first attempt does not cost them the introduction.
+        assertThat(TELEGRAM.sentMessages().stream()
+                        .map(sent -> sent.path("text").asText())
+                        .filter(text -> text.contains("Ось що пропоную взяти")))
+                .hasSize(1);
+        assertThat(TELEGRAM.sentMessages().getLast().path("text").asText()).contains("Я розумію й звичайні прохання");
     }
 
     @Test

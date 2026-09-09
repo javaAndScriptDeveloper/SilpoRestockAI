@@ -55,6 +55,7 @@ public class MealPlanHandoffService {
     private final TelegramOutboundService telegramOutboundService;
     private final ShoppingListPriceEstimateService priceEstimateService;
     private final ShoppingListMessageService shoppingListMessageService;
+    private final CapabilityRevealService capabilityRevealService;
 
     /**
      * The listener itself does nothing but leave the publishing thread. Everything it would otherwise do lives in
@@ -100,7 +101,13 @@ public class MealPlanHandoffService {
                                         user.getTelegramChatId(),
                                         "План скласти не вдалось. Спробуємо ще раз?",
                                         List.of(TelegramButton.callback("Спробувати ще раз", CALLBACK_RETRY)));
+                                return;
                             }
+                            // Task 70: the moment free text starts being useful is the moment a first plan exists,
+                            // so the teaser goes out here — once per household, and never on the failure path.
+                            // Outside the try on purpose: a Telegram hiccup on the teaser must not be reported as
+                            // a plan that failed, when the plan and its list have already been delivered.
+                            capabilityRevealService.revealOnce(user);
                         },
                         () -> log.warn("onboarding completed for unknown user {}", userId));
     }
