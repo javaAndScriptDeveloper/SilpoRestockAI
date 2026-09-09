@@ -51,6 +51,44 @@ class ShoppingListDiffServiceTest {
         assertThat(delta.removed()).isEmpty();
     }
 
+    /** Live: every regenerated plan renames lines, and the diff read «+9, −7» for a change of five. */
+    @Test
+    void aRenamedLineIsTheSameLineNotARemoveAndAnAdd() {
+        ShoppingListDelta delta = service.diff(
+                List.of(
+                        item("Масло вершкове", 200, "г"),
+                        item("Індиче філе", 300, "г"),
+                        item("Какао", 1, "шт"),
+                        item("Заморожені ягоди", 500, "г"),
+                        item("Гречка", 400, "г")),
+                List.of(
+                        item("Вершкове масло", 200, "г"),
+                        item("Філе індички", 300, "г"),
+                        item("Какао порошок", 1, "шт"),
+                        item("Ягоди заморожені", 400, "г"),
+                        item("Гарбуз", 1, "кг")));
+
+        assertThat(delta.added()).extracting(ShoppingListDelta.Line::name).containsExactly("Гарбуз");
+        assertThat(delta.removed()).extracting(ShoppingListDelta.Line::name).containsExactly("Гречка");
+        assertThat(delta.quantityChanged())
+                .extracting(ShoppingListDelta.QuantityChange::name)
+                .containsExactly("Ягоди заморожені");
+        assertThat(delta.unchangedCount()).isEqualTo(3);
+    }
+
+    @Test
+    void aShorterFormOfTheSameNamePairsUpButDifferentProductsDoNot() {
+        ShoppingListDelta delta = service.diff(
+                List.of(item("Філе риби", 500, "г"), item("Сир кисломолочний", 400, "г")),
+                List.of(item("Риба", 600, "г"), item("Сир твердий", 300, "г")));
+
+        assertThat(delta.quantityChanged())
+                .extracting(ShoppingListDelta.QuantityChange::name)
+                .containsExactly("Риба");
+        assertThat(delta.added()).extracting(ShoppingListDelta.Line::name).containsExactly("Сир твердий");
+        assertThat(delta.removed()).extracting(ShoppingListDelta.Line::name).containsExactly("Сир кисломолочний");
+    }
+
     @Test
     void matchingIsCaseAndWhitespaceInsensitive() {
         ShoppingListDelta delta = service.diff(List.of(item("  Молоко ", 1, "л")), List.of(item("молоко", 1, "л")));

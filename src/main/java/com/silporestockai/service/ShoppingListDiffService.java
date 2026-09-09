@@ -8,11 +8,19 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 import org.springframework.stereotype.Service;
 
 /**
  * Pure comparison logic, no DB or Claude dependency (task 21) — same shape as task 13's checkin-trend
  * diffing, reused rather than reinvented: match by name, compare quantity.
+ *
+ * <p>Names are matched exactly first, then by their words' stems in any order, then by one name's stems being
+ * contained in the other's. The model renames lines every time it regenerates a plan — live, «Масло вершкове»
+ * came back as «Вершкове масло», «Індиче філе» as «Філе індички», «Какао» as «Какао порошок», «Філе хека» as
+ * «Риба» — and a diff that showed each of those as one line removed and one added read «+9, −7» for a change of
+ * five. A rename is the same line, and a quantity that moved with it is a quantity change, not two events.
  */
 @Service
 public class ShoppingListDiffService {
@@ -25,27 +33,85 @@ public class ShoppingListDiffService {
         List<ShoppingListDelta.QuantityChange> quantityChanged = new ArrayList<>();
         int unchangedCount = 0;
 
+        List<ShoppingListItem> unmatchedCurrent = new ArrayList<>();
+        List<ShoppingListItem> unmatchedPrevious = new ArrayList<>();
         for (Map.Entry<String, ShoppingListItem> entry : currentByName.entrySet()) {
             ShoppingListItem before = previousByName.get(entry.getKey());
-            ShoppingListItem after = entry.getValue();
+            if (before == null) {
+                unmatchedCurrent.add(entry.getValue());
+            } else if (quantityDiffers(before.getQuantity(), entry.getValue().getQuantity())) {
+                quantityChanged.add(change(before, entry.getValue()));
+            } else {
+                unchangedCount++;
+            }
+        }
+        for (Map.Entry<String, ShoppingListItem> entry : previousByName.entrySet()) {
+            if (!currentByName.containsKey(entry.getKey())) {
+                unmatchedPrevious.add(entry.getValue());
+            }
+        }
+
+        // Second pass over what exact names could not pair: the same words in another order, then a name that
+        // is a shorter form of the other. Each previous line pairs with at most one current line.
+        for (ShoppingListItem after : unmatchedCurrent) {
+            ShoppingListItem before = takeRename(unmatchedPrevious, after);
             if (before == null) {
                 added.add(lineOf(after));
             } else if (quantityDiffers(before.getQuantity(), after.getQuantity())) {
-                quantityChanged.add(new ShoppingListDelta.QuantityChange(
-                        after.getName(), before.getQuantity(), after.getQuantity(), after.getUnit()));
+                quantityChanged.add(change(before, after));
             } else {
                 unchangedCount++;
             }
         }
 
         List<ShoppingListDelta.Line> removed = new ArrayList<>();
-        for (Map.Entry<String, ShoppingListItem> entry : previousByName.entrySet()) {
-            if (!currentByName.containsKey(entry.getKey())) {
-                removed.add(lineOf(entry.getValue()));
-            }
+        for (ShoppingListItem gone : unmatchedPrevious) {
+            removed.add(lineOf(gone));
         }
 
         return new ShoppingListDelta(added, removed, quantityChanged, unchangedCount);
+    }
+
+    private static ShoppingListItem takeRename(List<ShoppingListItem> candidates, ShoppingListItem after) {
+        Set<String> stems = stems(after.getName());
+        if (stems.isEmpty()) {
+            return null;
+        }
+        ShoppingListItem sameWords = null;
+        ShoppingListItem shorterForm = null;
+        for (ShoppingListItem candidate : candidates) {
+            Set<String> other = stems(candidate.getName());
+            if (other.equals(stems)) {
+                sameWords = candidate;
+                break;
+            }
+            if (shorterForm == null && (other.containsAll(stems) || stems.containsAll(other))) {
+                shorterForm = candidate;
+            }
+        }
+        ShoppingListItem match = sameWords != null ? sameWords : shorterForm;
+        if (match != null) {
+            candidates.remove(match);
+        }
+        return match;
+    }
+
+    /** The first four letters of every word, so «індиче»/«індички» and «риба»/«риби» meet; short words lose one. */
+    static Set<String> stems(String name) {
+        Set<String> stems = new TreeSet<>();
+        for (String token : normalise(name).split("[^\\p{L}\\p{N}]+")) {
+            if (token.length() < 2) {
+                continue;
+            }
+            int keep = token.length() <= 4 ? Math.max(2, token.length() - 1) : 4;
+            stems.add(token.substring(0, keep));
+        }
+        return stems;
+    }
+
+    private static ShoppingListDelta.QuantityChange change(ShoppingListItem before, ShoppingListItem after) {
+        return new ShoppingListDelta.QuantityChange(
+                after.getName(), before.getQuantity(), after.getQuantity(), after.getUnit());
     }
 
     private static Map<String, ShoppingListItem> byName(List<ShoppingListItem> items) {
