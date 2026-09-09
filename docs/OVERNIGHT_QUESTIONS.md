@@ -1253,6 +1253,11 @@ Tapping the old keyboard after the order was confirmed answered «Не вдал�
 скасовано. Натисни «Список», щоб скласти новий» (`c36cb8f`). Not changed: the old keyboard stays in the chat;
 Telegram cannot retract it and editing every old list message on confirm is more noise than the tap.
 
+### Pass 3: «Рис: 1 → 1000 г»
+The model writes «1 кг» one week and «1000 г» the next; the delta compared the numbers as written. Kilograms and
+litres are now compared as grams and millilitres (`058ccb1`). Other units are compared as written — «1 упаковка»
+against «500 г» is a real change the list cannot resolve without a catalog lookup, and saying so is right.
+
 ### Pass 3: noodles
 «Локшина — 300 г» for a chicken soup came back as instant «Glads Wok Mie goreng з соусом» ×3. A prompt sentence
 fixed it on the rebuild (`1e8f65d`), and the same words are in the deterministic guard above as a belt.

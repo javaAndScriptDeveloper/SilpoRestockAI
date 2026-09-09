@@ -1104,8 +1104,60 @@ wrong enough to fix:
   named variants for a bare «рис» (and instant noodles for a bare «локшина»); a plain unmarked name stays. The
   rebuilt cart says «Не знайшов: Рис» (`8df89e5`).
 
+- **«Змінено кількість: Рис: 1 → 1000 г»** — the same kilogram written two ways; the diff now compares base
+  units (`058ccb1`). Verified on the next «зроби менш калорійним»: 4 added, 6 removed, 4 changed, 10 unchanged,
+  no unit artefacts.
+
+Steps 7–12 held again (check-in «яйця закінчились, молоко є», the eggs-only delta with milk kept out of the
+top-up, gastritis, the hangover kit, wine and cheese on the sweep, the blackout kit — now with a live
+«(немає на складі)» line from pass 1's stock healing). Step 13's other two phrases and the group round were not
+repeated in pass 3: nothing in their paths changed after pass 2, where both were walked end to end.
+
 A fourth pass was not run: pass 3's findings were all at the level of one catalog line or one button text, each
-re-verified on its own step, and none touched a flow. That is a judgment call, stated here rather than hidden.
+re-verified on its own step, and none touched a flow. That is a judgment call, stated here rather than hidden;
+the prompt's own stop rule («a full pass with no new fix») was not reached.
+
+## Numbers at the end of the night
+
+`make metrics` and `make promotions` after the knobs were reverted (defaults restored, full suite green):
+
+| Metric | Value | Sample | Honest note |
+|---|---|---|---|
+| Onboarding → first confirmed order (median) | 19 min 24 s | 1 of 1 | the session-10 household; tonight's three onboardings kept their orders, so no new INITIAL |
+| Check-ins answered | 19 % | 11 of 58 | 58 prompts is a 2-minute test knob; 11 answers are real. Do not pitch the percentage |
+| Reorders confirmed without edits | 100 % | 2 of 2 | |
+| List lines resolved to a real SKU | 94 % | 449 found / 31 not, 39 carts | the misses are honest «Не знайшов» lines for products this branch does not carry |
+| Distinct MCP tools used | 14 of 40 | 1263 calls, 14 failed | all 14 failures inside the 03:26 Silpo outage |
+
+Own-brand «Премія» / milk: Featured Share Rate 94 %, lift +90 pp, ₴496 attributed; «Ситий двір» / buckwheat:
+75 %, +43 pp, ₴763. Thirteen confirmed orders and about ₴17 000 of GMV on the dashboard.
+
+## The weakest step, by the four criteria
+
+**Step 6's cart line quality, and specifically what the fast matcher picks when the branch has no plain
+variant.** Value to the guest and to Silpo is fine; the cart is provable to the second (every tool call is on
+the console, GMV moves on the dashboard). What fails the ten-second test is a single wrong line — a ₴449
+carnaroli, a ₴309 Fol Epi in a blackout kit, three packs of instant noodles for a soup — because a jury reads
+a cart the way a person reads a receipt: they stop at the line that is absurd. Tonight fixed the ones that
+recur (rice, noodles, fish, «по знижці», ізотонік) with prompt rules and one deterministic guard, but the
+underlying weakness stands: the matcher is a fast model choosing among whatever the search returned, and the
+test branch's shelves are thin. Before the recording, build the weekly cart three times and read every line.
+
+The second weakest is step 7–8's transcript on a shortened check-in interval: honest, but a ₴124 delta with
+fourteen «+» lines is a long message for the point it makes.
+
+## Requires a human decision
+
+- **`SILPO_MCP_LOGIN_STATE_TTL`**: 10 minutes gives a jury member one dead tap if they linger on the greeting;
+  a fresh button now follows, but 30 minutes is a one-line change if that tap matters.
+- **BotFather `/setprivacy` → Disable** on the production bot, or admin rights in the demo group — without one
+  of them the group tag never arrives.
+- **`SILPO_MCP_REDIRECT_URI`** must be the tunnel host and the client re-registered before any phone recording.
+- **Self-pickup as the other way out** of Silpo's ₴799 minimum — still session 6's open follow-up; every small
+  order in the demo ends in a top-up or a cancel.
+- **The check-in percentage** cannot go into the pitch from this database; a rehearsal on default intervals
+  with a real week is the only honest source.
+- **Real payment, three real phones, the fridge photo, Google Calendar** — unchanged from session 10's list.
 
 ## Observations, not fixed
 
