@@ -1,9 +1,12 @@
 package com.silporestockai.controller;
 
+import com.silporestockai.exception.SilpoLoginExpiredException;
+import com.silporestockai.model.TelegramButton;
 import com.silporestockai.service.ConnectNotificationService;
 import com.silporestockai.service.SilpoAuthService;
 import com.silporestockai.utils.OAuthCallbackPage;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -36,10 +39,18 @@ public class SilpoOAuthController {
     private static final String SUCCESS_TITLE = "Акаунт «Сільпо» підключено";
     private static final String SUCCESS_MESSAGE = "Можна повертатися в Telegram — я вже написав туди.";
     private static final String FAILURE_TITLE = "Не вдалось підключити «Сільпо»";
-    private static final String FAILURE_MESSAGE = "Спробуй ще раз — натисни кнопку підключення в Telegram.";
+    private static final String FAILURE_MESSAGE = "Свіжа кнопка вже чекає в Telegram — натисни її.";
+    private static final String EXPIRED_TITLE = "Це посилання застаріло";
+    private static final String EXPIRED_MESSAGE = "Свіже вже в Telegram — натисни кнопку там.";
     private static final String CHAT_SUCCESS = "✅ Акаунт «Сільпо» підключено.";
+    // Every failure comes with a fresh button. The one in the greeting carries a login state that dies after
+    // silpo.mcp.login-state-ttl; live, a tap twelve minutes after /start failed with «натисни кнопку підключення в
+    // Telegram» — pointing at the very button that had just failed, and would again.
     private static final String CHAT_FAILURE =
-            "Не вдалось підключити акаунт «Сільпо». Спробуй ще раз — натисни кнопку підключення.";
+            "Не вдалось підключити акаунт «Сільпо». Ось свіжа кнопка — спробуй ще раз.";
+    private static final String CHAT_EXPIRED = "Посилання для підключення застаріло — ось свіже.";
+    private static final String CONNECT_LABEL = "Під'єднати Сільпо";
+    private static final String NO_OWNER_MESSAGE = "Повернись у Telegram, напиши /start і натисни кнопку ще раз.";
 
     private final SilpoAuthService silpoAuthService;
     private final ConnectNotificationService connectNotificationService;
@@ -69,24 +80,33 @@ public class SilpoOAuthController {
 
         if (code == null) {
             log.info("the Silpo authorization came back without a code (error={})", error);
-            return failure(owner);
+            return failure(owner, FAILURE_TITLE, FAILURE_MESSAGE, CHAT_FAILURE);
         }
         try {
             UUID userId = silpoAuthService.completeLogin(code, state);
             log.info("completed the Silpo OAuth callback for user {}", userId);
             connectNotificationService.push(userId, CHAT_SUCCESS);
             return page(HttpStatus.OK, OAuthCallbackPage.success(SUCCESS_TITLE, SUCCESS_MESSAGE));
+        } catch (SilpoLoginExpiredException e) {
+            log.info("the Silpo OAuth callback arrived for an expired login state");
+            return failure(owner, EXPIRED_TITLE, EXPIRED_MESSAGE, CHAT_EXPIRED);
         } catch (RuntimeException e) {
             log.warn("the Silpo OAuth callback failed", e);
-            return failure(owner);
+            return failure(owner, FAILURE_TITLE, FAILURE_MESSAGE, CHAT_FAILURE);
         }
     }
 
-    private ResponseEntity<String> failure(Optional<UUID> owner) {
-        owner.ifPresent(userId -> connectNotificationService.push(userId, CHAT_FAILURE));
+    private ResponseEntity<String> failure(Optional<UUID> owner, String title, String message, String chatText) {
+        owner.ifPresent(userId -> connectNotificationService.push(
+                userId,
+                chatText,
+                List.of(TelegramButton.link(CONNECT_LABEL, silpoAuthService.buildAuthorizationUrl(userId)))));
         // 400 for every failure: an unknown state, a declined authorization and a refused exchange are all "this
-        // connect did not happen" to the one person reading the page.
-        return page(HttpStatus.BAD_REQUEST, OAuthCallbackPage.failure(FAILURE_TITLE, FAILURE_MESSAGE));
+        // connect did not happen" to the one person reading the page. A state nobody owns (forged, or mangled) gets
+        // no chat message, so the page must not promise one.
+        return page(
+                HttpStatus.BAD_REQUEST,
+                OAuthCallbackPage.failure(title, owner.isPresent() ? message : NO_OWNER_MESSAGE));
     }
 
     private ResponseEntity<String> page(HttpStatus status, String html) {

@@ -54,9 +54,13 @@ class SilpoOAuthIntegrationTest extends AbstractIntegrationTest {
     @Autowired
     private UserRepository userRepository;
 
+    /** Short enough for the expiry test to wait it out; every other test finishes its round trip in milliseconds. */
+    private static final java.time.Duration LOGIN_STATE_TTL = java.time.Duration.ofSeconds(2);
+
     @DynamicPropertySource
     static void oauthIssuer(DynamicPropertyRegistry registry) {
         registry.add("silpo.mcp.issuer", STUB::issuer);
+        registry.add("silpo.mcp.login-state-ttl", LOGIN_STATE_TTL::toString);
         registry.add("telegram.bot-token", () -> BOT_TOKEN);
         registry.add("telegram.api-url", TELEGRAM::baseUrl);
     }
@@ -186,6 +190,31 @@ class SilpoOAuthIntegrationTest extends AbstractIntegrationTest {
         assertThat(result.getResponse().getStatus()).isEqualTo(400);
         // A forged state has no pending login, so there is nobody to tell — and nothing to tell them.
         assertThat(TELEGRAM.sentMessages()).isEmpty();
+        assertThat(result.getResponse().getContentAsString()).contains("/start").doesNotContain("вже чекає");
+    }
+
+    /** After a restart the pending map is empty, but every greeting still holds a button. */
+    @Test
+    void aStateFromBeforeARestartStillTellsItsOwnerAndSendsAFreshButton() throws Exception {
+        UUID userId = persistedUser();
+        String stateNobodyRemembers = userId + ".secret-from-a-previous-process";
+
+        MvcResult result = mockMvc.perform(
+                        get("/auth/silpo/callback").param("code", "whatever").param("state", stateNobodyRemembers))
+                .andReturn();
+
+        assertThat(result.getResponse().getStatus()).isEqualTo(400);
+        assertThat(tokenRepository.findByUserId(userId)).isEmpty();
+        assertThat(result.getResponse().getContentAsString()).contains("вже чекає в Telegram");
+        assertThat(TELEGRAM.sentMessages()).hasSize(1);
+        assertThat(TELEGRAM.sentMessages().getFirst().path("text").asText()).contains("Не вдалось підключити");
+        var button = TELEGRAM.sentMessages()
+                .getFirst()
+                .path("reply_markup")
+                .path("inline_keyboard")
+                .get(0)
+                .get(0);
+        assertThat(button.path("url").asText()).contains("state=" + userId + ".");
     }
 
     @Test
@@ -227,6 +256,40 @@ class SilpoOAuthIntegrationTest extends AbstractIntegrationTest {
         assertThat(tokenRepository.findByUserId(userId)).isEmpty();
         assertThat(TELEGRAM.sentMessages()).hasSize(1);
         assertThat(TELEGRAM.sentMessages().getFirst().path("text").asText()).contains("Не вдалось підключити");
+        // A fresh button, with a fresh state: the one in the greeting is what just failed.
+        var button = TELEGRAM.sentMessages()
+                .getFirst()
+                .path("reply_markup")
+                .path("inline_keyboard")
+                .get(0)
+                .get(0);
+        assertThat(button.path("text").asText()).isEqualTo("Під'єднати Сільпо");
+        assertThat(button.path("url").asText()).contains("state=").doesNotContain("state=" + state);
+    }
+
+    @Test
+    void anExpiredLoginLinkSaysSoAndSendsAFreshButtonToTheChat() throws Exception {
+        UUID userId = persistedUser();
+        String state = startLogin(userId);
+        Thread.sleep(LOGIN_STATE_TTL.plusMillis(300).toMillis());
+
+        MvcResult callback = mockMvc.perform(
+                        get("/auth/silpo/callback").param("code", "late-code").param("state", state))
+                .andReturn();
+
+        assertThat(callback.getResponse().getStatus()).isEqualTo(400);
+        assertThat(callback.getResponse().getContentAsString()).contains("застаріло");
+        assertThat(tokenRepository.findByUserId(userId)).isEmpty();
+        assertThat(TELEGRAM.sentMessages()).hasSize(1);
+        assertThat(TELEGRAM.sentMessages().getFirst().path("text").asText()).contains("застаріло");
+        var button = TELEGRAM.sentMessages()
+                .getFirst()
+                .path("reply_markup")
+                .path("inline_keyboard")
+                .get(0)
+                .get(0);
+        assertThat(button.path("text").asText()).isEqualTo("Під'єднати Сільпо");
+        assertThat(button.path("url").asText()).contains("state=").doesNotContain("state=" + state);
     }
 
     private String startLogin(UUID userId) throws Exception {

@@ -5,6 +5,7 @@ import com.silporestockai.client.mcp.SilpoOAuthApiClient;
 import com.silporestockai.config.SilpoMcpProperties;
 import com.silporestockai.entity.SilpoOAuthToken;
 import com.silporestockai.exception.ApplicationException;
+import com.silporestockai.exception.SilpoLoginExpiredException;
 import com.silporestockai.exception.SilpoNotConnectedException;
 import com.silporestockai.model.SilpoConnectedEvent;
 import com.silporestockai.model.SilpoLoginState;
@@ -51,6 +52,9 @@ public class SilpoAuthService implements SilpoAccessTokenProvider {
     /** Refresh this far ahead of the real expiry so a call never races the deadline. */
     private static final Duration EXPIRY_SKEW = Duration.ofSeconds(30);
 
+    /** How long an already-expired login state is still remembered, so its owner can be told. */
+    private static final Duration EXPIRED_STATE_GRACE = Duration.ofHours(24);
+
     private final SilpoMcpProperties properties;
     private final SilpoOAuthApiClient oauthApiClient;
     private final SilpoOAuthTokenRepository tokenRepository;
@@ -67,7 +71,8 @@ public class SilpoAuthService implements SilpoAccessTokenProvider {
      */
     public String buildAuthorizationUrl(UUID userId) {
         String codeVerifier = randomUrlSafe(64);
-        String state = randomUrlSafe(24);
+        // Owner first, secret second — see ownerEncodedIn.
+        String state = userId + "." + randomUrlSafe(24);
         pendingLogins.put(state, new SilpoLoginState(userId, codeVerifier, Instant.now()));
         purgeExpiredLogins();
 
@@ -96,7 +101,7 @@ public class SilpoAuthService implements SilpoAccessTokenProvider {
             throw new ApplicationException(HttpStatus.BAD_REQUEST, "unknown or already used login state");
         }
         if (isExpired(login)) {
-            throw new ApplicationException(HttpStatus.BAD_REQUEST, "this login link has expired, please start again");
+            throw new SilpoLoginExpiredException();
         }
 
         MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
@@ -124,7 +129,29 @@ public class SilpoAuthService implements SilpoAccessTokenProvider {
      * Peeking before {@link #completeLogin} is what lets the failure reach the person's chat rather than only the log.
      */
     public Optional<UUID> pendingUserId(String state) {
-        return Optional.ofNullable(pendingLogins.get(state)).map(SilpoLoginState::userId);
+        SilpoLoginState login = pendingLogins.get(state);
+        if (login != null) {
+            return Optional.of(login.userId());
+        }
+        return ownerEncodedIn(state);
+    }
+
+    /**
+     * The state carries its owner as a prefix ({@code <userId>.<random>}) so a callback can still be matched to a
+     * chat when the pending map is gone — after a restart, every button already sitting in a greeting produces an
+     * unknown state, and without the prefix the chat would hear nothing and the person would keep tapping a dead
+     * button. The random half is still what authenticates the callback; the prefix only says whom to tell.
+     */
+    private static Optional<UUID> ownerEncodedIn(String state) {
+        int dot = state.indexOf('.');
+        if (dot <= 0) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(UUID.fromString(state.substring(0, dot)));
+        } catch (IllegalArgumentException e) {
+            return Optional.empty();
+        }
     }
 
     @Override
@@ -237,8 +264,15 @@ public class SilpoAuthService implements SilpoAccessTokenProvider {
         return login.createdAt().plus(properties.loginStateTtl()).isBefore(Instant.now());
     }
 
+    /**
+     * Expired states are refused by {@link #completeLogin} the moment they are used, but they stay in the map for a
+     * day longer so a late callback can still be matched to its owner and the chat told — with a fresh button. Live,
+     * a greeting button tapped twelve minutes after /start produced a dead-end failure page; had another login been
+     * started in between, the state would have been purged and the chat would have heard nothing at all.
+     */
     private void purgeExpiredLogins() {
-        pendingLogins.values().removeIf(this::isExpired);
+        Instant cutoff = Instant.now().minus(properties.loginStateTtl()).minus(EXPIRED_STATE_GRACE);
+        pendingLogins.values().removeIf(login -> login.createdAt().isBefore(cutoff));
     }
 
     private String randomUrlSafe(int bytes) {
