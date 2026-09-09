@@ -1325,6 +1325,10 @@ Found by actually running the prod stack locally, which is the point of doing it
   from under a running `make run`. `docker-compose.prod.yml` now declares `name: komora-prod`.
 - **`scripts/set-webhook.sh` ignored its argument.** It stored the domain in `$DOMAIN`, which sourcing
   `.env.prod` then overwrote with the file's own `DOMAIN=`. It uses `$TARGET` now.
+- **Swagger would have been public.** SpringDoc is enabled by default — it warns about this at every boot —
+  and Caddy proxies the port it lives on, so `/swagger-ui.html` and `/v3/api-docs` would have handed the
+  whole internal API surface to anyone who found the domain. Disabled in `application-prod.yml` only, so
+  `make run` still serves Swagger locally.
 
 ### Known limits of this setup
 

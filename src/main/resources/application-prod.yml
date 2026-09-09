@@ -19,6 +19,16 @@ management:
     health:
       show-details: when-authorized
 
+# SpringDoc is enabled by default and says so in a WARN at every boot. On the deployed host (task 59) Caddy
+# proxies this port, so /swagger-ui.html and /v3/api-docs would hand the entire internal API surface —
+# /internal/metrics/pitch and the onboarding endpoints included — to anyone who finds the domain. Nothing
+# consumes them in production; the local profiles keep both, so `make run` still serves Swagger.
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
 logging:
   level:
     root: INFO
