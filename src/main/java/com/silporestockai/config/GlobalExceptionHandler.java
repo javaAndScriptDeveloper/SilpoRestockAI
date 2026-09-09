@@ -8,9 +8,11 @@ import org.springframework.http.ProblemDetail;
 import org.springframework.validation.FieldError;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.ServletRequestBindingException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.client.RestClientException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 /**
@@ -65,6 +67,21 @@ public class GlobalExceptionHandler {
     public ProblemDetail handleMethodNotSupported(HttpRequestMethodNotSupportedException ex) {
         log.debug("Method not supported: {}", ex.getMessage());
         return ProblemDetail.forStatusAndDetail(HttpStatus.METHOD_NOT_ALLOWED, "Method not allowed");
+    }
+
+    /**
+     * A required query parameter that is absent, or present but unparseable — {@code /auth/silpo/callback} with no
+     * {@code state}, {@code /auth/silpo/start?userId=nonsense}. Both OAuth callbacks are public by necessity, since
+     * that is where Google and Silpo redirect, so opening either by hand or scanning for them is routine. The
+     * catch-all below answered 500 with a stack trace at ERROR: the wrong status, and a fake incident per probe.
+     *
+     * <p>{@link ServletRequestBindingException} is the parent of the missing-parameter and missing-header cases, so
+     * one handler covers all of them. The message is deliberately not echoed back — it names internal parameters.
+     */
+    @ExceptionHandler({ServletRequestBindingException.class, MethodArgumentTypeMismatchException.class})
+    public ProblemDetail handleBadRequestParameters(Exception ex) {
+        log.debug("Bad request parameters: {}", ex.getMessage());
+        return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Bad request");
     }
 
     @ExceptionHandler(Exception.class)
