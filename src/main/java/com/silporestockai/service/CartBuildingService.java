@@ -291,6 +291,14 @@ public class CartBuildingService {
      * @throws CartBuildException carrying the amount and the minimum when there is no baseline to draw on
      */
     public CartSummary topUp(UUID userId, CartSummary cart) {
+        return topUp(userId, cart, java.util.Set.of());
+    }
+
+    /**
+     * The same, leaving out baseline lines by name — what a check-in just said the household still has. The
+     * baseline is what they buy every week; the check-in is what they have this week, and the second wins.
+     */
+    public CartSummary topUp(UUID userId, CartSummary cart, java.util.Set<String> leaveOut) {
         CartContext context = getOrCreateCartContext(userId);
         OfferedSlot deliverySlot = firstDeliverableSlot(userId, context);
         java.util.Set<String> alreadyInCart = cart.items().stream()
@@ -298,7 +306,7 @@ public class CartBuildingService {
                 .filter(java.util.Objects::nonNull)
                 .collect(java.util.stream.Collectors.toSet());
         List<ResolvedProduct> topUp =
-                topUpFromBaseline(userId, context, alreadyInCart, cart.goodsTotal(), cart.minimumOrder());
+                topUpFromBaseline(userId, context, alreadyInCart, leaveOut, cart.goodsTotal(), cart.minimumOrder());
         if (topUp.isEmpty()) {
             observabilityService.recordTopUp("no_baseline");
             throw new CartBuildException(
@@ -337,7 +345,8 @@ public class CartBuildingService {
                     .filter(java.util.Objects::nonNull)
                     .collect(java.util.stream.Collectors.toSet());
             List<ResolvedProduct> more =
-                    topUpFromBaseline(userId, context, inCart, verified.goodsTotal(), verified.minimumOrder()).stream()
+                    topUpFromBaseline(userId, context, inCart, leaveOut, verified.goodsTotal(), verified.minimumOrder())
+                            .stream()
                             .filter(line -> !triedNames.contains(line.catalogName()))
                             .toList();
             if (more.isEmpty()) {
@@ -393,6 +402,7 @@ public class CartBuildingService {
             UUID userId,
             CartContext context,
             java.util.Set<String> alreadyInCart,
+            java.util.Set<String> leaveOut,
             BigDecimal total,
             BigDecimal minimum) {
         List<BasketItem> baseline =
@@ -405,6 +415,7 @@ public class CartBuildingService {
                                 && item.price() != null
                                 && item.price().signum() > 0)
                         .filter(item -> !alreadyInCart.contains(item.silpoProductId()))
+                        .filter(item -> leaveOut.stream().noneMatch(name -> name.equalsIgnoreCase(item.name())))
                         .sorted(java.util.Comparator.comparing(item ->
                                 item.price().multiply(item.quantity() == null ? BigDecimal.ONE : item.quantity())))
                         .toList();

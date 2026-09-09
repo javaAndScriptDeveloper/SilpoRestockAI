@@ -141,6 +141,47 @@ class ReorderIntegrationTest extends AbstractIntegrationTest {
                         + "\"branchId\":\"branch-7\"}]}]}");
     }
 
+    /**
+     * Live: «молоко закінчилося, хліб є» reordered one milk and, to clear Silpo's minimum, fourteen baseline lines
+     * — two loaves of bread among them, a minute after the household said it had bread.
+     */
+    @Test
+    void aTopUpNeverReachesForWhatTheCheckinSaidIsStillThere() {
+        checkinRepository.save(Checkin.builder()
+                .id(UUID.randomUUID())
+                .userId(userId)
+                .rawInputText("молоко закінчилося, хліб є")
+                .parsedDelta(new CheckinDelta(List.of("Хліб"), List.of(), List.of("Молоко")))
+                .receivedAt(Instant.now())
+                .build());
+        String refused = """
+                {"cartId":"cart-9","branchId":"branch-7","companyId":"company-3","deliveryType":"delivery",\
+                "items":[{"productId":"p-1","name":"Молоко 2.5%","unit":"л","quantity":2,"price":38}],\
+                "total":76,"validations":[\
+                {"level":"error","type":"order","message":"order.cost.min","context":{"orderCostMin":799}}],\
+                "checkoutWebLink":null,"checkoutMobileLink":null}""";
+        MCP.respondToToolInOrder("silpo_get_shopping_cart_by_id", """
+                {"cartId":"cart-9","branchId":"branch-7","companyId":"company-3","deliveryType":"delivery",\
+                "items":[],"checkoutWebLink":"https://silpo.ua/checkout/cart-9","checkoutMobileLink":"silpo://checkout/cart-9"}""", refused, refused, """
+                {"cartId":"cart-9","branchId":"branch-7","companyId":"company-3","deliveryType":"delivery",\
+                "items":[{"productId":"p-1","name":"Молоко 2.5%","unit":"л","quantity":2,"price":38},\
+                {"productId":"p-9","name":"Кіноа","unit":"кг","quantity":1,"price":120}],\
+                "total":196,"validations":[],\
+                "checkoutWebLink":"https://silpo.ua/checkout/cart-9","checkoutMobileLink":"silpo://checkout/cart-9"}""");
+
+        reorderService.buildScheduledDeltaOrder(userId);
+
+        List<JsonNode> adds = MCP.callArguments("silpo_add_or_update_cart_products");
+        assertThat(adds).hasSizeGreaterThanOrEqualTo(2);
+        List<String> toppedUp = new ArrayList<>();
+        adds.subList(1, adds.size())
+                .forEach(add -> add.path("products")
+                        .forEach(product ->
+                                toppedUp.add(product.path("productId").asText())));
+        // Bread is the cheapest baseline line and would be reached for first — but the household has bread.
+        assertThat(toppedUp).contains("p-9").doesNotContain("p-2");
+    }
+
     private void needs(List<String> runningLow, List<String> gone) {
         checkinRepository.save(Checkin.builder()
                 .id(UUID.randomUUID())

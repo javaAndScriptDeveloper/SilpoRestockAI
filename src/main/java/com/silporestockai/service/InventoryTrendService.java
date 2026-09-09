@@ -83,6 +83,23 @@ public class InventoryTrendService {
                 .orElseGet(List::of);
     }
 
+    /**
+     * What the newest parsed check-in said the household still has — the lines a top-up must not reach for.
+     *
+     * <p>Live, «молоко закінчилося, хліб є» produced a reorder of one milk and, to clear Silpo's minimum, fourteen
+     * baseline lines — bread among them, two loaves, a minute after the person said they had bread. The delta
+     * itself was right; the top-up read the baseline blind.
+     */
+    @Transactional(readOnly = true)
+    public List<String> getStillHave(UUID userId) {
+        return checkinRepository.findByUserIdOrderByReceivedAtDesc(userId).stream()
+                .map(Checkin::getParsedDelta)
+                .filter(Objects::nonNull)
+                .findFirst()
+                .map(delta -> List.copyOf(orEmpty(delta.stillHave())))
+                .orElseGet(List::of);
+    }
+
     private void bump(UUID userId, String itemName) {
         InventoryTrend trend = trendOf(userId, itemName);
         trend.setConsecutiveUntouchedCycles(trend.getConsecutiveUntouchedCycles() + 1);
