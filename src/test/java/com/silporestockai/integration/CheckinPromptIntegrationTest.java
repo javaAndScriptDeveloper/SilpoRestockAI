@@ -143,6 +143,13 @@ class CheckinPromptIntegrationTest extends AbstractIntegrationTest {
         return user;
     }
 
+    /** The chat's state last moved this long ago — past the quiet window a fresh write would open. */
+    private void stateSettledMinutesAgo(int minutes) {
+        var state = conversationStateRepository.findById(CHAT_ID).orElseThrow();
+        state.setUpdatedAt(Instant.now().minus(Duration.ofMinutes(minutes)));
+        conversationStateRepository.save(state);
+    }
+
     private static List<String> promptsSent() {
         return TELEGRAM.sentMessages().stream()
                 .map(message -> message.path("text").asText())
@@ -285,6 +292,25 @@ class CheckinPromptIntegrationTest extends AbstractIntegrationTest {
         household(4);
         conversationStateService.save(
                 CHAT_ID, ConversationFlow.LIST_BUILDING, ShoppingListBuilderService.STEP_AWAITING_APPROVAL, Map.of());
+        stateSettledMinutesAgo(5);
+
+        assertThat(checkinPromptService.sweep()).isEqualTo(1);
+        assertThat(promptsSent()).hasSize(1);
+    }
+
+    /**
+     * Live, twice in one night: the prompt landed inside the thirty seconds between «Записав. Готую перший план» and
+     * the plan — the onboarding had just closed its flow, and a plan being generated is no flow at all.
+     */
+    @Test
+    void waitsForTheNextSweepWhenTheChatJustMoved() {
+        household(4);
+        conversationStateService.save(CHAT_ID, ConversationFlow.NONE, null, Map.of());
+
+        assertThat(checkinPromptService.sweep()).isZero();
+        assertThat(TELEGRAM.sentMessages()).isEmpty();
+
+        stateSettledMinutesAgo(3);
 
         assertThat(checkinPromptService.sweep()).isEqualTo(1);
         assertThat(promptsSent()).hasSize(1);
@@ -307,6 +333,7 @@ class CheckinPromptIntegrationTest extends AbstractIntegrationTest {
         userRepository.save(user);
         conversationStateService.save(
                 CHAT_ID, ConversationFlow.CHECK_IN, CheckinPromptService.STEP_AWAITING_REPORT, Map.of());
+        stateSettledMinutesAgo(5);
 
         assertThat(checkinPromptService.sweep()).isEqualTo(1);
         assertThat(promptsSent()).hasSize(1);

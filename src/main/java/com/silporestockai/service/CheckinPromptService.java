@@ -37,6 +37,9 @@ public class CheckinPromptService {
     /** The step task 12 reads to know the next message is a fridge report rather than a new request. */
     public static final String STEP_AWAITING_REPORT = "AWAITING_REPORT";
 
+    /** No prompt this soon after the chat's state last moved: the person is mid-exchange, or a plan is on its way. */
+    static final java.time.Duration QUIET_AFTER_ACTIVITY = java.time.Duration.ofMinutes(2);
+
     private final UserRepository userRepository;
     private final CheckinRepository checkinRepository;
     private final CustomerOrderRepository customerOrderRepository;
@@ -109,6 +112,14 @@ public class CheckinPromptService {
      */
     private boolean isBusyElsewhere(User user) {
         ConversationState state = conversationStateService.load(user.getTelegramChatId());
+        if (state.getUpdatedAt() != null
+                && clock.instant().isBefore(state.getUpdatedAt().plus(QUIET_AFTER_ACTIVITY))) {
+            // Something just happened in this chat. Twice in one night the prompt landed inside the thirty
+            // seconds between «Записав. Готую перший план» and the plan itself — the onboarding had just closed
+            // its flow, and a plan being generated is no flow at all. A check-in is the agent speaking first;
+            // it can wait for the next sweep rather than interrupt an exchange that is still going.
+            return true;
+        }
         ConversationFlow flow = state.getCurrentFlow();
         if (flow == ConversationFlow.NONE || flow == ConversationFlow.CHECK_IN) {
             return false;
