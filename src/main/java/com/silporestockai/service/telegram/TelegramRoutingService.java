@@ -108,11 +108,14 @@ public class TelegramRoutingService {
             }
             return;
         }
+        // Read off the raw update, before the SDK types are dropped: the internal shapes carry a Telegram user
+        // id but never a name, and task 81 addresses a gift by exactly that name.
+        String telegramUsername = usernameOf(update);
         toIncoming(update)
                 .ifPresentOrElse(
                         incoming -> {
                             try {
-                                handle(incoming);
+                                handle(incoming, telegramUsername);
                             } catch (RuntimeException e) {
                                 // This method runs @Async: nothing above it ever sees this exception, so
                                 // without this catch it would be silently logged by Spring's default
@@ -276,6 +279,17 @@ public class TelegramRoutingService {
         return text.substring(from, to);
     }
 
+    /** The {@code @nickname} on whichever part of the update carries a sender, without the {@code @}, or null. */
+    private static String usernameOf(Update update) {
+        org.telegram.telegrambots.meta.api.objects.User from = null;
+        if (update.hasMessage()) {
+            from = update.getMessage().getFrom();
+        } else if (update.hasCallbackQuery()) {
+            from = update.getCallbackQuery().getFrom();
+        }
+        return from == null ? null : from.getUserName();
+    }
+
     private static long userIdOf(org.telegram.telegrambots.meta.api.objects.User user) {
         return user == null ? 0L : user.getId();
     }
@@ -352,8 +366,8 @@ public class TelegramRoutingService {
         return false;
     }
 
-    private void handle(TelegramIncomingUpdate incoming) {
-        User user = userAccountService.findOrCreate(incoming.chatId());
+    private void handle(TelegramIncomingUpdate incoming, String telegramUsername) {
+        User user = userAccountService.findOrCreate(incoming.chatId(), telegramUsername);
         // Feedback (task 47) sits above the onboarding gate on purpose: somebody stuck on the first screen is
         // exactly who should be able to say so. The prompt snapshots and restores whatever flow it interrupts.
         if (incoming instanceof TelegramIncomingUpdate.Text feedback
