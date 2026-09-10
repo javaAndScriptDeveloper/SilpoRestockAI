@@ -578,11 +578,13 @@ public class CartBuildingService {
                     .map(BasketItem::silpoProductId)
                     .filter(java.util.Objects::nonNull)
                     .collect(java.util.stream.Collectors.toSet());
+            // The names already tried go into the exclusion, not onto a filter afterwards: the cheapest baseline
+            // lines are exactly the ones the branch had none of, and picking them again only to drop them left
+            // ₴57 on the table with nothing but «Скасувати» under the cart (live, session 25).
+            java.util.Set<String> skip = new java.util.HashSet<>(leaveOut);
+            skip.addAll(triedNames);
             List<ResolvedProduct> more =
-                    topUpFromBaseline(userId, context, inCart, leaveOut, verified.goodsTotal(), verified.minimumOrder())
-                            .stream()
-                            .filter(line -> !triedNames.contains(line.catalogName()))
-                            .toList();
+                    topUpFromBaseline(userId, context, inCart, skip, verified.goodsTotal(), verified.minimumOrder());
             if (more.isEmpty()) {
                 break;
             }
@@ -639,20 +641,13 @@ public class CartBuildingService {
             java.util.Set<String> leaveOut,
             BigDecimal total,
             BigDecimal minimum) {
-        List<BasketItem> baseline =
+        List<BasketItem> baseline = eligibleForTopUp(
                 baselineBasketRepository
                         .findByUserIdAndIsCurrentTrue(userId)
                         .map(BaselineBasket::getItems)
-                        .orElseGet(List::of)
-                        .stream()
-                        .filter(item -> item.silpoProductId() != null
-                                && item.price() != null
-                                && item.price().signum() > 0)
-                        .filter(item -> !alreadyInCart.contains(item.silpoProductId()))
-                        .filter(item -> leaveOut.stream().noneMatch(name -> name.equalsIgnoreCase(item.name())))
-                        .sorted(java.util.Comparator.comparing(item ->
-                                item.price().multiply(item.quantity() == null ? BigDecimal.ONE : item.quantity())))
-                        .toList();
+                        .orElseGet(List::of),
+                alreadyInCart,
+                leaveOut);
         if (baseline.isEmpty()) {
             log.info(
                     "cart {} is {} short of the {} minimum and there is no baseline to top it up from",
@@ -662,14 +657,8 @@ public class CartBuildingService {
             return List.of();
         }
         BigDecimal running = total == null ? BigDecimal.ZERO : total;
-        // Baseline prices are what the household paid last time; today's may be a little lower after a discount,
-        // and landing a few hryvnia short means another refused cart. Aim a little past the line.
-        BigDecimal target = minimum.multiply(new BigDecimal("1.05"));
         List<ResolvedProduct> topUp = new ArrayList<>();
-        for (BasketItem item : baseline) {
-            if (running.compareTo(target) >= 0) {
-                break;
-            }
+        for (BasketItem item : pickTopUp(baseline, running, minimum)) {
             BigDecimal quantity =
                     item.quantity() == null || item.quantity().signum() <= 0 ? BigDecimal.ONE : item.quantity();
             topUp.add(new ResolvedProduct(
@@ -701,6 +690,41 @@ public class CartBuildingService {
                 topUp.size(),
                 minimum);
         return topUp;
+    }
+
+    /** Baseline lines a top-up may reach for, cheapest line first: priced, not in the cart, not named as had or tried. */
+    static List<BasketItem> eligibleForTopUp(
+            List<BasketItem> baseline, java.util.Set<String> alreadyInCart, java.util.Set<String> leaveOut) {
+        return baseline.stream()
+                .filter(item -> item.silpoProductId() != null
+                        && item.price() != null
+                        && item.price().signum() > 0)
+                .filter(item -> !alreadyInCart.contains(item.silpoProductId()))
+                .filter(item -> leaveOut.stream().noneMatch(name -> name.equalsIgnoreCase(item.name())))
+                .sorted(java.util.Comparator.comparing(
+                        item -> item.price().multiply(item.quantity() == null ? BigDecimal.ONE : item.quantity())))
+                .toList();
+    }
+
+    /**
+     * The cheapest eligible lines, in order, until the cart clears the minimum with a margin. Baseline prices are
+     * what the household paid last time; today's may be a little lower after a discount, and landing a few hryvnia
+     * short means another refused cart — so the aim is a little past the line.
+     */
+    static List<BasketItem> pickTopUp(List<BasketItem> eligible, BigDecimal total, BigDecimal minimum) {
+        BigDecimal running = total == null ? BigDecimal.ZERO : total;
+        BigDecimal target = minimum.multiply(new BigDecimal("1.05"));
+        List<BasketItem> picked = new ArrayList<>();
+        for (BasketItem item : eligible) {
+            if (running.compareTo(target) >= 0) {
+                break;
+            }
+            BigDecimal quantity =
+                    item.quantity() == null || item.quantity().signum() <= 0 ? BigDecimal.ONE : item.quantity();
+            picked.add(item);
+            running = running.add(item.price().multiply(quantity));
+        }
+        return picked;
     }
 
     /** «Молоко «Премія» 2,5% — 1 шт, 45.99 грн», for the cart message. */
