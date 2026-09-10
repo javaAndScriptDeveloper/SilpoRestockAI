@@ -75,6 +75,7 @@ public class CartConfirmationService {
     private static final ObjectMapper MAPPER = new ObjectMapper().findAndRegisterModules();
 
     private final CartBuildingService cartBuildingService;
+    private final GiftCartCustodyService giftCartCustodyService;
     private final LoyaltyBenefitsService loyaltyBenefitsService;
     private final InventoryTrendService inventoryTrendService;
     private final ObservabilityService observabilityService;
@@ -138,6 +139,11 @@ public class CartConfirmationService {
             OrderTrigger trigger,
             MatchingHints hints) {
         long chatId = user.getTelegramChatId();
+        if (type != OrderType.GIFT) {
+            // Task 81: a gift may still be holding this household's only cart, pointed at a friend's door. Give
+            // it back before building anything, or the weekly order follows the last present out.
+            giftCartCustodyService.releaseCartIfHeld(user.getId());
+        }
         CartSummary summary;
         try {
             summary = cartBuildingService.buildCart(user.getId(), items, preferDiscounted, hints);
