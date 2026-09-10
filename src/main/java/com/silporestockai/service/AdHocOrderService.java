@@ -152,6 +152,17 @@ public class AdHocOrderService {
         log.info("presented a hangover-relief cart to user {}", user.getId());
     }
 
+    /**
+     * The gift's theme as shop lines (task 81).
+     *
+     * <p>The same call the ad-hoc order makes, under an honest name: a gift package is an ad-hoc order with a
+     * different destination, not a second kind of basket. The profile it reads is the sender's, which is right —
+     * a household that keeps no alcohol at home should not be handed a bottle to send.
+     */
+    public List<ShoppingListItem> giftLinesFor(UUID userId, String theme) {
+        return linesFor(userId, theme == null || theme.isBlank() ? "подарунковий набір" : theme);
+    }
+
     /** The theme as one to six shop lines. A failed model call is an empty list, which the caller explains. */
     private List<ShoppingListItem> linesFor(UUID userId, String theme) {
         StringBuilder prompt = new StringBuilder();

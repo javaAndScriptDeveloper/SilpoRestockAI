@@ -31,5 +31,11 @@ public enum ConversationFlow {
     /** Choosing which past Silpo order to seed the list from (task 35); the candidates live in the context. */
     PAST_ORDER_PICK,
     /** Waiting for a dish name, or for a yes/no on the dish a photo was identified as (task 36). */
-    DISH_CONFIRM
+    DISH_CONFIRM,
+    /** A friend was asked, in their own chat, where a gift should go (task 81). */
+    GIFT_ADDRESS_REQUEST,
+    /** The sender was asked for the one detail their sentence left out — the recipient's phone (task 81). */
+    GIFT_SENDER_DETAIL,
+    /** Somebody is leaving, or clearing, the address friends may send gifts to (task 81). */
+    GIFT_CONSENT
 }

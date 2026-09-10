@@ -76,8 +76,17 @@ public class CartMessageService {
      * address and would otherwise have no idea whether the bot was about to read it out.
      */
     public String giftCartText(CartSummary summary, OfferedSlot slot, String recipientLabel, CartBenefits benefits) {
-        return "🎁 Подарунок для " + recipientLabel + "\n\n"
-                + cartText(summary, slot, OrderType.GIFT, benefits)
+        return giftWrapped(cartText(summary, slot, OrderType.GIFT, benefits), recipientLabel);
+    }
+
+    /**
+     * The gift framing around an already-composed cart text.
+     *
+     * <p>Its own method because a gift under the ₴799 minimum needs the same two lines around a quite different
+     * middle, and a second copy of this wording is how the two would start disagreeing.
+     */
+    public String giftWrapped(String cartText, String recipientLabel) {
+        return "🎁 Подарунок для " + recipientLabel + "\n\n" + cartText
                 + "\n\nАдресу не показую — вона належить отримувачу.";
     }
 

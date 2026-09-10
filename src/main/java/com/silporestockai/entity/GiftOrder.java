@@ -96,6 +96,16 @@ public class GiftOrder {
     @Column(name = "expires_at")
     private Instant expiresAt;
 
+    /**
+     * How this gift's recipient is named in the sender's chat.
+     *
+     * <p>A nickname when there is one, and «друга» when the sender gave an address instead — never anything
+     * derived from where the parcel is going.
+     */
+    public String recipientLabel() {
+        return recipientUsername == null ? "друга" : "@" + recipientUsername;
+    }
+
     /** Whether this gift is still holding the household's only cart. */
     public boolean holdsTheCart() {
         return (status == GiftOrderStatus.CART_PRESENTED || status == GiftOrderStatus.CONFIRMED)

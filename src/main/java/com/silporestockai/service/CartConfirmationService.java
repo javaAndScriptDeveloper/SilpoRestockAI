@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.silporestockai.entity.BaselineBasket;
 import com.silporestockai.entity.ConversationState;
 import com.silporestockai.entity.CustomerOrder;
+import com.silporestockai.entity.GiftOrder;
 import com.silporestockai.entity.ShoppingListItem;
 import com.silporestockai.entity.User;
 import com.silporestockai.exception.CartBuildException;
@@ -24,6 +25,7 @@ import com.silporestockai.model.OrderType;
 import com.silporestockai.model.TelegramIncomingUpdate;
 import com.silporestockai.repository.BaselineBasketRepository;
 import com.silporestockai.repository.CustomerOrderRepository;
+import com.silporestockai.repository.GiftOrderRepository;
 import com.silporestockai.service.telegram.CartMessageService;
 import com.silporestockai.service.telegram.TelegramOutboundService;
 import java.math.BigDecimal;
@@ -81,6 +83,7 @@ public class CartConfirmationService {
     private final ObservabilityService observabilityService;
     private final BudgetWarningService budgetWarningService;
     private final CustomerOrderRepository customerOrderRepository;
+    private final GiftOrderRepository giftOrderRepository;
     private final BaselineBasketRepository baselineBasketRepository;
     private final ConversationStateService conversationStateService;
     private final CartMessageService cartMessageService;
@@ -138,6 +141,28 @@ public class CartConfirmationService {
             boolean preferDiscounted,
             OrderTrigger trigger,
             MatchingHints hints) {
+        return present(user, items, type, preferDiscounted, trigger, hints, null);
+    }
+
+    /**
+     * The gift variant (task 81): the same cart, presented without ever naming where it is going.
+     *
+     * <p>{@link OrderType#GIFT} is what keeps it out of the baseline; the message is what keeps the address off
+     * the sender's screen; and the cart id written back onto the gift row is what lets the household's own
+     * delivery settings be found again on their next ordinary order.
+     */
+    public boolean presentGift(User user, List<ShoppingListItem> items, GiftOrder gift, OrderTrigger trigger) {
+        return present(user, items, OrderType.GIFT, false, trigger, MatchingHints.NONE, gift);
+    }
+
+    private boolean present(
+            User user,
+            List<ShoppingListItem> items,
+            OrderType type,
+            boolean preferDiscounted,
+            OrderTrigger trigger,
+            MatchingHints hints,
+            GiftOrder gift) {
         long chatId = user.getTelegramChatId();
         if (type != OrderType.GIFT) {
             // Task 81: a gift may still be holding this household's only cart, pointed at a friend's door. Give
@@ -214,6 +239,14 @@ public class CartConfirmationService {
                 .createdAt(Instant.now())
                 .build());
 
+        if (gift != null) {
+            // The one moment the borrowed cart's id is in hand. Without it the lazy restore has nothing to
+            // address, and the household's cart would stay pointed at a friend.
+            gift.setSilpoCartId(summary.cartId());
+            gift.setUpdatedAt(Instant.now());
+            giftOrderRepository.save(gift);
+        }
+
         CartBenefits benefits = loyaltyBenefitsService.cartBenefits(user.getId());
 
         Map<String, Object> context = new LinkedHashMap<>();
@@ -232,11 +265,14 @@ public class CartConfirmationService {
             boolean hasBaseline = cartBuildingService.hasBaseline(user.getId());
             telegramOutboundService.sendMessageWithButtons(
                     chatId,
-                    withBudgetWarning(
-                            cartMessageService.belowMinimumText(summary, selectedSlot, type, hasBaseline, benefits),
-                            user,
-                            summary,
-                            benefits),
+                    giftFramed(
+                            withBudgetWarning(
+                                    cartMessageService.belowMinimumText(
+                                            summary, selectedSlot, type, hasBaseline, benefits),
+                                    user,
+                                    summary,
+                                    benefits),
+                            gift),
                     cartMessageService.belowMinimumButtons(summary, hasBaseline));
             log.info(
                     "presented cart {} as draft order {} to user {}, {} short of the minimum order",
@@ -248,11 +284,21 @@ public class CartConfirmationService {
         }
         telegramOutboundService.sendMessageWithButtons(
                 chatId,
-                withBudgetWarning(
-                        cartMessageService.cartText(summary, selectedSlot, type, benefits), user, summary, benefits),
+                giftFramed(
+                        withBudgetWarning(
+                                cartMessageService.cartText(summary, selectedSlot, type, benefits),
+                                user,
+                                summary,
+                                benefits),
+                        gift),
                 cartMessageService.cartButtons(summary, !slots.isEmpty(), benefits));
         log.info("presented cart {} as draft order {} to user {}", summary.cartId(), order.getId(), user.getId());
         return true;
+    }
+
+    /** Says who a cart is for, when it is for somebody else. Unchanged for every ordinary order. */
+    private String giftFramed(String text, GiftOrder gift) {
+        return gift == null ? text : cartMessageService.giftWrapped(text, gift.recipientLabel());
     }
 
     /**
