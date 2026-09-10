@@ -52,7 +52,7 @@ public class ProductMatchingService {
      * index 2, the plain milk at 0, the potato at 1); the one case that needed depth, «Яловичина», was answered
      * «none» regardless because the real beef was short on stock. Twelve keeps the decisions and halves the prompt.
      */
-    private static final int MAX_CANDIDATES_SHOWN = 15;
+    public static final int MAX_CANDIDATES_SHOWN = 15;
 
     /** The answer for a line nothing was chosen for. */
     public static final int NONE = -1;
@@ -89,13 +89,17 @@ public class ProductMatchingService {
         if (!claudeProperties.apiKeyConfigured()) {
             // A supported configuration, not a failure: say plainly what the cart is being matched with.
             log.info(
-                    "ANTHROPIC_API_KEY is not set — matching {} shopping list lines by Silpo's own ranking",
+                    "ANTHROPIC_API_KEY is not set — matching {} shopping list lines by taking the first candidate",
                     requests.size());
             return silpoRanking(requests);
         }
         Choices answer;
+        String candidates = describe(requests);
+        // The one thing a choice's own log line cannot say: what the alternatives were, and what they cost. That
+        // is the question every «why did it buy that» investigation starts with — see task 72's ₴464 charcoal.
+        log.debug("matcher <- {}", candidates);
         try {
-            answer = claudeApiClient.completeStructuredFast(systemPrompt, describe(requests), Choices.class);
+            answer = claudeApiClient.completeStructuredFast(systemPrompt, candidates, Choices.class);
         } catch (RuntimeException e) {
             // Loud, and never a wrong cart: the one time this fell back to Silpo's own ranking for real, the
             // household was shown ₴7549 of jerky and konjac with a «Підтвердити» button under it.
@@ -158,7 +162,10 @@ public class ProductMatchingService {
         return terms;
     }
 
-    /** Silpo's own ranking: whatever it put first. The only matching left when no model is configured. */
+    /**
+     * Whatever the caller put first — since task 72 the cheapest of the candidates a line kept, not Silpo's own
+     * top hit. The only matching left when no model is configured.
+     */
     private static List<Integer> silpoRanking(List<ProductMatchRequest> requests) {
         return requests.stream()
                 .map(request -> request.candidates().isEmpty() ? NONE : 0)
@@ -234,6 +241,16 @@ public class ProductMatchingService {
                                     ? " — людина просила УКРАЇНСЬКОГО ВИРОБНИКА: серед придатних бери товар"
                                             + " українського бренду чи виробника"
                                     : "")
+                    // Task 72: the cheap default has to yield to a brand the person named themselves, and the
+                    // line alone never carries one — a hangover kit's own line is «вода мінеральна».
+                    .append(
+                            request.personsWords() == null
+                                            || request.personsWords().isBlank()
+                                    ? ""
+                                    : " — людина написала: «"
+                                            + request.personsWords().trim()
+                                            + "»; якщо вона назвала конкретний товар чи бренд саме для цього"
+                                            + " рядка — бери його")
                     .append('\n');
             List<ProductCandidate> candidates = request.candidates();
             if (candidates.isEmpty()) {

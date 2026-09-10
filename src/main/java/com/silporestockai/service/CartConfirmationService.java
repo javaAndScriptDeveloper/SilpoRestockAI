@@ -14,6 +14,7 @@ import com.silporestockai.model.CartContext;
 import com.silporestockai.model.CartSummary;
 import com.silporestockai.model.ConversationFlow;
 import com.silporestockai.model.GiftCertificate;
+import com.silporestockai.model.MatchingHints;
 import com.silporestockai.model.OfferedSlot;
 import com.silporestockai.model.OrderConfirmedEvent;
 import com.silporestockai.model.OrderStatus;
@@ -120,10 +121,24 @@ public class CartConfirmationService {
      */
     public boolean present(
             User user, List<ShoppingListItem> items, OrderType type, boolean preferDiscounted, OrderTrigger trigger) {
+        return present(user, items, type, preferDiscounted, trigger, MatchingHints.NONE);
+    }
+
+    /**
+     * Same, carrying what the product choice should know beyond the lines themselves (task 72): the person's own
+     * sentence, and the other shelf names a line's need goes by. See {@link MatchingHints}.
+     */
+    public boolean present(
+            User user,
+            List<ShoppingListItem> items,
+            OrderType type,
+            boolean preferDiscounted,
+            OrderTrigger trigger,
+            MatchingHints hints) {
         long chatId = user.getTelegramChatId();
         CartSummary summary;
         try {
-            summary = cartBuildingService.buildCart(user.getId(), items, preferDiscounted);
+            summary = cartBuildingService.buildCart(user.getId(), items, preferDiscounted, hints);
         } catch (NoSilpoDeliveryAddressException e) {
             log.error("could not build a cart for user {}", user.getId(), e);
             observabilityService.recordFailureMessage("cart_build", "no_address");

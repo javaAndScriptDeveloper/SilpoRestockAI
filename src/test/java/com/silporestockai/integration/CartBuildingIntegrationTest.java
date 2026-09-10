@@ -394,6 +394,31 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
                 .containsExactly("p-1 ← цибуля", "p-2 ← гречка");
     }
 
+    /**
+     * Task 72: a live hangover order came back at ₴1034 for three items — Evian twice, Atoxil, and two packs of an
+     * imported electrolyte drink at ₴309 each — because Silpo ranks by relevance and relevance puts the imported
+     * drink above the ₴32 rehydration sachet in the very same answer. The candidates are read cheapest first now,
+     * so neither the matcher nor the no-model fallback sees the premium one first.
+     */
+    @Test
+    void readsTheCandidatesCheapestFirstSoAPremiumHitDoesNotWinOnRankingAlone() {
+        UUID userId = connectedUser(8434L);
+        scriptCartTools();
+        MCP.respondToTool("silpo_find_products_batch", """
+                {"queries":[{"query":"регідрон","products":[\
+                {"name":"Напій розчинний Elekta Mix 8 з електролітами","productId":"p-9","companyId":"company-3",\
+                "branchId":"branch-7","price":309,"displayRatio":"20г","stock":10,"available":true},\
+                {"name":"Регідрон Оптім порошок","productId":"p-2","companyId":"company-3",\
+                "branchId":"branch-7","price":32,"displayRatio":"18.9г","stock":10,"available":true}]}]}""");
+        MCP.respondToTool("silpo_add_or_update_cart_products", "{\"ok\":true}");
+        scriptVerifiedCart();
+
+        cartBuildingService.buildCart(userId, List.of(item("регідрон", "1", "шт")));
+
+        JsonNode added = MCP.callArguments("silpo_add_or_update_cart_products").getFirst();
+        assertThat(added.path("products").get(0).path("productId").asText()).isEqualTo("p-2");
+    }
+
     private static ShoppingListItem readyMealItem(String name, String productId) {
         return ShoppingListItem.builder()
                 .id(UUID.randomUUID())

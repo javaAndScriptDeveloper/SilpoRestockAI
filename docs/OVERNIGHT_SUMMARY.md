@@ -1292,3 +1292,43 @@ against. Distinct MCP tools ever used by this account: 21, up from 14.
 
 An account that actually holds a certificate or a promo code, if one exists — that is the only way to see
 «Підтвердити + вигоди» in a real chat. Everything else is in RUNBOOK's «Tasks 78 and 79» list.
+
+# Session 20 — the cheap remedy, not the imported one (task 72), 2026-09-10
+
+## The bug, in one cart
+
+«Голова після вчорашнього, привезіть мінералку і щось від інтоксикації якнайшвидше» came back at **₴1034**:
+Evian twice, Атоксіл, and two packs of Elekta Mix at ₴309 each. Every line was a real answer to a real
+search. Two things made it expensive, and only one of them was the hangover flow's.
+
+**The kit asked by category.** «Ізотонік» and «сорбент» are category words, and a catalog answers a category
+word with the category's dearest members. But naming the cheap staple instead is no better on its own: the
+first attempt at this fix asked for «активоване вугілля» and bought a ₴464 imported supplement, because
+Silpo is a grocery and has no charcoal tablets at all — while Атоксіл sat on the same shelf at ₴119. So a
+need is now searched under every name it goes by, in one pass, and the cheapest suitable one wins
+(`MatchingHints.alsoSearch`).
+
+**The matcher read Silpo's order.** Silpo ranks by relevance, and relevance put the ₴309 drink above the
+₴50.99 isotonic and Evian above Миргородська in the very same answer. Candidates now reach the matcher
+cheapest-first, capped as before at fifteen by Silpo's own relevance, and the prompt states «бери
+найдешевший придатний» as a rule rather than an aside. Both are in the shared resolver, so #24, #36 and #19
+get the same floor — which is what the task asked for over patching #32 alone.
+
+**A named brand still wins.** The kit's lines are fixed and carry no brand, so the person's own sentence now
+travels to the matcher (`MatchingHints.personsWords`) — the one step that sees both «привези Evian» and what
+the shelf holds.
+
+## Live evidence (2026-09-10, real catalog)
+
+₴22.49 Миргородська ×2, ₴50.99 Oshee ізотонік, ₴119 Атоксіл — **₴215.46** of goods, against ₴1034. The full
+candidate lists with prices are in RUNBOOK §22; `matcher <- …` at DEBUG prints them for any run.
+
+Two live runs were needed to get there: the first still took Elekta at ₴279 because the prompt's own
+«вітамінна вода — не заміна» rule was being read as banning «Oshee вітамінізований ізотонік». A sports
+isotonic is now named as suitable; only energy drinks and plain sweet soda are not.
+
+## What needs your eyes
+
+Nothing specific to this task — the numbers above are from the real catalog. Worth knowing: the branch
+carries no регідрон and no charcoal tablets, so the rehydration line is an isotonic drink and the sorbent
+line is Атоксіл. If a branch ever stocks the ₴30 sachets, they win on price with no further change.

@@ -14,6 +14,7 @@ import com.silporestockai.exception.SilpoMcpException;
 import com.silporestockai.model.BasketItem;
 import com.silporestockai.model.CartContext;
 import com.silporestockai.model.CartSummary;
+import com.silporestockai.model.MatchingHints;
 import com.silporestockai.model.OfferedSlot;
 import com.silporestockai.model.ProductCandidate;
 import com.silporestockai.model.ProductMatchRequest;
@@ -180,8 +181,33 @@ public class CartBuildingService {
             }
             kept.add(candidate);
         }
-        return kept;
+        return cheapestFirst(kept);
     }
+
+    /**
+     * The candidates the matcher reads, cheapest first.
+     *
+     * <p>Silpo's order is relevance, and relevance is not "the ordinary version of this thing": for «регідрон» it
+     * puts a ₴309 imported electrolyte drink above the ₴32 sachet in the same answer, and for «вода мінеральна»
+     * Evian above Моршинська. That ranking is what a live hangover order cost ₴1034 for three basic items (task
+     * 72). The prompt has asked for the ordinary one since task 49 and the fast model still followed the order
+     * often enough to matter, so the order is settled here instead: Silpo's own relevance decides which fifteen
+     * are worth reading — the cap the matcher applies anyway — and price decides which of those is read first.
+     *
+     * <p>Not a decision about which product is right, and it takes nothing out: a line whose cheap candidates are
+     * all the wrong product is still answered «none of these» by the matcher, exactly as before. A candidate with
+     * no price sorts last; unknown is not cheap.
+     */
+    private static List<JsonNode> cheapestFirst(List<JsonNode> candidates) {
+        return candidates.stream()
+                .limit(ProductMatchingService.MAX_CANDIDATES_SHOWN)
+                .sorted(java.util.Comparator.comparing(candidate ->
+                        McpResponses.findNumber(candidate, McpResponses.PRICE).orElse(PRICELESS)))
+                .toList();
+    }
+
+    /** Where a candidate Silpo quoted no price for sorts: after every candidate that has one. */
+    private static final BigDecimal PRICELESS = new BigDecimal("99999999");
 
     /**
      * A bare staple and the words that mark a variant the line did not ask for.
@@ -231,12 +257,41 @@ public class CartBuildingService {
         return List.of();
     }
 
+    /**
+     * Everything the searches under {@code names} offered for this line, worth showing, cheapest first.
+     *
+     * <p>One need can go by several names — «регідрон», «електроліти», «ізотонік» are one thing to buy — and the
+     * whole point of searching them together is that the cheapest suitable one wins, so the answers are one pool
+     * rather than one pool per word. The same product can come back under two of the names; a product id is in
+     * this list once.
+     */
+    private static List<JsonNode> candidatesUnder(
+            ShoppingListItem item, List<String> names, Map<String, List<JsonNode>> productsByQuery) {
+        List<JsonNode> union = new ArrayList<>();
+        List<String> seen = new ArrayList<>();
+        for (String name : names) {
+            for (JsonNode product :
+                    plausibleFor(item, productsByQuery.getOrDefault(name.toLowerCase(Locale.ROOT), List.of()))) {
+                String id = McpResponses.findString(product, McpResponses.PRODUCT_ID)
+                        .orElse(null);
+                if (id == null || !seen.contains(id)) {
+                    union.add(product);
+                    if (id != null) {
+                        seen.add(id);
+                    }
+                }
+            }
+        }
+        return cheapestFirst(union);
+    }
+
     /** The shelf tags of each line's candidates, in Silpo's own order, as the matcher wants them. */
     private static List<ProductMatchRequest> matchRequests(
             List<ShoppingListItem> items,
             List<List<JsonNode>> candidatesFor,
             boolean preferDiscounted,
-            boolean preferUaProducer) {
+            boolean preferUaProducer,
+            MatchingHints hints) {
         List<ProductMatchRequest> requests = new ArrayList<>();
         for (int i = 0; i < items.size(); i++) {
             ShoppingListItem item = items.get(i);
@@ -254,7 +309,13 @@ public class CartBuildingService {
                                     .orElse(null)))
                     .toList();
             requests.add(new ProductMatchRequest(
-                    item.getName(), quantityOf(item), item.getUnit(), candidates, preferDiscounted, preferUaProducer));
+                    item.getName(),
+                    quantityOf(item),
+                    item.getUnit(),
+                    candidates,
+                    preferDiscounted,
+                    preferUaProducer,
+                    hints.personsWords()));
         }
         return requests;
     }
@@ -269,11 +330,21 @@ public class CartBuildingService {
      * its promotions into the cart itself, so the saving reported afterwards is its own number.
      */
     public CartSummary buildCart(UUID userId, List<ShoppingListItem> items, boolean preferDiscounted) {
+        return buildCart(userId, items, preferDiscounted, MatchingHints.NONE);
+    }
+
+    /**
+     * The same, carrying what the product choice knows about this cart beyond its lines (task 72): the sentence
+     * that asked for it, and the other shelf names a line's need goes by. {@link MatchingHints#NONE} for a weekly
+     * plan or a reorder, where a line is exactly its own name and no one sentence stands behind the list.
+     */
+    public CartSummary buildCart(
+            UUID userId, List<ShoppingListItem> items, boolean preferDiscounted, MatchingHints hints) {
         // Task 54: the timer wraps the whole pipeline, both exits, because "how long does a cart take" is the
         // question a person waiting on one actually has, and a failure that takes 90s is the worst case of all.
         long startedAt = System.nanoTime();
         try {
-            CartSummary built = build(userId, items, preferDiscounted);
+            CartSummary built = build(userId, items, preferDiscounted, hints);
             observabilityService.recordCartBuild(
                     built.belowMinimumOrder() ? "below_minimum" : "ok",
                     Duration.ofNanos(System.nanoTime() - startedAt));
@@ -285,7 +356,8 @@ public class CartBuildingService {
         }
     }
 
-    private CartSummary build(UUID userId, List<ShoppingListItem> items, boolean preferDiscounted) {
+    private CartSummary build(
+            UUID userId, List<ShoppingListItem> items, boolean preferDiscounted, MatchingHints hints) {
         CartContext context = getOrCreateCartContext(userId);
         clearCart(userId, context);
         OfferedSlot deliverySlot = firstDeliverableSlot(userId, context);
@@ -299,7 +371,7 @@ public class CartBuildingService {
                 context.deliveryType(),
                 deliverySlot.label(),
                 deliverySlot.end());
-        ProductResolution resolution = resolve(userId, context, items, preferDiscounted);
+        ProductResolution resolution = resolve(userId, context, items, preferDiscounted, hints);
         List<ResolvedProduct> resolved = resolution.resolved();
         List<String> skippedNames = resolution.skipped().stream()
                 .map(line -> line.substring(0, line.indexOf(" — ")))
@@ -953,6 +1025,18 @@ public class CartBuildingService {
      */
     public ProductResolution resolve(
             UUID userId, CartContext context, List<ShoppingListItem> items, boolean preferDiscounted) {
+        return resolve(userId, context, items, preferDiscounted, MatchingHints.NONE);
+    }
+
+    /**
+     * The same, carrying what else is known about this cart (task 72) — see {@link MatchingHints}.
+     */
+    public ProductResolution resolve(
+            UUID userId,
+            CartContext context,
+            List<ShoppingListItem> items,
+            boolean preferDiscounted,
+            MatchingHints hints) {
         List<String> skipped = new ArrayList<>();
         List<ResolvedProduct> resolved = new ArrayList<>();
         List<ShoppingListItem> preResolved = items.stream()
@@ -1013,34 +1097,29 @@ public class CartBuildingService {
                 // was set, and Silpo's plain-text search answered nothing for every line of a 24-line list;
                 // the preference is the matcher's job, over candidates a plain search actually returns.
                 addTerm(terms, item.getName());
+                // Task 72: and every other name this need goes by, in this same pass. Живий приклад: Silpo has no
+                // cheap charcoal tablets, only a ₴464 imported supplement, while Атоксіл is ₴119 on the same
+                // shelf — a line bound to one name buys that name at whatever it costs.
+                hints.alsoSearchFor(item.getName()).forEach(term -> addTerm(terms, term));
                 PartnerPromotion promotion = promotionFor.get(item);
                 if (promotion != null) {
                     addTerm(terms, promotion.getProductName());
                 }
             }
-            JsonNode found = call(
-                    userId,
-                    TOOL_FIND_PRODUCTS,
-                    Map.of(
-                            "branchId", nullSafe(context.branchId()),
-                            "deliveryType", nullSafe(context.deliveryType()),
-                            "timeslotStart", nullSafe(context.timeslotStart()),
-                            "timeslotEnd", nullSafe(context.timeslotEnd()),
-                            "products", terms));
-            Map<String, List<JsonNode>> productsByQuery = new LinkedHashMap<>();
-            for (JsonNode query : McpResponses.findArray(found, McpResponses.QUERIES)) {
-                McpResponses.findString(query, McpResponses.NAME)
-                        .ifPresent(text -> productsByQuery.putIfAbsent(
-                                text.toLowerCase(Locale.ROOT), McpResponses.findArray(query, McpResponses.PRODUCTS)));
-            }
+            // A chunk's lines can now ask for more terms than one call takes — a line with alternative names, a
+            // partner placement's own product name — and Silpo refuses the whole search past thirty of them.
+            Map<String, List<JsonNode>> productsByQuery = search(userId, context, terms);
             // Every line, decided in one call rather than by taking whatever Silpo ranked first — see
             // ProductMatchingService for what that ranking actually returns. A line a partner placement claims is
             // matched here too, deliberately: the placement is only used if it comes back live (task 46), and
             // without an ordinary match behind it a placement that does not would leave the line unresolved.
             List<ShoppingListItem> toMatch = chunk;
             List<List<JsonNode>> candidatesFor = toMatch.stream()
-                    .map(item -> plausibleFor(
-                            item, productsByQuery.getOrDefault(item.getName().toLowerCase(Locale.ROOT), List.of())))
+                    .map(item -> {
+                        List<String> names = new ArrayList<>(List.of(item.getName()));
+                        names.addAll(hints.alsoSearchFor(item.getName()));
+                        return candidatesUnder(item, names, productsByQuery);
+                    })
                     .toList();
             for (int i = 0; i < toMatch.size(); i++) {
                 candidateCounts.putIfAbsent(
@@ -1048,7 +1127,7 @@ public class CartBuildingService {
                         candidatesFor.get(i).size());
             }
             List<Integer> picked = productMatchingService.choose(
-                    matchRequests(toMatch, candidatesFor, preferDiscounted, onlyUaProducer));
+                    matchRequests(toMatch, candidatesFor, preferDiscounted, onlyUaProducer, hints));
             Map<ShoppingListItem, JsonNode> matched = new IdentityHashMap<>();
             for (int i = 0; i < toMatch.size(); i++) {
                 int index = picked.get(i);
@@ -1096,7 +1175,7 @@ public class CartBuildingService {
             }
         }
 
-        secondPass(userId, context, needsSearch, resolved, skipped, preferDiscounted, onlyUaProducer);
+        secondPass(userId, context, needsSearch, resolved, skipped, preferDiscounted, onlyUaProducer, hints);
 
         // Task 63: every line that resolved, promoted or not — the denominator a share is computed against.
         categoryResolutionLogService.record(userId, resolved, candidateCounts);
@@ -1142,7 +1221,8 @@ public class CartBuildingService {
             List<ResolvedProduct> resolved,
             List<String> skipped,
             boolean preferDiscounted,
-            boolean preferUaProducer) {
+            boolean preferUaProducer,
+            MatchingHints hints) {
         List<ShoppingListItem> stillMissing = searched.stream()
                 .filter(item ->
                         resolved.stream().noneMatch(p -> p.requestedName().equals(item.getName())))
@@ -1195,21 +1275,7 @@ public class CartBuildingService {
         List<List<JsonNode>> candidatesFor = new ArrayList<>();
         for (Map.Entry<Integer, List<String>> entry : alternatives.entrySet()) {
             ShoppingListItem item = stillMissing.get(entry.getKey());
-            List<JsonNode> union = new ArrayList<>();
-            for (String term : entry.getValue()) {
-                for (JsonNode product :
-                        plausibleFor(item, productsByQuery.getOrDefault(term.toLowerCase(Locale.ROOT), List.of()))) {
-                    String id = McpResponses.findString(product, McpResponses.PRODUCT_ID)
-                            .orElse(null);
-                    boolean seen = union.stream()
-                            .anyMatch(known -> McpResponses.findString(known, McpResponses.PRODUCT_ID)
-                                    .orElse("")
-                                    .equals(id));
-                    if (!seen) {
-                        union.add(product);
-                    }
-                }
-            }
+            List<JsonNode> union = candidatesUnder(item, entry.getValue(), productsByQuery);
             if (!union.isEmpty()) {
                 toMatch.add(item);
                 candidatesFor.add(union);
@@ -1222,7 +1288,7 @@ public class CartBuildingService {
         List<Integer> picked;
         try {
             picked = productMatchingService.choose(
-                    matchRequests(toMatch, candidatesFor, preferDiscounted, preferUaProducer));
+                    matchRequests(toMatch, candidatesFor, preferDiscounted, preferUaProducer, hints));
         } catch (RuntimeException e) {
             log.warn("second search pass could not match: {}", e.getMessage());
             return;
@@ -1240,6 +1306,34 @@ public class CartBuildingService {
             recovered += resolved.size() - before;
         }
         log.info("second search pass recovered {} of {} lines", recovered, stillMissing.size());
+    }
+
+    /**
+     * One search per {@value #SEARCH_BATCH_SIZE} terms, merged into one answer keyed by the query text.
+     *
+     * <p>Silpo takes at most thirty search terms in a call and refuses the whole call past that — which is how a
+     * 24-line list once lost its entire second pass at 48 terms.
+     */
+    private Map<String, List<JsonNode>> search(UUID userId, CartContext context, List<String> terms) {
+        Map<String, List<JsonNode>> productsByQuery = new LinkedHashMap<>();
+        for (int start = 0; start < terms.size(); start += SEARCH_BATCH_SIZE) {
+            List<String> batch = terms.subList(start, Math.min(terms.size(), start + SEARCH_BATCH_SIZE));
+            JsonNode found = call(
+                    userId,
+                    TOOL_FIND_PRODUCTS,
+                    Map.of(
+                            "branchId", nullSafe(context.branchId()),
+                            "deliveryType", nullSafe(context.deliveryType()),
+                            "timeslotStart", nullSafe(context.timeslotStart()),
+                            "timeslotEnd", nullSafe(context.timeslotEnd()),
+                            "products", batch));
+            for (JsonNode query : McpResponses.findArray(found, McpResponses.QUERIES)) {
+                McpResponses.findString(query, McpResponses.NAME)
+                        .ifPresent(text -> productsByQuery.putIfAbsent(
+                                text.toLowerCase(Locale.ROOT), McpResponses.findArray(query, McpResponses.PRODUCTS)));
+            }
+        }
+        return productsByQuery;
     }
 
     private static void addTerm(List<String> terms, String term) {

@@ -91,6 +91,27 @@ class ProductMatchingIntegrationTest extends AbstractIntegrationTest {
                         packaged("Іграшка Банан антистрес D-1", "34.99", "шт", "5")));
     }
 
+    /**
+     * Task 72: the rules a ₴1034 hangover cart needed are in the prompt the matcher actually loads, not only in a
+     * plan — the cheap pharmacy staples by name, the water rule, «найдешевший» as a rule rather than an aside, and
+     * the brand the person named beating all of it.
+     */
+    @Test
+    void theMatcherPromptNamesTheCheapStaplesTheWaterRuleAndTheBrandOverride() {
+        CLAUDE.respondWithText("{\"choices\":[]}");
+
+        productMatchingService.choose(List.of(new ProductMatchRequest(
+                "регідрон", BigDecimal.ONE, "шт", List.of(packaged("Регідрон Оптім", "32", "18.9г", "5")))));
+
+        String system = CLAUDE.requests().getFirst().path("system").toString();
+        assertThat(system)
+                .contains("регідрон")
+                .contains("Активоване вугілля")
+                .contains("Evian")
+                .contains("НАЙДЕШЕВШИЙ")
+                .contains("назвала конкретний товар чи бренд");
+    }
+
     @Test
     void picksThePastaRatherThanSilposTopHitOrTheServingSpoon() {
         CLAUDE.respondWithText("""

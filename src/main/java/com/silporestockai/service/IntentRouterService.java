@@ -231,7 +231,7 @@ public class IntentRouterService {
             // One intent for both directions; the sentence says which. Setting rather than toggling: the same
             // request twice must not undo itself.
             case FILTER_UA_PRODUCER_ONLY -> specialModeService.setUaOnly(user, !asksToDropUaOnly(text));
-            case HANGOVER_RELIEF -> adHocOrderService.buildHangoverReliefOrder(user, trigger);
+            case HANGOVER_RELIEF -> adHocOrderService.buildHangoverReliefOrder(user, text, trigger);
             case BLACKOUT -> {
                 telegramOutboundService.sendMessage(
                         user.getTelegramChatId(), "Збираю щось на поїсти без плити й холодильника.");

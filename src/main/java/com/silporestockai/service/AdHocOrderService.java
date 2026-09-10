@@ -3,6 +3,7 @@ package com.silporestockai.service;
 import com.silporestockai.client.claude.ClaudeApiClient;
 import com.silporestockai.entity.ShoppingListItem;
 import com.silporestockai.entity.User;
+import com.silporestockai.model.MatchingHints;
 import com.silporestockai.model.OrderTrigger;
 import com.silporestockai.model.OrderType;
 import com.silporestockai.model.ShoppingListDraft;
@@ -15,8 +16,10 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
@@ -51,13 +54,24 @@ public class AdHocOrderService {
      * as the same ₴329 electrolyte drink twice (two lines merged into one quantity), two Atoxil gels and a ₴464
      * imported charcoal: ₴1514 for a hangover. Water, one rehydration drink, one sorbent. Silpo is a grocery, not a
      * pharmacy, and whichever of these a branch does not stock is reported as unfound like any other line.
+     *
+     * <p>Task 72: still one line per need, but each is searched under every name that need goes by, cheap staple
+     * first. A category word alone is answered with the category's dearest members — that is what put Elekta Mix
+     * at ₴309 a pack (twice), Atoxil and Evian in a live cart, ₴1034 for three basic items. A staple word alone is
+     * no better: Silpo is a grocery, and live it has no ₴30 charcoal tablets at all, only a ₴464 imported
+     * supplement whose name happens to be «Активоване вугілля», while Атоксіл sits on the same shelf at ₴119.
+     * Searched together, the whole shelf is one pool and the cheapest thing that actually serves the need wins.
      */
     private static final List<HangoverLine> HANGOVER_RELIEF_LINES = List.of(
-            new HangoverLine("вода мінеральна", new BigDecimal("2")),
-            new HangoverLine("ізотонік", new BigDecimal("2")),
-            new HangoverLine("сорбент", BigDecimal.ONE));
+            new HangoverLine("вода мінеральна", new BigDecimal("2"), List.of()),
+            new HangoverLine("регідрон", BigDecimal.ONE, List.of("електроліти", "ізотонік")),
+            new HangoverLine("активоване вугілля", BigDecimal.ONE, List.of("сорбент", "ентеросорбент")));
 
-    private record HangoverLine(String name, BigDecimal quantity) {}
+    /**
+     * @param alsoKnownAs the other shelf names this same need goes by, searched in the same pass as the staple so
+     *     that the cheapest suitable one wins — see {@link com.silporestockai.model.MatchingHints}
+     */
+    private record HangoverLine(String name, BigDecimal quantity, List<String> alsoKnownAs) {}
 
     private final ClaudeApiClient claudeApiClient;
     private final UserProfileRepository userProfileRepository;
@@ -113,10 +127,14 @@ public class AdHocOrderService {
 
     /**
      * "Голова після вчорашнього, привезіть мінералку і щось від інтоксикації якнайшвидше" (task 32). Not
-     * promotion-driven — availability, not price, is the point — and the earliest offered delivery slot is the
-     * standard flow's own default.
+     * promotion-driven — availability, and since task 72 the cheap staple, is the point — and the earliest offered
+     * delivery slot is the standard flow's own default.
+     *
+     * @param personsWords the sentence that asked for the kit. The kit's lines are fixed, so they carry no brand of
+     *     their own; «привези Evian» can only beat the cheap default if the words reach the matcher, which is the
+     *     one step that sees both the sentence and what the catalog offered.
      */
-    public void buildHangoverReliefOrder(User user, OrderTrigger trigger) {
+    public void buildHangoverReliefOrder(User user, String personsWords, OrderTrigger trigger) {
         List<ShoppingListItem> items = HANGOVER_RELIEF_LINES.stream()
                 .map(line -> ShoppingListItem.builder()
                         .id(UUID.randomUUID())
@@ -126,7 +144,11 @@ public class AdHocOrderService {
                         .unit("шт")
                         .build())
                 .toList();
-        cartConfirmationService.present(user, items, OrderType.AD_HOC, false, trigger);
+        Map<String, List<String>> alsoSearch = HANGOVER_RELIEF_LINES.stream()
+                .filter(line -> !line.alsoKnownAs().isEmpty())
+                .collect(Collectors.toMap(HangoverLine::name, HangoverLine::alsoKnownAs));
+        cartConfirmationService.present(
+                user, items, OrderType.AD_HOC, false, trigger, new MatchingHints(personsWords, alsoSearch));
         log.info("presented a hangover-relief cart to user {}", user.getId());
     }
 

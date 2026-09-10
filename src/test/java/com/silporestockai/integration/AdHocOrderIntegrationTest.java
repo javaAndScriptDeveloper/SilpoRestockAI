@@ -118,12 +118,18 @@ class AdHocOrderIntegrationTest extends AbstractIntegrationTest {
             {"items":[{"name":"Сир твердий","quantity":300,"unit":"г","category":"Молочні продукти"},\
             {"name":"Вино червоне сухе","quantity":1,"unit":"шт","category":"Напої"}]}""";
 
+    // Task 72: the candidates reach the matcher cheapest-first, so the ₴88.9 promo cheese is index 0 and the
+    // ₴149 one index 1 — the reverse of the order Silpo answered in.
     private static final String MATCH_BOTH = """
-            {"choices":[{"lineIndex":0,"candidateIndex":1,"reason":"акційний твердий сир"},\
+            {"choices":[{"lineIndex":0,"candidateIndex":0,"reason":"акційний твердий сир"},\
             {"lineIndex":1,"candidateIndex":0,"reason":"сухе червоне"}]}""";
 
-    private static final String MATCH_WATER_AND_ISOTONIC = """
-            {"choices":[{"lineIndex":0,"candidateIndex":0,"reason":"вода"},{"lineIndex":1,"candidateIndex":0,"reason":"ізотонік"}]}""";
+    private static final String MATCH_WATER_AND_REHYDRATION = """
+            {"choices":[{"lineIndex":0,"candidateIndex":0,"reason":"вода"},{"lineIndex":1,"candidateIndex":0,"reason":"регідрон"}]}""";
+
+    /** The sentence task 32's live run was driven with — the words the person actually wrote. */
+    private static final String HANGOVER_TEXT =
+            "Голова після вчорашнього, привезіть мінералку і щось від інтоксикації якнайшвидше";
 
     private static List<String> searchedTerms() {
         List<String> terms = new ArrayList<>();
@@ -202,7 +208,7 @@ class AdHocOrderIntegrationTest extends AbstractIntegrationTest {
                 "validations":[],\
                 "checkoutWebLink":"https://silpo.ua/checkout/cart-a",\
                 "checkoutMobileLink":"silpo://checkout/cart-a"}""");
-        // Two cheeses, the second on promotion; one wine. The hangover terms find water and an isotonic drink.
+        // Two cheeses, the second on promotion; one wine. The hangover terms find water and a rehydration sachet.
         MCP.respondToTool("silpo_find_products_batch", """
                 {"queries":[\
                 {"query":"сир твердий","products":[\
@@ -212,9 +218,13 @@ class AdHocOrderIntegrationTest extends AbstractIntegrationTest {
                 {"name":"Вино Los Cardos","productId":"00000000-0000-4000-8000-00000000005b","step":1,"displayRatio":"750мл","price":329}]},\
                 {"query":"вода мінеральна","products":[{"name":"Моршинська","productId":"00000000-0000-4000-8000-000000000046",\
                 "step":1,"displayRatio":"1.5л"}]},\
-                {"query":"ізотонік","products":[{"name":"Oshee ізотонік","productId":"00000000-0000-4000-8000-000000000047",\
-                "step":1,"displayRatio":"750мл"}]},\
-                {"query":"сорбент","products":[]}]}""");
+                {"query":"регідрон","products":[{"name":"Регідрон Оптім порошок","productId":"00000000-0000-4000-8000-000000000047",\
+                "step":1,"displayRatio":"18.9г","price":32}]},\
+                {"query":"електроліти","products":[]},\
+                {"query":"ізотонік","products":[]},\
+                {"query":"активоване вугілля","products":[]},\
+                {"query":"сорбент","products":[]},\
+                {"query":"ентеросорбент","products":[]}]}""");
     }
 
     private void tapButton(int updateId, String data) throws Exception {
@@ -360,27 +370,41 @@ class AdHocOrderIntegrationTest extends AbstractIntegrationTest {
     /**
      * One line per thing a hangover needs, not one per word for it: seven overlapping terms once put the same ₴329
      * electrolyte drink in a live cart twice and two sorbent gels beside a ₴464 charcoal — ₴1514 for a hangover.
+     *
+     * <p>Task 72: one line per need still, but every name that need goes by is searched for it, in one pass. The
+     * cheap staple leads («регідрон», «активоване вугілля») and the category words follow, because Silpo is a
+     * grocery: live it stocks no ₴30 charcoal tablets, only a ₴464 imported supplement, while Атоксіл sits on the
+     * same shelf at ₴119. A line bound to one name buys that name at whatever it costs.
      */
     @Test
-    void hangoverReliefSearchesOneTermPerNeedWithSensibleQuantities() {
-        CLAUDE.respondWithText(MATCH_WATER_AND_ISOTONIC);
-        adHocOrderService.buildHangoverReliefOrder(user, OrderTrigger.of("HANGOVER_RELIEF", Instant.now()));
+    void hangoverReliefSearchesEveryNameEachNeedGoesByWithSensibleQuantities() {
+        CLAUDE.respondWithText(MATCH_WATER_AND_REHYDRATION);
+        adHocOrderService.buildHangoverReliefOrder(
+                user, HANGOVER_TEXT, OrderTrigger.of("HANGOVER_RELIEF", Instant.now()));
 
-        assertThat(searchedTerms()).containsExactly("вода мінеральна", "ізотонік", "сорбент");
+        assertThat(searchedTerms())
+                .containsExactly(
+                        "вода мінеральна",
+                        "регідрон",
+                        "електроліти",
+                        "ізотонік",
+                        "активоване вугілля",
+                        "сорбент",
+                        "ентеросорбент");
         var added = MCP.callArguments("silpo_add_or_update_cart_products")
                 .getFirst()
                 .path("products");
         assertThat(added).hasSize(2);
         assertThat(added.get(0).path("quantity").asInt()).isEqualTo(2);
-        assertThat(added.get(1).path("quantity").asInt()).isEqualTo(2);
+        assertThat(added.get(1).path("quantity").asInt()).isEqualTo(1);
     }
 
     /** Task 75: the draft remembers who asked and when, so confirmation can measure intent→order speed. */
     @Test
     void hangoverDraftRemembersWhichIntentAskedForItAndWhen() {
-        CLAUDE.respondWithText(MATCH_WATER_AND_ISOTONIC);
+        CLAUDE.respondWithText(MATCH_WATER_AND_REHYDRATION);
         Instant asked = Instant.now().minusSeconds(4).truncatedTo(java.time.temporal.ChronoUnit.MILLIS);
-        adHocOrderService.buildHangoverReliefOrder(user, OrderTrigger.of("HANGOVER_RELIEF", asked));
+        adHocOrderService.buildHangoverReliefOrder(user, HANGOVER_TEXT, OrderTrigger.of("HANGOVER_RELIEF", asked));
 
         CustomerOrder draft = customerOrderRepository
                 .findByUserIdAndStatus(user.getId(), OrderStatus.DRAFT)
@@ -391,17 +415,36 @@ class AdHocOrderIntegrationTest extends AbstractIntegrationTest {
 
     @Test
     void hangoverReliefIsHonestAboutWhatWasNotFoundRatherThanFailingSilently() {
-        CLAUDE.respondWithText(MATCH_WATER_AND_ISOTONIC);
-        adHocOrderService.buildHangoverReliefOrder(user, OrderTrigger.of("HANGOVER_RELIEF", Instant.now()));
+        CLAUDE.respondWithText(MATCH_WATER_AND_REHYDRATION);
+        adHocOrderService.buildHangoverReliefOrder(
+                user, HANGOVER_TEXT, OrderTrigger.of("HANGOVER_RELIEF", Instant.now()));
 
         CustomerOrder draft = customerOrderRepository
                 .findByUserIdAndStatus(user.getId(), OrderStatus.DRAFT)
                 .getFirst();
         assertThat(draft.getType()).isEqualTo(OrderType.AD_HOC);
-        // Only water and the isotonic drink resolved to a real product in the stub above; the sorbent comes back
-        // empty, and the shared cart-building pipeline reports it honestly rather than silently dropping it.
+        // Only water and the rehydration sachet resolved to a real product in the stub above; the charcoal comes
+        // back empty, and the shared cart-building pipeline reports it honestly rather than silently dropping it.
         assertThat(TELEGRAM.sentMessages().getLast().path("text").asText())
                 .contains("Не знайшов")
-                .contains("сорбент");
+                .contains("активоване вугілля");
+    }
+
+    /**
+     * Task 72: the cheap default is a default, not a rule. The kit's own line is «вода мінеральна» and carries no
+     * brand, so «привези Evian» can only be honoured if the person's own sentence reaches the matcher, which is
+     * the one step that sees both the sentence and the candidates.
+     */
+    @Test
+    void carriesThePersonsOwnSentenceToTheMatcherSoANamedBrandCanWin() {
+        CLAUDE.respondWithText(MATCH_WATER_AND_REHYDRATION);
+
+        adHocOrderService.buildHangoverReliefOrder(
+                user,
+                "Голова розвалюється, привези Evian і вугілля",
+                OrderTrigger.of("HANGOVER_RELIEF", Instant.now()));
+
+        String asked = CLAUDE.requests().stream().map(Object::toString).collect(java.util.stream.Collectors.joining());
+        assertThat(asked).contains("привези Evian і вугілля");
     }
 }

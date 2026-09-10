@@ -1669,6 +1669,42 @@ likely reason a seeded box still features nothing.
 6. **Do not read «Активних з'єднань з БД» as the featuring signal.** It is the Hikari pool at the scrape
    instant and will read 0 on an idle box no matter how well featuring works.
 
+## 22. Hangover cost sanity (task 72)
+
+Drive the exact sentence task 32's live run used, with the app running and the household connected:
+
+```bash
+set -a && . ./.env && set +a
+docker exec app-db psql -U app -d app -q \
+  -c "update conversation_state set current_flow='NONE', current_step=null, context_json='{}' where telegram_chat_id=<CHAT_ID>;"
+curl -sS -X POST http://localhost:8080/telegram/webhook \
+  -H "Content-Type: application/json" \
+  -H "X-Telegram-Bot-Api-Secret-Token: $TELEGRAM_WEBHOOK_SECRET" \
+  -d '{"update_id":972001,"message":{"message_id":72001,"date":1757500000,
+       "chat":{"id":<CHAT_ID>,"type":"private"},"from":{"id":<CHAT_ID>,"is_bot":false,"first_name":"K"},
+       "text":"Голова після вчорашнього, привезіть мінералку і щось від інтоксикації якнайшвидше"}}'
+```
+
+**What to check** in `logs/app.log`: one `silpo_find_products_batch` carrying all seven terms
+(`вода мінеральна, регідрон, електроліти, ізотонік, активоване вугілля, сорбент, ентеросорбент`), then three
+`«…» -> …` lines from `ProductMatchingService`. `matcher <- …` at DEBUG prints the whole candidate list with
+prices — that is the line to read when a choice looks wrong.
+
+**What the branch actually held on 2026-09-10** (the numbers the fix was verified against):
+
+| Line | What was picked | Price | What it beat |
+|---|---|---|---|
+| вода мінеральна ×2 | Вода мінеральна Миргородська 0,5 л | 22.49 | Perrier 57.99, Borjomi 72.99, Solan de Cabras 139, Fiji 159, Vincentka 344 (Evian on the earlier run: 99) |
+| регідрон | Напій Oshee апельсин вітамінізований ізотонік 0,75 л | 50.99 | Elekta Regenerate/Calm/Booster 279, Elekta Mix 309, Perla Електроліти 599–949 |
+| активоване вугілля | Добавка дієтична Атоксіл Сорбент гель №4 | 119.00 | Eliminal 349, **Nature's Way Активоване вугілля 464** |
+
+Goods total **₴215.46**, against **₴1034** for the same request before the fix. There is no cheap charcoal
+in this catalog at all — Silpo is a grocery — which is exactly why the sorbent need is searched under three
+names and the cheapest suitable one wins, rather than the one whose name matches the line.
+
+The cart lands well under Silpo's ₴799 minimum, so the message ends with the top-up offer; that is task 09's
+behaviour and not a failure of this one.
+
 ## Cleanup
 
 ### Start completely from scratch
