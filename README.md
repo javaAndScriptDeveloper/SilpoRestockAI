@@ -1,452 +1,145 @@
 # Комора
 
-**Комора** is an AI agent that automates a household's weekly food supply. It onboards a household,
-generates a weekly meal plan, builds a real Silpo cart through the official Silpo MCP server
-(`https://mcp.silpo.ua/mcp`, OAuth 2.1 + PKCE), then runs a repeating check-in → diff → delta-reorder
-loop with state persisted across turns. Built for the [Silpo AI Factory](https://ai-factory.silpo.ua)
-hackathon.
+**Комора — це агент, який бере на себе баланс «потрібно / вже є» в домашній їжі.** Він проводить
+онбординг домогосподарства, складає тижневе меню, збирає **реальний кошик «Сільпо»** через офіційний MCP
+(`https://mcp.silpo.ua/mcp`, OAuth 2.1 + PKCE) і далі крутить цикл «чек-ін → різниця → дозамовлення», з
+станом, що переживає кожен рестарт. Не порадник, що купити — виконавець, який купує.
 
-**Testing it by hand:** [`docs/RUNBOOK.md`](docs/RUNBOOK.md) walks from an empty database through every
-feature in dependency order — which keys to gather, what to send the bot, what to expect back, how to
-verify it in the data, and how to reset to any starting point.
+Модель заробітку для «Сільпо» вбудована в той самий рушій: коли агент резольвить категорію, яка **вже є**
+в списку гостя, пріоритет отримує оплачене партнерське розміщення або власна марка з високою маржею —
+міряється часткою категорії (Featured Share Rate), не показами. Нічого не нав'язується: обмеження й алергії
+завжди сильніші за розміщення.
 
-Read [`docs/PRODUCT_BRIEF.md`](docs/PRODUCT_BRIEF.md) for the product context — problem, value, feature
-order, and all ten user flows — before implementing anything. `CLAUDE.md` covers the conventions this
-codebase enforces.
+Зроблено для хакатону [«Сільпо» AI Factory](https://ai-factory.silpo.ua).
 
-The service is bootstrapped from a Spring Boot template, so the infrastructure below is already wired up.
+---
 
-## Stack
+## Що можна відкрити просто зараз
 
-| Concern            | Choice                                                            |
-|--------------------|-------------------------------------------------------------------|
-| Language / runtime | Java 25 (LTS), auto-provisioned via Gradle toolchains             |
-| Framework          | Spring Boot 4.1 (Spring Framework 7)                              |
-| Build              | Gradle 9.6 (Kotlin DSL) + version-aligned Spring Cloud            |
-| Persistence        | Spring Data JPA + PostgreSQL, schema managed by Liquibase         |
-| API docs           | springdoc-openapi (Swagger UI at `/swagger-ui.html`)             |
-| Mapping / boilerplate | MapStruct + Lombok                                            |
-| HTTP clients       | Spring Cloud OpenFeign + Resilience4j (circuit breaker, retry)   |
-| Caching            | Spring Cache abstraction backed by Caffeine                      |
-| Errors             | RFC 9457 `ProblemDetail` responses                               |
-| Testing            | JUnit 5 + Testcontainers (real PostgreSQL), Instancio, ArchUnit  |
-| Ops                | Actuator (health/info/metrics/prometheus), graceful shutdown     |
-| Tooling            | Spotless (Palantir format), JaCoCo, GitHub Actions CI, Renovate, Docker |
+| Що | Де | Примітка |
+|---|---|---|
+| Знімок реальних MCP-викликів і розподілу намірів | [`src/main/resources/static/pitch.html`](src/main/resources/static/pitch.html) | Статичний файл у репозиторії; застосунок віддає його за `/pitch.html`. Не живий лог — знімок з реального прогону |
+| Обидва Grafana-дашборди, як JSON | [`observability/grafana/`](observability/grafana/) | `make observability-local-up` підіймає одноразові Prometheus + Grafana і рендерить обидва без жодного акаунта |
+| Business-дашборд у Grafana Cloud | <https://charmingaphid2632.grafana.net/d/komora-business> | потрібен логін у нашу Grafana |
+| Technical-дашборд (RED-метрики MCP по інструментах) | <https://charmingaphid2632.grafana.net/d/komora-observability> | потрібен логін |
+| Ручний прохід усіма фічами, крок за кроком | [`docs/RUNBOOK.md`](docs/RUNBOOK.md) | від порожньої бази до чекауту |
+| Продуктовий контекст: для кого, яка проблема, десять сценаріїв | [`docs/PRODUCT_BRIEF.md`](docs/PRODUCT_BRIEF.md) | |
 
-## Prerequisites
+> **Чесно про посилання:** стабільного публічного URL застосунку зараз немає — `DOMAIN` у продовому
+> оточенні досі `localhost`, деплой (compose + Caddy + Watchtower) відрепетирувано локально, і бот під час
+> розробки живе за тимчасовим тунелем. Тому тут немає жодного вигаданого посилання: усе, що ми стверджуємо,
+> можна відтворити з цього репозиторію самому. Як підняти все на реальному домені за один прохід —
+> [`docs/RUNBOOK.md` §19–20](docs/RUNBOOK.md).
 
-- **JDK 25** — or nothing at all; Gradle downloads the right JDK via the toolchain resolver.
-- **Docker** — for the local database, containerized builds, and Testcontainers-based tests.
+---
 
-## Quick start
+## Пряма відповідь на 6 пунктів завдання
+
+Формулювання пунктів — дослівно з [ai-factory.silpo.ua](https://ai-factory.silpo.ua/#requirements)
+(звірено 2026-09-10). Остання колонка — те, чого не може дати жоден слайд: місце в коді, куди можна клікнути.
+
+| # | Вимога | Наша відповідь | Де це в коді |
+|---|---|---|---|
+| 01 | Рішення обов'язково використовує офіційний MCP «Сільпо» | Кожен етап — від читання профілю на онбордингу до чекауту — йде через MCP. 21 різних інструментів реально викликано за 1583 викликів; поіменний список нижче | [`client/mcp/`](src/main/java/com/silporestockai/client/mcp/), [`pitch.html`](src/main/resources/static/pitch.html) |
+| 02 | AI-агент не лише генерує текст, а використовує tools для виконання завдання | Кошик збирається послідовністю викликів: знайти товари → створити/очистити кошик → додати позиції → підібрати слот → перечитати суми → чекаут. Плюс планувальники, які діють без запиту людини | [`CartBuildingService`](src/main/java/com/silporestockai/service/CartBuildingService.java), [`job/`](src/main/java/com/silporestockai/job/) |
+| 03 | Чітко визначено, для кого створене рішення і яку проблему воно вирішує | Зайняті люди з високою вартістю години: їжа вдома або закінчується не вчасно, або псується, бо ніхто не тримає баланс. Десять сценаріїв розписані в брифі | [`docs/PRODUCT_BRIEF.md`](docs/PRODUCT_BRIEF.md) |
+| 04 | Є working demo, інтерактивний прототип або переконлива демонстрація | Робочий Telegram-бот проти живого «Сільпо»: справжній кошик, справжній чекаут. Ранбук проводить чужу людину тим самим шляхом | [`docs/RUNBOOK.md`](docs/RUNBOOK.md), [`controller/telegram/`](src/main/java/com/silporestockai/controller/telegram/) |
+| 05 | Показано, де саме може працювати рішення | Три канали: всередині продукту «Сільпо», як зовнішній сервіс (Telegram — лише один фронтенд), як окремий підписний продукт. Уся логіка живе за роутером намірів, не за кнопками Telegram | [`IntentRouterService`](src/main/java/com/silporestockai/service/IntentRouterService.java) |
+| 06 | Є пояснення, як перевірити корисність — тестування, метрики, експеримент, економічний ефект | Метрики знімаються з бази, а не з відчуттів: час до першого замовлення, частка позицій, що стали реальним SKU, дозамовлення без правок, GMV, Featured Share Rate. Два дашборди й цей знімок MCP-викликів | [`MetricsService`](src/main/java/com/silporestockai/service/MetricsService.java), [`ObservabilityService`](src/main/java/com/silporestockai/service/ObservabilityService.java), [`observability/grafana/`](observability/grafana/) |
+
+---
+
+## MCP-матриця: що агент справді викликає
+
+Не оцінка з пам'яті — знімок з реального прогону через усі сценарії (2026-09-10). **21 різних інструментів «Сільпо» за 1583 викликів**, 14 з помилкою. Код тягне 26; решта прив'язана до станів, яких на тестовому акаунті не було — `silpo_create_shopping_cart` і ланцюг доставки виконуються тільки для гостя, який ще жодного разу не мав кошика. Та сама таблиця, з тими самими числами, живе на [`pitch.html`](src/main/resources/static/pitch.html) — обидві генеруються з одного рядка в базі.
+
+| Інструмент | Викликів | З помилкою | Який флоу тягне |
+|---|---:|---:|---|
+| `silpo_get_shopping_cart_by_id` | 444 | 0 | Збірка кошика (#13): перечитати кошик після змін — звідти беруться суми, яких немає у відповіді на додавання. |
+| `silpo_get_my_shopping_cart` | 280 | 0 | Збірка кошика (#13): що зараз у кошику домогосподарства. |
+| `silpo_get_time_slots` | 247 | 0 | Налаштування доставки (#34) і автопідбір слота (#76): вільні вікна доставки, у тому числі коли попередній слот прострочився. |
+| `silpo_find_products_batch` | 198 | 1 | Збірка кошика (#13): кожен рядок списку шукається в каталозі одним батчем; ним же добираються готові страви й товари партнерських розміщень. |
+| `silpo_add_or_update_cart_products` | 143 | 4 | Збірка кошика (#13) і дельта-дозамовлення (#14): додавання позицій та зміна кількостей. |
+| `silpo_clear_shopping_cart` | 116 | 0 | Збірка кошика (#50): кошик очищується перед кожною новою збіркою, щоб замовлення не успадкувало вчорашнє. |
+| `silpo_get_my_online_orders` | 29 | 0 | Онбординг (#35) і статус замовлення (#56): минулі онлайн-покупки як базис, і «де моє замовлення» — читання без жодної зміни. |
+| `silpo_get_my_offline_orders` | 22 | 1 | Статус замовлення (#56): покупки в магазині, коли онлайн-історії ще немає. |
+| `silpo_remove_cart_products` | 16 | 0 | Правки списку (#12): позиція, яку прибрали з кошика. |
+| `silpo_get_my_certificates` | 15 | 0 | Вигоди гостя (#78): подарункові сертифікати домогосподарства. |
+| `silpo_get_my_coupons` | 15 | 0 | Вигоди гостя (#79): купони гостя — показуються, бо застосувати їх може тільки застосунок «Сільпо». |
+| `silpo_get_promo_codes` | 15 | 0 | Вигоди гостя (#79): промокоди, які кошик може прийняти. |
+| `silpo_get_my_family` | 8 | 0 | Онбординг (#09): склад домогосподарства з профілю «Сільпо» — щоб не питати те, що вже відоме. |
+| `silpo_get_my_favorites` | 8 | 4 | Онбординг (#09): улюблені товари як стартовий базис раціону. |
+| `silpo_get_my_food_restrictions` | 8 | 0 | Онбординг (#09): харчові обмеження з профілю «Сільпо». |
+| `silpo_update_shopping_cart` | 6 | 1 | Налаштування доставки (#34): адреса, тип доставки і слот проставляються в кошик до генерації посилання на оплату. |
+| `silpo_get_coupon_details` | 4 | 0 | Вигоди гостя (#79): умови конкретного купона, щоб не обіцяти знижку, якої не буде. |
+| `silpo_get_promotions` | 3 | 3 | Історичні виклики: жоден теперішній флоу цього інструмента не тягне. |
+| `silpo_get_loyalty_info` | 2 | 0 | Вигоди гостя (#78): скільки бонусів на рахунку і скільки з них можна списати на цей кошик. |
+| `silpo_get_my_premium_subscription` | 2 | 0 | Вигоди гостя (#79): статус Premium — інформаційно, оскільки керувати підпискою через API не можна. |
+| `silpo_get_my_promos` | 2 | 0 | Вигоди гостя (#79): персональні промо-пропозиції гостя. |
+
+---
+
+## Архітектура за 30 секунд
+
+```
+Telegram webhook
+      │
+      ├─ онбординг (WebApp-форма + профіль із «Сільпо»)  ── OnboardingFlowService
+      │
+      └─ вільний текст або голос ──► IntentRouterService ──► один із 19 намірів
+                                            │
+              ┌─────────────────────────────┼──────────────────────────────┐
+              ▼                             ▼                              ▼
+      тижневий цикл                 разові сценарії               читання без дій
+   MealPlanService                HANGOVER_RELIEF                WHERE_IS_MY_ORDER
+   ShoppingListBuilderService     BLACKOUT                       MY_BENEFITS
+   CartBuildingService  ──► MCP   DISH_INGREDIENTS_ORDER         LIST_VIEW / CALENDAR_VIEW
+   CartConfirmationService        AD_HOC_SCHEDULED_PURCHASE
+              │
+              ▼
+   чекаут-посилання «Сільпо»
+              │
+   CheckinScheduler ──► «що лишилось?» ──► ShoppingListDiffService ──► ReorderService ──► дельта-кошик
+```
+
+| Пакет | Що всередині |
+|---|---|
+| [`client/`](src/main/java/com/silporestockai/client/) | вихідні інтеграції: `mcp` (Streamable HTTP + SSE, свій рефреш токена), `claude`, `stt` |
+| [`service/`](src/main/java/com/silporestockai/service/) | уся бізнес-логіка; `telegram` і `onboarding` — окремими підпакетами |
+| [`job/`](src/main/java/com/silporestockai/job/) | `@Scheduled`-етапи агента: чек-іни, разові задачі, спецрежими, оновлення метрик |
+| [`entity/`](src/main/java/com/silporestockai/entity/) · [`repository/`](src/main/java/com/silporestockai/repository/) | стан, який переживає рестарт: профіль, меню, список, замовлення, стан діалогу |
+| [`controller/`](src/main/java/com/silporestockai/controller/) | вебхук Telegram, OAuth-колбеки, внутрішні звіти під токеном |
+| [`observability/`](observability/) | обидва дашборди як згенерований JSON — ніколи не редагуються руками |
+
+Домовленості, які ламають збірку, а не лише стиль (Liquibase володіє схемою, ArchUnit тримає межі пакетів,
+Spotless форматує) — у [`CLAUDE.md`](CLAUDE.md).
+
+---
+
+## Запустити
 
 ```bash
-# Run the app — spring-boot-docker-compose starts PostgreSQL for you
-make run          # or: ./gradlew bootRun
-
-# Run against a throwaway Testcontainers DB (no docker-compose, no config)
-make dev          # or: ./gradlew bootTestRun
-
-# Run the full test suite
-make test         # or: ./gradlew test
+make run     # застосунок + Postgres із docker-compose
+make dev     # те саме, але з одноразовою базою Testcontainers
+make test    # unit + інтеграційні тести (потрібен Docker)
+make help    # усі команди
 ```
 
-Once running:
+Потрібні ключі й повний прохід — [`docs/RUNBOOK.md`](docs/RUNBOOK.md). Стек: Java 25, Spring Boot 4.1,
+PostgreSQL + Liquibase, Feign + Resilience4j, Micrometer/Prometheus, Testcontainers, ArchUnit.
 
-- API base: <http://localhost:8080>
-- Swagger UI: <http://localhost:8080/swagger-ui.html>
-- Health: <http://localhost:8080/actuator/health>
+---
 
-Run `make help` to see all available commands.
+## Ліцензія, BYOK і відкритість до «Сільпо»
 
-## Configuration
+**[Apache License 2.0](LICENSE)** — навмисно замість MIT: ті самі вільні умови плюс явний **грант на
+патенти**. Саме це юридична команда великої компанії хоче побачити, перш ніж брати чужий код у свою
+екосистему.
 
-Configuration lives in `src/main/resources/application.yml` and reads from environment variables with
-sensible local defaults:
+**BYOK (Bring Your Own Key).** Хто розгортає — підставляє свої ключі: Anthropic API, OAuth «Сільпо»,
+Google Calendar, Grafana Cloud. Ми не тримаємо спільного платного бекенду і не стоїмо посередником між
+форком і рахунками за API.
 
-| Variable      | Default                                    | Purpose            |
-|---------------|--------------------------------------------|--------------------|
-| `APP_NAME`    | `silpo-restock-ai`                         | Application name   |
-| `SERVER_PORT` | `8080`                                     | HTTP port          |
-| `DB_URL`      | `jdbc:postgresql://localhost:5432/app`     | JDBC URL           |
-| `DB_USERNAME` | `app`                                      | DB user            |
-| `DB_PASSWORD` | `app`                                      | DB password        |
-
-### Silpo MCP
-
-Every product feature goes through the official Silpo MCP server, which is OAuth 2.1 + PKCE protected:
-
-| Variable                      | Default                                   | Purpose                                        |
-|-------------------------------|-------------------------------------------|------------------------------------------------|
-| `SILPO_MCP_ENDPOINT`          | `https://mcp.silpo.ua/mcp`                | Streamable HTTP MCP endpoint                   |
-| `SILPO_MCP_ISSUER`            | `https://mcp.silpo.ua`                    | OAuth issuer (`/authorize`, `/token`, `/register`) |
-| `SILPO_MCP_RESOURCE`          | `https://mcp.silpo.ua/mcp`                | RFC 8707 `resource` indicator                  |
-| `SILPO_MCP_CLIENT_ID`         | *(empty)*                                 | Registered client id; empty triggers Dynamic Client Registration on first use |
-| `SILPO_MCP_REDIRECT_URI`      | `http://localhost:8080/auth/silpo/callback` | OAuth callback                               |
-| `SILPO_TOKEN_ENCRYPTION_KEY`  | *(empty)*                                 | Base64 AES-256 key for tokens at rest; generate with `openssl rand -base64 32` |
-
-Connect an account by opening `/auth/silpo/start?userId=<uuid>` and logging in with a Silpo phone + OTP.
-Tokens are stored **AES-256-GCM encrypted** in `mcp_oauth_token`, never logged, and never returned by an
-endpoint. With `SILPO_TOKEN_ENCRYPTION_KEY` unset the app generates an ephemeral key and warns at startup —
-stored tokens will not survive a restart, which is fine for local work only.
-
-### Telegram
-
-| Variable                  | Default   | Purpose                                                                                                 |
-|---------------------------|-----------|---------------------------------------------------------------------------------------------------------|
-| `TELEGRAM_BOT_TOKEN`      | *(empty)* | Bot token from [@BotFather](https://t.me/BotFather)                                                       |
-| `TELEGRAM_WEBHOOK_URL`    | *(empty)* | Public HTTPS URL of `POST /telegram/webhook`; blank skips registration at startup                          |
-| `TELEGRAM_WEBHOOK_SECRET` | *(empty)* | Shared secret Telegram echoes in `X-Telegram-Bot-Api-Secret-Token`; generate with `openssl rand -hex 32`   |
-
-#### Running the webhook locally
-
-Telegram only delivers to a public HTTPS URL, so a local run needs a tunnel:
-
-1. Start the tunnel: `ngrok http 8080` (any equivalent works — Cloudflare Tunnel, localtunnel).
-2. Copy the `https://` forwarding URL ngrok prints.
-3. Put it in `.env` together with a secret:
-
-   ```bash
-   TELEGRAM_BOT_TOKEN=<token from @BotFather>
-   TELEGRAM_WEBHOOK_URL=https://<subdomain>.ngrok-free.app/telegram/webhook
-   TELEGRAM_WEBHOOK_SECRET=$(openssl rand -hex 32)
-   ```
-
-4. `make run`. The app calls `setWebhook` on startup and logs `registered the Telegram webhook at …`.
-5. Message the bot. It answers with the onboarding welcome, which proves webhook → router →
-   conversation state → outbound.
-6. Check what Telegram thinks it is delivering to with
-   `curl https://api.telegram.org/bot<token>/getWebhookInfo`.
-
-The URL changes every time the tunnel restarts, so step 3 repeats each session. Without
-`TELEGRAM_WEBHOOK_URL` the app boots normally and never contacts Telegram. A failed registration is logged
-and does not stop the app.
-
-#### Onboarding
-
-The first message any new chat sends starts onboarding. The bot creates the user row, offers a Silpo
-connect link, and — once connected — reads `silpo_get_my_family`, `silpo_get_my_food_restrictions`,
-`silpo_get_my_online_orders` and `silpo_get_my_favorites`, letting Claude turn whatever they return into a
-profile snapshot. Only the fields Silpo could not supply are asked, plus the weekly budget, which it never
-knows.
-
-Skipping the connect step, an unreachable Silpo, and a guest with no order history all take the same
-fallback: the bot asks directly. Onboarding ends with a saved `user_profile` and an
-`OnboardingCompletedEvent`.
-
-#### The first weekly plan
-
-`MealPlanHandoffService` picks that event up asynchronously — the webhook thread must not wait on a model
-call — and asks `MealPlanService` for a week of meals. The system prompt is
-`src/main/resources/prompts/meal-plan-system.txt`, so wording can be changed without recompiling; the
-household's own constraints go in the user message.
-
-A plan that comes back missing days, or with a day that has fewer than three meals, is not stored: the
-service retries once with the defect named in the prompt and raises `MealPlanGenerationException` if the
-second answer is also unusable. Regeneration (`regenerateWithAdjustment`, for "мінус 200 ккал на день")
-writes a new `meal_plan` row and leaves the old one, because showing what changed between two plans needs
-both.
-
-`ShoppingListService` then collapses the plan into the list somebody actually shops from — no model call,
-just arithmetic: one line per ingredient and unit, quantities summed across every meal that uses it. The
-same ingredient in two units (2 шт цибулі and 200 г цибулі) deliberately stays two lines rather than being
-converted on a guess. Deriving again for a plan replaces its lines; an ad-hoc list (`createAdHocList`, for
-the Friday-night snacks) carries a `user_id`, no `meal_plan_id`, and is never touched by a regeneration.
-
-#### Building a real Silpo cart
-
-`CartBuildingService.buildCart(userId, items)` runs the documented sequence — `silpo_get_my_shopping_cart`,
-`silpo_get_shopping_cart_by_id`, `silpo_get_time_slots`, `silpo_find_products_batch` (chunked at 30),
-`silpo_add_or_update_cart_products`, then `silpo_get_shopping_cart_by_id` again to verify. Every call is
-logged at INFO as `MCP -> tool {args}` / `MCP <- result`, which is the evidence log the hackathon asks for:
-record the console during a run and the JSON-RPC conversation is visible.
-
-Items Silpo cannot match come back in `CartSummary.unresolved` rather than disappearing. Loyalty bonuses are
-reported (`bonusAvailable`, `bonusDecisionPending`) and never spent — confirming that is task 10's job. No
-time slot at all is fatal: a cart nobody can deliver fails here rather than at checkout.
-
-**Smoke-testing it against the real server** (needs a real Silpo account; nothing in CI can do this):
-
-1. `make run`, then complete the Silpo OAuth login so an `mcp_oauth_token` row exists for the user.
-2. Finish onboarding in Telegram, so a `user_profile`, a `meal_plan` and its `shopping_list_item` rows exist.
-3. Call `buildCart` for that user — from a REST controller once task 10 adds one, or from a scratch
-   `@SpringBootTest` pointed at the live endpoint.
-4. Watch the log: six `MCP ->` lines in the documented order, then a `verified` line with a non-zero item
-   count. Opening `checkoutWebLink` should show the same cart in Silpo's web checkout.
-
-Tool names and response keys come from the MCP documentation and have not been exercised against the live
-server. If a key differs, it is a one-line fix in `utils/McpResponses`, where every key name this application
-depends on is declared.
-
-### Anthropic Claude
-
-Used for meal plan generation, check-in parsing and (stretch) fridge-photo parsing:
-
-| Variable               | Default           | Purpose                                                                          |
-|------------------------|-------------------|----------------------------------------------------------------------------------|
-| `ANTHROPIC_API_KEY`    | *(empty)*         | API key; blank makes Claude calls fail with a clear message, the app still boots   |
-| `ANTHROPIC_MODEL`      | `claude-sonnet-5` | Model id                                                                          |
-| `ANTHROPIC_MAX_TOKENS` | `4096`            | Output token ceiling per call                                                     |
-| `ANTHROPIC_TIMEOUT`    | `120s`            | Per-request timeout; meal plan generation is slow                                  |
-
-Retry and circuit-breaker behaviour lives under `resilience4j.retry.instances.claude` and
-`resilience4j.circuitbreaker.instances.claude` in `application.yml`. Only rate limits and upstream outages
-are retried; a malformed request fails on the first attempt and does not count towards opening the breaker.
-
-Structured output uses the SDK's native output config: `completeStructured(system, user, MyRecord.class)`
-sends a schema derived from the record and returns a populated instance, so malformed model output surfaces
-as `ClaudeStructuredOutputException` rather than a parse crash.
-
-To smoke-test against the real API, export a key and point the client at production:
-
-```bash
-ANTHROPIC_API_KEY=sk-ant-... ANTHROPIC_BASE_URL=https://api.anthropic.com make run
-```
-
-### Blackout mode
-
-`/blackout` builds a small ad-hoc order of food that needs no stove and no fridge — ready meals, tinned
-fish, pâté, bread, nuts, biscuits, juice, still water — and puts it through the same confirmation as any
-other cart. The list is curated in `BlackoutModeService`, deliberately: Silpo's product data carries no
-"needs no cooking" flag, and guessing one from a product name is how a demo orders frozen dumplings
-during an outage.
-
-The order is stored as `AD_HOC` and never becomes the baseline: an emergency lunch is not evidence
-about what a household normally eats. There is no outage detection — the command is the trigger.
-
-### Google Calendar (optional)
-
-After an order is confirmed, the delivery window can be written into the user's calendar. It is opt-in
-per user and optional per deployment:
-
-| Variable               | Default                                          | Purpose                                            |
-|------------------------|--------------------------------------------------|----------------------------------------------------|
-| `GOOGLE_CLIENT_ID`     | *(empty)*                                        | Blank disables the whole integration                |
-| `GOOGLE_CLIENT_SECRET` | *(empty)*                                        | Web-application client secret; stays server-side    |
-| `GOOGLE_REDIRECT_URI`  | `http://localhost:8080/auth/google/callback`     | Must match the console's authorized redirect URI    |
-| `GOOGLE_CALENDAR_ID`   | `primary`                                        | Which calendar to write to                          |
-
-The requested scope is `calendar.events` — writing only. This application never reads a calendar, and it
-never updates or deletes an event it created.
-
-Smoke test against a real account:
-
-```bash
-GOOGLE_CLIENT_ID=... GOOGLE_CLIENT_SECRET=... make run
-```
-
-then send `/calendar` to the bot, follow the consent link, and confirm an order. A «Доставка «Сільпо»»
-block appears at the delivery slot, with the order id in its description.
-
-### Fridge photos (vision check-ins)
-
-A photo sent while a check-in is open is read by Claude and becomes the same three-bucket delta a typed
-answer produces. It needs no configuration beyond `ANTHROPIC_API_KEY`, and it is deliberately rough:
-the prompt forbids putting anything into "gone" that is merely not visible, and the reply carries a
-disclaimer so the user can correct it.
-
-To try it end to end, with a key exported and the bot running:
-
-1. wait for a check-in prompt, or force one — `komora.checkin.interval` accepts `1m` for a demo;
-2. send two or three photos of an open fridge or a shelf, one per check-in;
-3. read the acknowledgement and the `checkin` rows — `source = PHOTO` marks this path.
-
-Photos of a mostly-empty shelf and of a full one make the difference legible in a recording.
-
-### Respeecher (optional spoken replies)
-
-The bot can say its replies as well as write them, using Respeecher's Space API.
-
-| Variable              | Default                       | Purpose                                             |
-|-----------------------|-------------------------------|-----------------------------------------------------|
-| `RESPEECHER_API_KEY`  | *(empty)*                     | Blank disables spoken replies everywhere            |
-| `RESPEECHER_MODEL`    | `ua-rt`                       | Ukrainian model; the one supporting stress marks     |
-| `RESPEECHER_VOICE_ID` | `samantha`                    | Which voice speaks                                   |
-
-Two switches must agree: the key above, and `/voice` in the chat — off for every user until they ask.
-
-**This is text-to-speech only.** The Space API has no transcription endpoint (its own docs say
-"Text-to-speech only"), so voice *check-ins* are still transcribed by the `STT_*` settings below.
-
-A message written for a screen is not a message a person can say, so each reply is first rewritten by
-Claude under Silpo's voice guidance — `resources/prompts/voice-style-system.txt`, kept verbatim, so
-tuning the voice is a text edit. Messages carrying inline buttons are never spoken: a cart is something
-you tap, and "two items maximum" read aloud is worse than a list.
-
-**Cost, explicitly — this burned a real budget.** A two-minute `CHECKIN_INTERVAL` left running for hours
-with `/voice` on turned every automatic check-in prompt and every one-line reply into a Claude call, each
-paying the full style-guide system prompt for a handful of words of output. The symptom in the Anthropic
-console was stark: input tokens outweighing output roughly 160 to 1 — a fixed, largely pointless system
-prompt repeated on trivial calls, not real usage. Two fixes:
-
-- The rewrite runs on `claude.fast-model` (`ANTHROPIC_FAST_MODEL`, a Haiku-tier model by default), never
-  the flagship model everything else uses — a call on every outbound message must not be priced like a
-  meal plan.
-- `VoiceReplyService` skips the rewrite entirely for a message that is already speakable as written — no
-  digit, no link, no markdown character, one line, under 120 characters — and speaks it directly. Most of
-  this application's own confirmations qualify; the calls that actually need the style guide (a cart with
-  prices, a checkout link) still get it.
-
-Still turn `/voice` off (send it again) when you are not demoing the voice path, and keep
-`CHECKIN_INTERVAL` at a sane value outside a check-in demo — the fixes above cut the cost of the pattern,
-they do not make an unattended fast loop free.
-
-Respeecher returns WAV and Telegram's `sendVoice` does not accept it, so audio goes out through
-`sendAudio` with a `sendDocument` fallback. Transcoding to Opus would mean a native encoder.
-
-### Speech to text (voice check-ins)
-
-The Anthropic Messages API takes text, images and PDFs — not audio — so a voice check-in needs a
-transcription service of its own. Any OpenAI-compatible `/v1/audio/transcriptions` endpoint works:
-
-| Variable       | Default                                          | Purpose                                                       |
-|----------------|--------------------------------------------------|---------------------------------------------------------------|
-| `STT_API_KEY`  | *(empty)*                                        | Bearer token; blank disables voice, the bot asks for text      |
-| `STT_ENDPOINT` | `https://api.openai.com/v1/audio/transcriptions` | Point at Groq or a local whisper server to change providers    |
-| `STT_MODEL`    | `whisper-1`                                      | Transcription model id                                         |
-| `STT_LANGUAGE` | `uk`                                             | Language hint, so the model does not have to guess Ukrainian   |
-
-Blank is a supported configuration, not a broken one: a voice note is answered with *"Голосові поки не
-розбираю. Напиши, будь ласка, текстом."* and every other path keeps working.
-
-To smoke-test the voice path end to end, export a key, send the bot a voice note while a check-in is
-open, and watch for the `transcribed N bytes of audio` line:
-
-```bash
-STT_API_KEY=sk-... make run
-```
-
-The schema is owned by **Liquibase** (`src/main/resources/db/changelog`). Hibernate is set to `validate`
-only — add your changesets under `db/changelog/changes/`.
-
-### Profiles
-
-Base config is profile-agnostic; two overlays ship out of the box, selected via `SPRING_PROFILES_ACTIVE`:
-
-- **`dev`** (`application-dev.yml`) — verbose logging and easy SQL tracing for local work.
-- **`prod`** (`application-prod.yml`) — Hikari timeouts and leak detection, trimmed actuator exposure, `INFO`
-  logging. The Compose `app` service sets `SPRING_PROFILES_ACTIVE=prod`.
-
-### Webhook processing is asynchronous, and redeliveries are deduplicated
-
-`TelegramWebhookController` used to route an update on the request thread itself, so Telegram's 200
-came back only once every downstream call finished. A fridge photo means a vision call — the slowest and
-most expensive kind of call this application makes — and Telegram redelivers an update it does not get a
-fast response for. Nothing tracked `update_id`, so a redelivery was a second full vision call for the
-same picture, at full price, with no visible sign anything had gone wrong.
-
-Two changes: `TelegramRoutingService.route` is now `@Async`, so the controller answers in milliseconds
-regardless of how long the actual work takes; and the controller keeps a small bounded, time-limited
-memory of recently seen `update_id`s (`config/TelegramConfig#telegramUpdateDedupCache`, a plain Caffeine
-cache, not the `spring.cache` abstraction) so a genuine redelivery — from this or any other cause — is a
-no-op instead of a reprocess. Per-process rather than persisted: a real `update_id` never repeats except
-close to the original delivery, and `conversation_state` remains the only durable memory anywhere else.
-
-### Diagnostic logging
-
-Every incident hit debugging this application so far — "what did Silpo's cart tool actually send",
-"what did the model actually say" — came down to not having the raw wire content in front of us. Two
-things fix that, both at `DEBUG`, which `com.silporestockai: DEBUG` in `application.yml` already turns
-on:
-
-- **Outbound**: `FeignConfig` turns on `Logger.Level.FULL` for every Feign client — the Silpo and Google
-  OAuth exchanges, the calendar insert, the Respeecher call — printing headers and bodies verbatim.
-  `client/mcp/SilpoMcpClientImpl` logs the raw text/structured content of every MCP tool call the same
-  way, unfiltered by whatever key names `utils/McpResponses` happens to guess. `client/claude/ClaudeApiClientImpl`
-  logs the prompt sent and the completion received on every call — the line that would have shown the
-  eighty-four-bananas and invented-items bugs directly, instead of needing a pasted chat transcript.
-- **Inbound**: `config/RequestResponseLoggingFilter` logs every request this application receives — the
-  Telegram webhook, the two OAuth callbacks — with its full body and response. Health checks and API
-  docs are excluded; they carry nothing worth a dump and would only add noise.
-
-**Full logging means full logging, and that is exactly where a secret would otherwise leak** — an
-access token in an OAuth exchange, a bearer header, Telegram's shared secret. `utils/SecretRedactor`
-scrubs all of it, pattern-based rather than field-by-field, before any of the above reaches a line: it
-has to catch a secret in a header, a JSON body and a form-encoded body without knowing which shape it is
-looking at, and it is safer to over-redact than to miss one. `SecretRedactorTest` covers every shape
-this application's traffic can carry it in.
-
-Zalando Logbook was the library actually asked for. It was not used: this stack is Spring Boot 4 /
-Spring Framework 7, new enough that this repository has already needed several local workarounds for
-places the ecosystem has not caught up (`archunit.properties`'s history, Spotless pinned off its
-default, Liquibase's autoconfiguration module split out on its own). A third-party logging library's
-compatibility with anything this new was unverifiable, and redacting Logbook's own body-filter DSL
-correctly for four different secret shapes was no smaller a job than the two files above. Feign's own
-built-in `Logger.Level.FULL` needed no new dependency at all.
-
-### Caching & resilience
-
-`spring.cache` is backed by **Caffeine** (tune via `spring.cache.caffeine.spec`); annotate methods with
-`@Cacheable`. **Feign** clients are wrapped in a **Resilience4j** circuit breaker
-(`spring.cloud.openfeign.circuitbreaker.enabled`) — see `client/ExampleApiClient` and its fallback. Circuit-breaker
-and retry defaults live under `resilience4j.*` in `application.yml`.
-
-## Project layout
-
-```
-src/main/java/com/silporestockai
-├── Application.java          # entry point
-├── client/                   # outbound integrations — mcp/, llm/, stt/, telegram/
-├── config/                   # @Configuration, OpenAPI, global error handling, aspects
-├── controller/               # REST controllers
-├── dto/                      # request/response models
-├── entity/                   # JPA entities
-├── exception/                # ApplicationException + domain errors
-├── job/                      # @Scheduled agent stages (check-in prompts, reorder triggers)
-├── mapper/                   # MapStruct mappers
-├── model/                    # domain models
-├── repository/               # Spring Data repositories
-├── service/                  # business logic
-└── utils/                    # helpers
-```
-
-## Testing
-
-Integration tests extend `AbstractIntegrationTest`, which boots the full context against a real PostgreSQL
-started by Testcontainers (`TestcontainersConfiguration`) — no local database required. Docker must be
-running.
-
-- **Test data** — build objects with **Instancio** via the `support.Fixtures` helper instead of hand-rolling
-  fixtures; `InstancioExampleTest` shows the pattern (full random objects, per-field overrides, reproducible seeds).
-- **Architecture** — `ArchitectureTest` (ArchUnit) enforces layering, naming, and no field injection. Rules
-  tolerate the empty scaffold (`archunit.properties`) and start biting as packages fill in.
-- **Coverage** — `./gradlew test` runs **JaCoCo**; the report lands in `build/reports/jacoco/`. Raise the
-  threshold in `jacocoTestCoverageVerification` (`build.gradle.kts`) as the codebase grows.
-
-## Containerize
-
-Build a single image:
-
-```bash
-make image                       # docker build -t silpo-restock-ai .
-docker run --rm -p 8080:8080 silpo-restock-ai
-```
-
-Or run the whole stack (app + PostgreSQL) with Compose:
-
-```bash
-cp .env.example .env             # tweak values as needed
-make up                          # docker compose --env-file .env.example --profile full up --build -d
-make down                        # stop it
-```
-
-`make up` uses `.env` when present and falls back to `.env.example`. The `app` service sits behind the
-Compose `full` profile, so `./gradlew bootRun` still starts only the `db`.
-
-The multi-stage `Dockerfile` produces a layered, non-root image on a slim JRE.
-
-## CI & dependency updates
-
-- **GitHub Actions** (`.github/workflows/ci.yml`) checks formatting, runs `./gradlew build` on every push and
-  PR, and uploads the test and coverage reports.
-- **Renovate** (`renovate.json`) opens grouped dependency-update PRs and auto-merges safe minor/patch bumps.
-
-## Where the work is planned
-
-- [`docs/PRODUCT_BRIEF.md`](docs/PRODUCT_BRIEF.md) — product context and user flows (mirrored from Notion).
-- `CLAUDE.md` — package conventions and the invariants that break the build.
-- Notion database *Комора — Development Plan* — the task breakdown; work one task at a time, in order.
-
-## License
-
-[MIT](LICENSE)
+**Ми відкрито за те, щоб «Сільпо» взяло це далі** і зробило частиною власних продуктів — власними ресурсами
+й у власному темпі. Це і є найреалістичніший шлях до продакшену: не ми масштабуємо хакатонний проєкт, а
+компанія забирає готовий архітектурний патерн. Повний текст аргументу — в «Selling Points та Пітч-аргументи».
