@@ -889,11 +889,12 @@ public class CartBuildingService {
      * {@code product.offer.not_found} validations for a three-line cart. So this runs before any product is
      * resolved, which also means the search that follows runs against the shelf the order is picked from.
      *
-     * @return the household's own {@code deliveryType / timeslot / address / shipments}, for {@link
-     *     #restoreOwnDelivery} to write back. The only copy — this account has no saved Silpo address to
-     *     reconstruct one from.
+     * @return the cart that was moved and the household's own {@code deliveryType / timeslot / address /
+     *     shipments}, for {@link #restoreOwnDelivery} to write back. The only copy — this account has no saved
+     *     Silpo address to reconstruct one from — and the two travel together because a snapshot with no cart to
+     *     put it back on is not a restore, it is a leak that looks like one.
      */
-    public Map<String, Object> repointCartTo(UUID userId, GiftAddress destination) {
+    public RepointedCart repointCartTo(UUID userId, GiftAddress destination) {
         CartContext context = getOrCreateCartContext(userId);
         JsonNode cart = call(userId, TOOL_CART_BY_ID, Map.of("shoppingCartId", context.cartId()));
         Map<String, Object> ownDelivery = deliveryBlockOf(cart);
@@ -944,8 +945,16 @@ public class CartBuildingService {
             throw new CartBuildException("Silpo declined to point cart " + context.cartId() + " at a gift address");
         }
         log.info("pointed cart {} at a gift address on branch {} for user {}", context.cartId(), branchId, userId);
-        return ownDelivery;
+        return new RepointedCart(context.cartId(), ownDelivery);
     }
+
+    /**
+     * A cart that is currently pointed somewhere it does not belong, and what to put back on it.
+     *
+     * @param cartId the cart that was moved
+     * @param ownDelivery the delivery block it carried before
+     */
+    public record RepointedCart(String cartId, Map<String, Object> ownDelivery) {}
 
     /**
      * Puts the household's own delivery settings back.

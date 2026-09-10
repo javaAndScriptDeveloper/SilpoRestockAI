@@ -245,6 +245,9 @@ class GiftCartBuildIntegrationTest extends AbstractIntegrationTest {
 
         GiftOrder stored = giftOrderRepository.findById(gift.getId()).orElseThrow();
         assertThat(stored.getOwnDelivery()).containsKey("address").containsKey("shipments");
+        // The cart id is written in the same save as the snapshot, not at presentation: live, a gift Silpo
+        // refused on its minimum-order rule never reached presentation, and the row was left naming no cart to
+        // put anything back on.
         assertThat(stored.getSilpoCartId()).isEqualTo("cart-gift");
         assertThat(stored.getStatus()).isEqualTo(GiftOrderStatus.CART_PRESENTED);
     }

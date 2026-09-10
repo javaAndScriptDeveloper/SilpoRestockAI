@@ -57,7 +57,16 @@ public class GiftCartCustodyService {
             return false;
         }
         GiftOrder order = holder.get();
-        if (order.getSilpoCartId() != null) {
+        if (order.getSilpoCartId() == null) {
+            // Cannot happen since the cart id and the snapshot are written in the same save. If it ever does,
+            // it means a household's cart is pointed at a friend and this is the only code that would have
+            // noticed — so it is an error, not a quiet skip.
+            log.error(
+                    "gift {} holds a delivery snapshot but names no cart; user {}'s cart may still be pointed "
+                            + "at a gift address",
+                    order.getId(),
+                    userId);
+        } else {
             cartBuildingService.restoreOwnDelivery(userId, order.getSilpoCartId(), order.getOwnDelivery());
         }
         // Closed either way. A Silpo refusal here would otherwise be retried on every build forever, and the

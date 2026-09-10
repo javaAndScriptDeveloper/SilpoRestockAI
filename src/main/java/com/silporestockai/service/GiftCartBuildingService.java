@@ -12,7 +12,6 @@ import com.silporestockai.service.telegram.GiftMessageService;
 import com.silporestockai.service.telegram.TelegramOutboundService;
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -48,9 +47,9 @@ public class GiftCartBuildingService {
 
         GiftAddress destination =
                 new GiftAddress(order.getGiftAddressText(), order.getGiftFlat(), null, null, order.getGiftPhone());
-        Map<String, Object> ownDelivery;
+        CartBuildingService.RepointedCart moved;
         try {
-            ownDelivery = cartBuildingService.repointCartTo(sender.getId(), destination);
+            moved = cartBuildingService.repointCartTo(sender.getId(), destination);
         } catch (GiftDeliveryUnavailableException e) {
             log.warn("cannot deliver a gift for user {}: {}", sender.getId(), e.getMessage());
             cancel(order);
@@ -62,7 +61,11 @@ public class GiftCartBuildingService {
             telegramOutboundService.sendMessage(chatId, giftMessageService.addressNotFound());
             return;
         }
-        order.setOwnDelivery(ownDelivery);
+        // Both, together, and before anything else can fail: a snapshot without the cart it belongs to cannot
+        // be put back, and live that left a household's cart at a friend's address after Silpo refused a ₴423
+        // gift on its minimum-order rule.
+        order.setOwnDelivery(moved.ownDelivery());
+        order.setSilpoCartId(moved.cartId());
         order.setUpdatedAt(Instant.now());
         giftOrderRepository.save(order);
 
