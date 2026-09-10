@@ -1532,6 +1532,143 @@ Session done  Failed=0 Scanned=1 Updated=1
 - **A failed deploy is silent.** Nothing notifies you. `docker logs komora-watchtower` is the only place
   it shows up.
 
+## 21. Featuring on production setup (tasks 46, 63)
+
+Featuring is **pure data**. The code that runs it ships in every image; what makes it visible is rows in
+`partner_promotion`. Liquibase creates that table on a fresh production database and puts **nothing** in it,
+and no seed script exists — every local row was created by hand through `POST /internal/promotions` against
+the live catalog. So a freshly deployed box features nothing, resolves every line organically, writes no
+`partner_promotion_event` rows, and publishes no `komora_promotion_*` series at all. That is the expected
+state until the steps below are run *on the box*.
+
+### Where the database is actually read
+
+`CartBuildingService.resolveProducts` calls `PartnerPromotionService.activePromotions()` — one
+`SELECT … FROM partner_promotion WHERE status = 'ACTIVE'` on the ordinary Hikari pool, once per cart build,
+filtered in memory by `active_from`/`active_to` and sorted by `priority_weight`. There is no separate
+datasource, no separate pool, and no featuring-specific connection metric. **«Активних з'єднань з БД» on the
+technical dashboard is `hikaricp_connections_active`** — connections busy at the scrape instant, for the whole
+application. A millisecond query between two 30-second scrapes is invisible to it. Zero there says the app was
+idle when Alloy looked; it says nothing whatsoever about featuring. The series that do answer the featuring
+question are `komora_promotion_events`, `komora_promotion_share`, `komora_promotion_revenue` — absent when
+there are no placements, which is a different and honest answer from zero.
+
+### Prerequisites on the box
+
+| Check | Command | Wanted |
+|---|---|---|
+| `METRICS_TOKEN` is set | `grep ^METRICS_TOKEN .env.prod` | non-empty — blank means both `/internal/promotions` endpoints answer **404**, not 403 |
+| The table is empty | `docker exec komora-db psql -U komora komora -c "SELECT count(*) FROM partner_promotion;"` | `0` on a fresh box — that is the whole bug |
+| A connected household exists | `docker exec komora-db psql -U komora komora -c "SELECT u.id FROM users u JOIN mcp_oauth_token t ON t.user_id = u.id;"` | at least one id; the catalog is per-guest OAuth, so a placement can only be verified on somebody's behalf |
+
+`/internal/promotions` sits behind Caddy like every other path, so it is reachable at
+`https://$DOMAIN/internal/promotions` with the token. Use `localhost:8080` from inside the box anyway — one
+less place the token can be logged. Two things that waste a first attempt: Caddy has a certificate for
+`$DOMAIN` only, so hitting the endpoint by bare IP dies in a TLS alert; and `docker compose` on the box needs
+`--env-file .env.prod` or every interpolation fails, which is why the commands here call `docker exec
+komora-db` directly instead.
+
+#### What the first production seeding produced (2026-09-10)
+
+The box had `partner_promotion` empty and one connected household. The two ACTIVE placements below came back
+with **the same product ids as the local rows**, so the catalog is stable across environments for these:
+`1ed90524-…` (Премія, молоко) and `1ef61a31-…` (Ситий двір, гречка). Яготинське created and paused likewise.
+**Пирятин could not be recreated:** `Сир «Пирятин» «Голландський» твердий нарізаний 45%` answers `422` on
+this box, and a broad probe shows the catalog now carries `Сир плавлений Пирятин Янтарний пастоподібний 50%`
+instead — a different product. That row is PAUSED locally too, so nothing behaves differently; it is a
+reminder that a stored `productQuery` is a snapshot of one branch and slot, not a stable key.
+
+### Step 1 — probe for the exact catalog name
+
+`productQuery` must be the catalog's own product name; a composed one returns `422`, and a bare brand is not
+deterministic (see «Task 46» above). Probe with a throwaway placement, read the `productName` back, delete it.
+
+```bash
+export TOKEN=$(grep ^METRICS_TOKEN .env.prod | cut -d= -f2)
+export UID_=<the user id from the table above>
+
+curl -s -X POST -H "X-Metrics-Token: $TOKEN" -H "Content-Type: application/json" \
+  localhost:8080/internal/promotions -d "{
+    \"partnerName\":\"probe\",\"categoryOrQuery\":\"__probe__\",
+    \"productQuery\":\"Молоко\",\"verifyAsUserId\":\"$UID_\"}"
+# read productName / silpoProductId out of the response, then:
+docker exec komora-db psql -U komora komora \
+  -c "DELETE FROM partner_promotion WHERE category_or_query = '__probe__';"
+```
+
+### Step 2 — create the two placements that are proven live
+
+The pair below is what session 11 walked end to end and what the demo numbers were computed from: one
+own-brand row and one paid row, deliberately in different categories (paid and own-brand never share a
+category for now — an unresolved product decision, not an oversight).
+
+```bash
+curl -s -X POST -H "X-Metrics-Token: $TOKEN" -H "Content-Type: application/json" \
+  localhost:8080/internal/promotions -d "{
+    \"partnerName\":\"Сільпо власна марка «Премія»\",\"categoryOrQuery\":\"молоко\",
+    \"productQuery\":\"Молоко пастеризоване «Премія»® питне 3,2% пляшка\",
+    \"promotionType\":\"OWN_BRAND_MARGIN_BOOST\",\"verifyAsUserId\":\"$UID_\"}"
+
+curl -s -X POST -H "X-Metrics-Token: $TOKEN" -H "Content-Type: application/json" \
+  localhost:8080/internal/promotions -d "{
+    \"partnerName\":\"Ситий двір\",\"categoryOrQuery\":\"гречка\",
+    \"productQuery\":\"Крупа гречана Ситий двір ядриця\",
+    \"promotionType\":\"PAID_PARTNER\",\"verifyAsUserId\":\"$UID_\"}"
+```
+
+Each response echoes the real `silpoProductId` the catalog answered. Compare it with the local row — a
+different id is fine (the catalog can restock a slot), a `422` means the name has to be re-probed.
+
+### Step 2b — the SQL fallback, if the endpoint cannot be used
+
+Only when there is no connected household on the box yet. This skips the live verification the endpoint
+exists to do, so the ids below are trusted blindly; if Silpo does not return them for the box's branch and
+slot, the cart falls back to the ordinary match and the log says
+`partner placement … not returned live for «…»`. `kind` and `promotion_type` have defaults, so neither is
+listed.
+
+```sql
+INSERT INTO partner_promotion
+  (id, partner_name, category_or_query, silpo_product_id, product_name,
+   priority_weight, promotion_type, active_from, active_to, status, created_at)
+VALUES
+  (gen_random_uuid(), 'Сільпо власна марка «Премія»', 'молоко',
+   '1ed90524-708b-68b2-a101-7fe4ad747459',
+   'Молоко пастеризоване «Премія»® питне 3,2% пляшка',
+   100, 'OWN_BRAND_MARGIN_BOOST', NULL, NULL, 'ACTIVE', now()),
+  (gen_random_uuid(), 'Ситий двір', 'гречка',
+   '1ef61a31-b336-6218-a9cb-ffddab862a39',
+   'Крупа гречана Ситий двір ядриця',
+   100, 'PAID_PARTNER', NULL, NULL, 'ACTIVE', now());
+```
+
+`active_from`/`active_to` NULL means «always on» — `activePromotions()` treats a null bound as no bound. A
+row with `active_to` in the past, or `status <> 'ACTIVE'`, is silently skipped, which is the second most
+likely reason a seeded box still features nothing.
+
+### Step 3 — prove it, in this order
+
+1. **The row is live.** `SELECT partner_name, category_or_query, status, active_to FROM partner_promotion;`
+2. **A cart uses it.** Run a real flow that needs milk or buckwheat («зроби список» → «Замовити»). In
+   `docker logs komora-app`: `partner placement <id> answered «Молоко» with product <id>`. The cart line
+   carries ★.
+3. **Events are written.** `SELECT event_type, count(*) FROM partner_promotion_event GROUP BY 1;` —
+   `IMPRESSION`, then `ADDED_TO_CART`, then `CONFIRMED_ORDER` after Підтвердити.
+4. **Metrics exist.** From inside the box:
+   ```bash
+   # The image carries no curl, and actuator is published nowhere — borrow one on the compose network.
+   docker run --rm --network komora-prod_default curlimages/curl:latest \
+     -s http://app:8081/actuator/prometheus | grep ^komora_promotion
+   ```
+   Every placement should have `komora_promotion_share`; `komora_promotion_share_overall{type="ALL"}` should
+   exist. A placement with no baseline has **no** `komora_promotion_lift` line — absence, not zero.
+5. **Grafana shows it** within one refresh interval (30 s snapshot + the Alloy scrape). On the business
+   dashboard set **Середовище = prod**: the `$env` variable is built from `label_values(komora_users_registered, env)`
+   and prod pushes `env=prod`, so a dashboard left on `local` shows an empty featuring section on a perfectly
+   healthy box.
+6. **Do not read «Активних з'єднань з БД» as the featuring signal.** It is the Hikari pool at the scrape
+   instant and will read 0 on an idle box no matter how well featuring works.
+
 ## Cleanup
 
 ### Start completely from scratch
