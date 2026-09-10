@@ -2,6 +2,7 @@ package com.silporestockai.model;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Everything the DB-derived Prometheus gauges publish, read once per refresh interval (task 54).
@@ -28,6 +29,9 @@ import java.util.List;
  * @param reordersUnedited reorder proposals confirmed exactly as proposed
  * @param reordersEdited reorder proposals the household changed before confirming
  * @param trustStreakMax the longest run of unedited confirmations any household has
+ * @param groupRounds group rounds by {@code GroupEventStatus} name (task 80's social-channel row)
+ * @param groupParticipants people whose reply was counted in any round — each of them saw the agent work
+ * @param giftOrders gift orders by {@code GiftOrderStatus} name
  */
 public record ObservabilitySnapshot(
         long usersRegistered,
@@ -46,11 +50,14 @@ public record ObservabilitySnapshot(
         long checkinsAnswered,
         long reordersUnedited,
         long reordersEdited,
-        int trustStreakMax) {
+        int trustStreakMax,
+        Map<String, Long> groupRounds,
+        long groupParticipants,
+        Map<String, Long> giftOrders) {
 
     /** The value the gauges are registered against before the first refresh runs — all zero, nothing null. */
     public static ObservabilitySnapshot empty() {
         return new ObservabilitySnapshot(
-                0, 0, 0, 0, List.of(), 0, 0, 0, null, null, List.of(), List.of(), 0, 0, 0, 0, 0);
+                0, 0, 0, 0, List.of(), 0, 0, 0, null, null, List.of(), List.of(), 0, 0, 0, 0, 0, Map.of(), 0, Map.of());
     }
 }

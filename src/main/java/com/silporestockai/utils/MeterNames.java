@@ -62,6 +62,12 @@ public final class MeterNames {
     /** Task 75: the timer from a routed sentence to the confirmed order it produced, tagged by intent. */
     public static final String INTENT_ORDER = "komora.intent.order";
 
+    /** Task 80: the social primitive (person → agent → person) as numbers — rounds and gifts by status. */
+    public static final String GROUP_ROUNDS = "komora.group.rounds";
+
+    public static final String GROUP_PARTICIPANTS = "komora.group.participants";
+    public static final String GIFT_ORDERS = "komora.gift.orders";
+
     // --- Tag keys, so a dashboard filter and the code that sets it cannot drift ---
     public static final String TAG_TYPE = "type";
     public static final String TAG_OUTCOME = "outcome";
@@ -80,6 +86,7 @@ public final class MeterNames {
     public static final String TAG_METHOD = "method";
     public static final String TAG_INTENT = "intent";
     public static final String TAG_EDITED = "edited";
+    public static final String TAG_STATUS = "status";
 
     /** The tag value the combined («обидва пули») rollup series carries, so one panel can pick it out. */
     public static final String POOL_ALL = "ALL";

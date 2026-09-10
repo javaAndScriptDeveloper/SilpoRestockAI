@@ -22,4 +22,7 @@ public interface GiftOrderRepository extends JpaRepository<GiftOrder, UUID> {
 
     /** Requests nobody answered in time. */
     List<GiftOrder> findAllByStatusAndExpiresAtBefore(GiftOrderStatus status, Instant before);
+
+    /** How many gifts sit in one state, for the social-channel gauges (task 80). */
+    long countByStatus(GiftOrderStatus status);
 }

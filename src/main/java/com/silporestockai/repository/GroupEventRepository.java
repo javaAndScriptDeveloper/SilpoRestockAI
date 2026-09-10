@@ -22,6 +22,9 @@ public interface GroupEventRepository extends JpaRepository<GroupEvent, UUID> {
     /** History for the signal queries: every round that reached agreement. */
     List<GroupEvent> findByStatusIn(Collection<GroupEventStatus> statuses);
 
+    /** How many rounds sit in one state, for the social-channel gauges (task 80). */
+    long countByStatus(GroupEventStatus status);
+
     /** The round whose cart this organizer is confirming right now. */
     Optional<GroupEvent> findFirstByOrganizerUserIdAndStatusOrderByApprovedAtDesc(
             UUID organizerUserId, GroupEventStatus status);

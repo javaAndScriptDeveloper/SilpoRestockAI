@@ -7,12 +7,18 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.silporestockai.entity.CategoryResolutionLog;
 import com.silporestockai.entity.Checkin;
 import com.silporestockai.entity.CustomerOrder;
+import com.silporestockai.entity.GiftOrder;
+import com.silporestockai.entity.GroupEvent;
+import com.silporestockai.entity.GroupEventParticipant;
 import com.silporestockai.entity.PartnerPromotion;
 import com.silporestockai.entity.PartnerPromotionEvent;
 import com.silporestockai.entity.TrustLevel;
 import com.silporestockai.entity.User;
 import com.silporestockai.entity.UserProfile;
 import com.silporestockai.model.BasketItem;
+import com.silporestockai.model.GiftOrderStatus;
+import com.silporestockai.model.GiftResolution;
+import com.silporestockai.model.GroupEventStatus;
 import com.silporestockai.model.OrderStatus;
 import com.silporestockai.model.OrderType;
 import com.silporestockai.model.PartnerPromotionEventType;
@@ -21,6 +27,9 @@ import com.silporestockai.model.PromotionType;
 import com.silporestockai.repository.CategoryResolutionLogRepository;
 import com.silporestockai.repository.CheckinRepository;
 import com.silporestockai.repository.CustomerOrderRepository;
+import com.silporestockai.repository.GiftOrderRepository;
+import com.silporestockai.repository.GroupEventParticipantRepository;
+import com.silporestockai.repository.GroupEventRepository;
 import com.silporestockai.repository.PartnerPromotionEventRepository;
 import com.silporestockai.repository.PartnerPromotionRepository;
 import com.silporestockai.repository.TrustLevelRepository;
@@ -79,8 +88,19 @@ class ObservabilityMetricsIntegrationTest extends AbstractIntegrationTest {
     @Autowired
     private TrustLevelRepository trustLevelRepository;
 
+    @Autowired
+    private GroupEventRepository groupEventRepository;
+
+    @Autowired
+    private GroupEventParticipantRepository groupEventParticipantRepository;
+
+    @Autowired
+    private GiftOrderRepository giftOrderRepository;
+
     @BeforeEach
     void clearOrders() {
+        groupEventRepository.deleteAll();
+        giftOrderRepository.deleteAll();
         checkinRepository.deleteAll();
         trustLevelRepository.deleteAll();
         categoryResolutionLogRepository.deleteAll();
@@ -304,6 +324,58 @@ class ObservabilityMetricsIntegrationTest extends AbstractIntegrationTest {
         assertThat(valueOf(body, "komora_reorders", "edited=\"false\"")).isEqualTo(2.0);
         assertThat(valueOf(body, "komora_reorders", "edited=\"true\"")).isEqualTo(1.0);
         assertThat(valueOf(body, "komora_trust_streak", "stat=\"max\"")).isEqualTo(4.0);
+    }
+
+    /**
+     * Task 80: the social primitive gets numbers. A round that reached ORDERED, one counted participant and one
+     * confirmed gift must each be one series with a status tag — the business dashboard's «люди, яких бот привів
+     * сам» row divides these.
+     */
+    @Test
+    void publishesSocialChannelGaugesForTheViralSection() throws Exception {
+        User sender = newUser(4_054_080L);
+        GroupEvent round = groupEventRepository.save(GroupEvent.builder()
+                .id(UUID.randomUUID())
+                .telegramGroupChatId(-1_000_080L)
+                .organizerTelegramUserId(4_054_080L)
+                .status(GroupEventStatus.ORDERED)
+                .createdAt(Instant.now())
+                .build());
+        groupEventParticipantRepository.save(GroupEventParticipant.builder()
+                .id(UUID.randomUUID())
+                .groupEventId(round.getId())
+                .telegramUserId(4_054_081L)
+                .rawReplyText("червоне вино")
+                .countedInDenominator(true)
+                .repliedAt(Instant.now())
+                .build());
+        groupEventParticipantRepository.save(GroupEventParticipant.builder()
+                .id(UUID.randomUUID())
+                .groupEventId(round.getId())
+                .telegramUserId(4_054_082L)
+                .rawReplyText("пізно")
+                .countedInDenominator(false)
+                .repliedAt(Instant.now())
+                .build());
+        giftOrderRepository.save(GiftOrder.builder()
+                .id(UUID.randomUUID())
+                .senderUserId(sender.getId())
+                .recipientUsername("olena_test")
+                .resolution(GiftResolution.CONSENTED)
+                .status(GiftOrderStatus.CONFIRMED)
+                .createdAt(Instant.now())
+                .updatedAt(Instant.now())
+                .build());
+
+        observabilityService.refresh();
+        String body = scrape();
+
+        assertThat(valueOf(body, "komora_group_rounds", "status=\"ORDERED\"")).isEqualTo(1.0);
+        assertThat(valueOf(body, "komora_group_rounds", "status=\"PROPOSED\"")).isEqualTo(0.0);
+        assertThat(valueOf(body, "komora_group_participants", "env=")).isEqualTo(1.0);
+        assertThat(valueOf(body, "komora_gift_orders", "status=\"CONFIRMED\"")).isEqualTo(1.0);
+        assertThat(valueOf(body, "komora_gift_orders", "status=\"UNREACHABLE\""))
+                .isEqualTo(0.0);
     }
 
     private void intentOrder(UUID userId, String intent, long secondsToConfirm) {
