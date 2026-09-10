@@ -52,6 +52,7 @@ public class ReorderService {
     private final InventoryTrendService inventoryTrendService;
     private final BaselineBasketRepository baselineBasketRepository;
     private final CartBuildingService cartBuildingService;
+    private final GiftCartCustodyService giftCartCustodyService;
     private final SilpoMcpClient silpoMcpClient;
 
     /** The reorder cycle came round. */
@@ -83,6 +84,10 @@ public class ReorderService {
         log.info("reordering {} items for user {}, excluding {}", needs.size(), userId, excluded);
 
         List<ShoppingListItem> items = withBaselineQuantities(userId, needs);
+        // Task 81: a gift may still be holding this household's only cart, pointed at a friend's door. The
+        // reorder builds its cart directly rather than through CartConfirmationService, so it has to ask for
+        // the cart back itself — otherwise the household's restock follows the last present out.
+        giftCartCustodyService.releaseCartIfHeld(userId);
         CartContext context = cartBuildingService.getOrCreateCartContext(userId);
         CartSummary cart = cartBuildingService.buildCart(userId, items);
         if (cart.belowMinimumOrder()) {
