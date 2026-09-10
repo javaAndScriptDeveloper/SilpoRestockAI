@@ -56,8 +56,22 @@ class GiftCartCustodyIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void closesTheGiftRowOnceTheCartIsHandedBack() {
+    void aConfirmedGiftStaysConfirmedOnceTheCartIsHandedBack() {
+        // Session 25: the confirmed gift became CANCELLED on the next weekly order, and the business dashboard's
+        // «Подарунків підтверджено» read zero for a present that was on its way. Handing the cart back is not
+        // cancelling the gift.
         UUID sender = senderHolding(9401L, GiftOrderStatus.CONFIRMED, Map.of("deliveryType", "DeliveryHome"));
+
+        assertThat(giftCartCustodyService.releaseCartIfHeld(sender)).isTrue();
+        GiftOrder after = giftOrderRepository.findAll().getFirst();
+        assertThat(after.getStatus()).isEqualTo(GiftOrderStatus.CONFIRMED);
+        assertThat(after.holdsTheCart()).isFalse();
+        assertThat(giftCartCustodyService.releaseCartIfHeld(sender)).isFalse();
+    }
+
+    @Test
+    void closesAnAbandonedGiftOnceTheCartIsHandedBack() {
+        UUID sender = senderHolding(9402L, GiftOrderStatus.CART_PRESENTED, Map.of("deliveryType", "DeliveryHome"));
 
         assertThat(giftCartCustodyService.releaseCartIfHeld(sender)).isTrue();
         assertThat(giftOrderRepository.findAll())
