@@ -1229,3 +1229,66 @@ MCP tools over the last week on the technical dashboard: 9 (the account has used
 The ten-second test — blue tiles read as «гість», green as «Сільпо» without reading a title — and whether the
 RED row is worth a camera. Both URLs in RUNBOOK 16; the local copy at `make observability-local-up`.
 
+
+# Session 19 — every loyalty benefit the API can actually apply (tasks 78, 79), 2026-09-10
+
+## The schema check that decided the whole shape
+
+Task 79 asked for the live `tools/list` before any code, and it was worth asking for: the documentation
+describes a «Лояльність та акції» category of seven tools without saying which of them can change a cart.
+The live schemas do. `silpo_update_shopping_cart` carries **`promoCode` (string | null)** beside
+`bonusRequested`, `silpo_add_or_update_certificates` takes barcodes — and searching all 40 tool schemas for
+an argument that accepts a coupon id, barcode or promoId returns nothing at all.
+
+So the split is not a product decision, it is a fact about the server:
+
+- **Real auto-apply:** балабонуси (already shipped in task 24), подарункові сертифікати, промокоди.
+- **Informational only:** купони, персональні промо, Плюхс — no tool applies them, so none is offered.
+
+The token in `mcp_oauth_token` is AES-GCM ciphertext; decrypting it with `SILPO_TOKEN_ENCRYPTION_KEY` is what
+made a direct `tools/list` possible at all (a raw copy of the column 401s). Full audit in
+`docs/superpowers/specs/2026-09-10-loyalty-benefits-design.md`.
+
+## What was built
+
+One `LoyaltyBenefitsService` behind all seven tools, defensive on every call. At cart presentation it is read
+once and stored in `conversation_state.context_json`, because the confirm tap is an independent webhook.
+
+The cart gains a single second button, «Підтвердити + вигоди», rather than one per mechanism: three
+independent yes/no questions would have been up to eight confirm variants on one keyboard. Bonuses standing
+alone keep their task-24 wording, which names the amount. A coupon is mentioned in the cart text and given no
+button, including on a cart under the ₴799 minimum — that message sends the household to the Silpo app, which
+is exactly where a coupon works.
+
+A new `MY_BENEFITS` intent answers «які в мене купони?» with the whole picture, split by the same line: what
+Комора applies itself, and what only the app can switch on. Coupon eligibility comes from
+`silpo_get_coupon_details.canBeAppliedToOrder` rather than from the household's toggle, because the tool's own
+description says never to read one off the other.
+
+## Deviations and things learned the hard way
+
+- **`CartBenefits.isEmpty()` broke confirmation entirely.** The record crosses `context_json`, and Jackson
+  read the `is…` method as a fourth component, wrote `"empty"` and then refused to read its own output back —
+  seven integration tests failed at once. Renamed to `nothingToOffer()`, with a round-trip test.
+- **`silpo_update_shopping_cart` accepts any promo code.** `KOMORA-TEST-0000` came back
+  `{"success":true,"summary":"Shopping cart updated"}` and sat on the live cart with no validation and no
+  discount (removed afterwards). A successful call proves the code reached the cart and nothing more, so the
+  message says «передав у кошик … якщо він діє» instead of «застосував». Certificates are the opposite: a
+  refusal is explicit in `added[].validations` («Сертифікат не знайдено !») while the call itself succeeds.
+- **Плюхс status is read off which links come back**, not off `summary`, which the live server writes in
+  English and which reached the chat verbatim on the first live run.
+- **`silpo_get_my_certificates` is genuinely flaky**: HTTP 500 at 12:20, a clean empty list at 15:57.
+
+## Honestly, what is verified and what is not
+
+Live through the app, in `mcp_tool_call`: all seven read tools, including two `silpo_get_coupon_details`
+calls, one per coupon. Live through direct MCP calls on the same account: `silpo_add_or_update_certificates`
+(fabricated barcode, refused as expected) and `silpo_update_shopping_cart(promoCode=…)`. **Not verified with
+real data:** the offer-and-apply path end to end, because this account holds 0 bonuses, no certificates and
+no promo codes. What it does hold is two real coupons, which is what the informational path was checked
+against. Distinct MCP tools ever used by this account: 21, up from 14.
+
+## What needs your eyes
+
+An account that actually holds a certificate or a promo code, if one exists — that is the only way to see
+«Підтвердити + вигоди» in a real chat. Everything else is in RUNBOOK's «Tasks 78 and 79» list.

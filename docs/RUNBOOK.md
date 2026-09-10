@@ -1940,3 +1940,55 @@ the WebApp form; a real tap on «Перейти до оплати». **Needs you
 `will also search […]` line per second-pass term; `topping cart … up from X to about Y with N baseline lines`
 when the minimum bit; `holding back «…»` for a sanity-guard line; and every `Telegram -> chat …` line is the
 message the person read.
+
+### Tasks 78 and 79: loyalty benefits at checkout, and «які в мене вигоди»
+
+**The live schema check came first**, because task 79 asked for it in those words. `tools/list` against
+`https://mcp.silpo.ua/mcp` on 2026-09-10: server `silpo-mcp-service 1.110.0`, 40 tools. Repeat it with the
+household's own token (the `mcp_oauth_token` column is AES-GCM ciphertext, so it has to be decrypted with
+`SILPO_TOKEN_ENCRYPTION_KEY` before it can be a `Bearer`; a raw copy of the column 401s).
+
+What the live schemas say, having searched all 40 for a loyalty-shaped argument:
+
+| Mechanism | Apply path on the live server | What Комора does |
+|---|---|---|
+| Балабонуси | `silpo_update_shopping_cart.bonusRequested` | applies (task 24, unchanged) |
+| Сертифікати | `silpo_add_or_update_certificates` | applies |
+| Промокоди | `silpo_update_shopping_cart.promoCode` | applies |
+| Купони | **none** — `get_my_coupons` / `get_coupon_details` only | shows, says the Silpo app is where they switch on |
+| `get_my_promos` | no activation tool | shows |
+| Premium «Плюхс» | read-only | shows, with Silpo's own links |
+
+**What to check in a chat:**
+
+| Do this | Expect |
+|---|---|
+| «які в мене купони і бонуси?» | One message: «💳 Твої вигоди в «Сільпо»», a «Це застосую сам…» block (балабонуси / сертифікати / промокоди) and an «А це працює тільки у застосунку «Сільпо»…» block listing every coupon with its dates, its on/off state, «зараз не спрацює» when Silpo says it is not eligible, its terms, and the Плюхс line with both links |
+| Build any cart on an account with bonuses, a certificate or a promo code | Under the cart, «💳 Твої вигоди:» listing them, and a second button «Підтвердити + вигоди». With bonuses alone the button keeps its old wording, «Підтвердити + 250 бонусів» |
+| Build a cart on an account with none of the three | No benefits block and no extra button at all — silent by default |
+| Build a cart while an active coupon exists | «🎟 Купон «…» (до …) — його застосовує саме «Сільпо» при оформленні, я тут нічого не вирішую», with no button beside it. Also present on a cart under the ₴799 minimum, which has no confirm button of its own |
+| Tap «Підтвердити + вигоди» | «Підтвердив…» plus a line per mechanism Silpo took, a line per refusal, and «Разом після знижок: N грн» read back from the cart |
+
+**What was actually exercised live on 2026-09-10, and what was not.** Live through the app, and visible in
+`mcp_tool_call`: `silpo_get_loyalty_info`, `silpo_get_my_coupons`, `silpo_get_coupon_details` (twice — one
+call per coupon), `silpo_get_my_promos`, `silpo_get_promo_codes`, `silpo_get_my_certificates`,
+`silpo_get_my_premium_subscription`. Live through direct MCP calls on the same account, because the account
+holds nothing to apply: `silpo_add_or_update_certificates` and `silpo_update_shopping_cart(promoCode=…)`.
+
+This account holds: **0 балабонусів**, **no certificates**, **no promo codes**, **no personal promos**, **no
+Плюхс**, and **two real coupons** — «-15% на покупку» (expired 2026-09-10, `canBeAppliedToOrder: false`) and
+«Безкоштовний мобільний зв'язок Yezzz!» (active until 2026-10-03). So the offer path itself can only be
+verified on an account that has something; what this account proves is the read path, the coupon mention and
+the silent-by-default path.
+
+**Two facts worth keeping:**
+
+- `silpo_get_my_certificates` answered `Error in get-my-certificates: API returned 500 Internal Server Error.`
+  at 12:20 and plain `{"certificates":[]}` at 15:57 the same day. It is genuinely intermittent, and the cart
+  flow must never depend on it.
+- **`silpo_update_shopping_cart` stores any promo code it is given, valid or not.** A made-up
+  `KOMORA-TEST-0000` came back `{"success":true,"summary":"Shopping cart updated"}` and sat on the cart as
+  `promoCode` with no validation and no discount. That is why the message says «передав у кошик — «Сільпо»
+  врахує його при оформленні, якщо він діє» rather than «застосував». A `silpo_add_or_update_certificates`
+  refusal, by contrast, is explicit: `added[].validations` carried `certificate.not_found` / «Сертифікат не
+  знайдено !» while the call itself succeeded.

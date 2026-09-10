@@ -67,6 +67,20 @@ Consequence for honesty: bonuses, certificates and promo codes all have **real**
 this account none of the three has non-empty data to apply. What can be live-verified is the call
 shape, the refusal handling and the no-offer-when-nothing-available path. The commit says so.
 
+## What the apply calls did when probed live (2026-09-10, after the build)
+
+- `silpo_add_or_update_certificates` with a fabricated barcode → the call succeeds and the refusal is
+  explicit inside it: `{"success": false, …, "added": [{"barcode": "0000000000000", "validations":
+  [{"level":"error","type":"certificate","message":"certificate.not_found","context":{"errorMessage":
+  "Сертифікат не знайдено !"}}]}]}`. That is exactly the contract the code reads: an entry with a
+  non-empty `validations` is not an applied certificate.
+- `silpo_update_shopping_cart` with the invented code `KOMORA-TEST-0000` → `{"success": true,
+  "summary": "Shopping cart updated"}`, and the cart afterwards carried `promoCode:
+  "KOMORA-TEST-0000"` with **no validation and no discount**. (Removed again by sending
+  `promoCode: null`.) **A successful promo-code call therefore proves only that the code reached the
+  cart.** The message a household reads says that and no more: «передав у кошик — «Сільпо» врахує його
+  при оформленні, якщо він діє».
+
 ## Design
 
 ### One service, `LoyaltyBenefitsService`
