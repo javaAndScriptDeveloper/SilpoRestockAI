@@ -120,4 +120,30 @@ class InternalMetricsIntegrationTest extends AbstractIntegrationTest {
         mockMvc.perform(get("/internal/metrics/pitch").header("X-Metrics-Token", "nope"))
                 .andExpect(status().isForbidden());
     }
+
+    /** Task 55: the same real call the report counts is the one the published page names. */
+    @Test
+    void theArtifactPageNamesTheToolThatWasReallyCalled() throws Exception {
+        UUID userId = connectedUser();
+        silpoMcpClient.callTool("silpo_get_my_profile", Map.of(), userId);
+        silpoMcpClient.disconnect(userId);
+
+        String page = mockMvc.perform(get("/internal/metrics/pitch-artifact").header("X-Metrics-Token", "pitch-token"))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        assertThat(page).startsWith("<!doctype html>");
+        assertThat(page).contains("silpo_get_my_profile").contains("1 з 40");
+        // The page goes on a public URL, so it carries counters and names — never who made the call.
+        assertThat(page).doesNotContain(userId.toString());
+    }
+
+    @Test
+    void theArtifactPageIsNotServedWithoutTheToken() throws Exception {
+        mockMvc.perform(get("/internal/metrics/pitch-artifact")).andExpect(status().isForbidden());
+        mockMvc.perform(get("/internal/metrics/pitch-artifact").header("X-Metrics-Token", "nope"))
+                .andExpect(status().isForbidden());
+    }
 }

@@ -1,5 +1,6 @@
 .DEFAULT_GOAL := help
 .PHONY: help run dev demo mcp-log test build format check db-up db-down up down image clean metrics promotions \
+	pitch-artifact \
 	alloy-up alloy-down alloy-logs dashboard dashboards-json observability-local-up observability-local-down \
 	deploy prod-up prod-down prod-logs prod-ps prod-alloy-up prod-alloy-down prod-alloy-logs \
 	webhook webhook-info
@@ -69,6 +70,16 @@ promotions: ## Print the partner-placement funnel report from the running app (n
 	@set -a; . ./$(ENV_FILE); set +a; \
 	curl -sf -H "X-Metrics-Token: $$METRICS_TOKEN" "http://localhost:$${SERVER_PORT:-8080}/internal/promotions/report" \
 	|| echo "no report: is the app running, and is METRICS_TOKEN set in .env?"
+
+# Task 55. The page is a snapshot on purpose: it is written to a file, committed, and baked into the image,
+# so it can never drift under a judge who scans the QR code while somebody else is testing the bot.
+pitch-artifact: ## Regenerate the public pitch page from the running app's own data (needs METRICS_TOKEN in .env)
+	@set -a; . ./$(ENV_FILE); set +a; \
+	curl -sf -H "X-Metrics-Token: $$METRICS_TOKEN" \
+	  "http://localhost:$${SERVER_PORT:-8080}/internal/metrics/pitch-artifact" \
+	  -o src/main/resources/static/pitch.html \
+	&& echo "wrote src/main/resources/static/pitch.html — commit and push to publish it" \
+	|| echo "no page: is the app running, and is METRICS_TOKEN set in .env?"
 
 alloy-up: ## Start Grafana Alloy, pushing /actuator/prometheus to Grafana Cloud (needs GRAFANA_CLOUD_* in .env)
 	docker compose --env-file $(ENV_FILE) --profile observability up -d alloy
