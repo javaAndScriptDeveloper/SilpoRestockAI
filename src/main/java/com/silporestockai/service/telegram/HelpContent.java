@@ -50,6 +50,16 @@ public final class HelpContent {
             + "промокоди (їх застосую сам при замовленні) і купони «Сільпо» (їх вмикають у застосунку).";
 
     /**
+     * Task 81. Two sentences because the feature has two halves that are easy to confuse — sending one, and being
+     * able to receive one — and the privacy promise is the reason anyone would agree to the second.
+     */
+    public static final String EXAMPLE_GIFT = "— «Надішли подарунок @ніку, щось до кави» — зберу набір і привезу "
+            + "його другові додому. Адреси я тобі не показую, і сам питаю її в нього, якщо не знаю.";
+
+    public static final String EXAMPLE_GIFT_CONSENT = "— «Дозволь друзям надсилати мені подарунки» — залишиш "
+            + "адресу й телефон, і друзі зможуть замовити тобі щось просто за ніком. Ніхто з них адреси не побачить.";
+
+    /**
      * Task 74: the headline sells the mechanism, and the mechanism is a company agreeing on one order together.
      * The live copy said «зберу напої на всіх» and read back as «режим бухати» — a consensus feature undersold
      * as a party trick. What the round actually resolves gets a sentence of its own rather than the headline:
@@ -83,7 +93,9 @@ public final class HelpContent {
                     EXAMPLE_BLACKOUT,
                     EXAMPLE_WEEKDAY,
                     EXAMPLE_CALENDAR,
-                    EXAMPLE_BENEFITS)
+                    EXAMPLE_BENEFITS,
+                    EXAMPLE_GIFT,
+                    EXAMPLE_GIFT_CONSENT)
             + "\n\n"
             + GROUP;
 

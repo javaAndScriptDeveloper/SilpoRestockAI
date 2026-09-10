@@ -14,6 +14,8 @@ import com.silporestockai.service.CheckinFlowService;
 import com.silporestockai.service.ConversationStateService;
 import com.silporestockai.service.DishRequestService;
 import com.silporestockai.service.FeedbackService;
+import com.silporestockai.service.GiftConsentService;
+import com.silporestockai.service.GiftOrderService;
 import com.silporestockai.service.GroupEventService;
 import com.silporestockai.service.IntentRouterService;
 import com.silporestockai.service.MealPlanHandoffService;
@@ -80,6 +82,8 @@ public class TelegramRoutingService {
     private final DishRequestService dishRequestService;
     private final MealPlanHandoffService mealPlanHandoffService;
     private final GroupEventService groupEventService;
+    private final GiftOrderService giftOrderService;
+    private final GiftConsentService giftConsentService;
     private final TelegramProperties telegramProperties;
 
     /**
@@ -511,6 +515,21 @@ public class TelegramRoutingService {
         }
         if (flow == ConversationFlow.PAST_ORDER_PICK) {
             pastOrderSeedService.handle(user, incoming);
+            return;
+        }
+        // Task 81. Three gift conversations, each owning its chat until it is answered: the friend being asked
+        // where a parcel should go, the sender being asked for the friend's number, and somebody leaving or
+        // clearing the address friends may use.
+        if (flow == ConversationFlow.GIFT_ADDRESS_REQUEST) {
+            giftOrderService.handleRecipientReply(user, incoming);
+            return;
+        }
+        if (flow == ConversationFlow.GIFT_SENDER_DETAIL) {
+            giftOrderService.handleSenderReply(user, incoming);
+            return;
+        }
+        if (flow == ConversationFlow.GIFT_CONSENT) {
+            giftConsentService.handle(user, incoming);
             return;
         }
         if (flow == ConversationFlow.DISH_CONFIRM) {

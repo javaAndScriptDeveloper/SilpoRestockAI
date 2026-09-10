@@ -2231,3 +2231,97 @@ the silent-by-default path.
   врахує його при оформленні, якщо він діє» rather than «застосував». A `silpo_add_or_update_certificates`
   refusal, by contrast, is explicit: `added[].validations` carried `certificate.not_found` / «Сертифікат не
   знайдено !» while the call itself succeeded.
+
+### Task 81: send-as-gift, an order delivered to a friend's address
+
+**What the live API allows, probed on 2026-09-10** (`silpo-mcp-service 1.110.0`, 40 tools) before anything
+was built, because the task asked for exactly that:
+
+| Question | Live answer |
+|---|---|
+| Is there an address search? | Yes — `silpo_find_address(address)` → `city / street / houseNumber / district / latitude / longitude`. No apartment. |
+| Can a cart be pointed at an address that is not the account holder's? | **Yes.** The live cart was moved Урлівська 4 → Хрещатик 22 (branch `1edb6b38…`), read back, and restored. |
+| What does repointing cost? | The branch changes with the address, and every product already in the cart is invalidated — three `product.offer.not_found` validations on a three-line cart. |
+| Does the address keep contact details? | **Yes.** `phone`, `flat`, `entrance`, `floor` and `courrierComment` were written and read back intact; coordinates come back as strings. |
+| How many carts does an account have? | One. `silpo_create_shopping_cart` is documented idempotent per user, so a gift borrows the household's own cart. |
+| Can an order be handed to someone else to collect? | **No** — see the honest-scope note at the end of this section. |
+
+**Before you start:** the household's own delivery address is whatever the cart currently carries, and it is
+snapshotted into `gift_order.own_delivery_json`. Note it down first, so you can see it come back:
+
+```sql
+SELECT status, resolution, recipient_username, silpo_cart_id,
+       own_delivery_json -> 'address' ->> 'street' AS restore_to
+FROM gift_order ORDER BY created_at DESC LIMIT 5;
+```
+
+**Path (a) — the sender types the address.**
+
+| Do this | Expect |
+|---|---|
+| «надішли подарунок на Київ, вулиця Хрещатик 22, кв. 42, щось до кави» | «Який телефон у друга?…» — the phone is asked for *before* anything is built, because the courier rings the number on the order and that would otherwise be the sender, who cannot see the address |
+| Answer «+380671234567» | «Зібрав подарунок…» with the lines and the slot, headed «🎁 Подарунок для друга» and closed with «Адресу не показую — вона належить отримувачу» |
+| Answer «не знаю» instead | «відправлю без номера отримувача — тоді кур'єр телефонуватиме тобі», then the cart. Said once, plainly, rather than discovered at the door |
+
+**Path (b) — a nickname with consent on file.** Set it up from the recipient's own chat first: «дозволь
+друзям надсилати мені подарунки», then «Київ, вулиця Хрещатик 22, кв. 42, +380671234567». Check
+`SELECT gift_delivery_address, gift_delivery_phone, gift_address_shareable FROM user_profile WHERE …` — all
+three should now be filled, and they must have been **null / null / false** before that message.
+
+| Do this | Expect |
+|---|---|
+| From the sender's chat: «відправ подарунок @нік, щось до кави» | The sender reads «Адресу для @нік маю — збираю кошик», then the cart. **Never the address.** |
+| Look at the recipient's chat | «@sender надсилає тобі подарунок… привезуть на твою збережену адресу» — they consented to storing an address, not to this delivery, and somebody has to be home |
+| `SELECT resolution FROM gift_order …` | `CONSENTED`, and no exchange happened at send time |
+
+**Path (c) — a nickname with no consent.** Needs a second real chat that has spoken to the bot at least once.
+
+| Do this | Expect |
+|---|---|
+| «відправ подарунок @нік, щось до кави» | Sender: «Запитав у @нік адресу…». Recipient, in *their* chat: «🎁 @sender хоче надіслати тобі подарунок… Куди привезти?» plus «Відправник твоєї адреси не побачить» |
+| `conversation_state` for the recipient's chat | `current_flow = GIFT_ADDRESS_REQUEST` |
+| Recipient answers «Київ, вулиця Хрещатик 22, кв. 42, +380671234567» | Recipient: «Записав, дякую». Sender: «Адресу для @нік маю — збираю кошик», then the cart — **with no address in it** |
+| `SELECT gift_address_text, gift_flat, gift_phone FROM gift_order …` | The street alone in the first column, `42` and the number in the other two — the geocoder is a geocoder, and a phone glued to a street stops it matching |
+| Recipient answers «ні» instead | Recipient: «Добре, нічого не замовляю». Sender: «@нік поки не хоче отримувати подарунок» |
+
+**Path (d) — a nickname the bot has never seen.** «відправ подарунок @комусь_кого_немає» →
+«@комусь_кого_немає ще не користувався ботом, тому не можу його спитати. Назви адресу сам…», and a
+`gift_order` row with status `UNREACHABLE`. Never silence.
+
+**The MCP call order, which is the whole design.** In `logs/app.log`, for any successful gift:
+
+```
+silpo_find_address → silpo_get_available_delivery_types → silpo_get_time_slots
+  → silpo_update_shopping_cart → silpo_find_products_batch → silpo_add_or_update_cart_products
+```
+
+`silpo_find_products_batch` **must** come after `silpo_update_shopping_cart`. Reverse them and the products
+are resolved against the household's own branch and then silently invalidated when the cart moves.
+
+**The check that matters most — the household gets its cart back.** After the gift, place an ordinary order
+(«що треба докупити?» or the weekly list) and confirm:
+
+- the `gift_order` row flips to `CANCELLED`;
+- `logs/app.log` carries `restoring the household's own delivery on cart … : true`;
+- `silpo_get_shopping_cart_by_id` shows the household's own street again, not the friend's.
+
+The restore is deliberately **not** done at checkout. The sender pays on a Silpo web link that reads the cart
+live, so putting the household's address back at confirmation time would deliver the gift to the sender.
+
+**Nobody answered.** `GiftRequestExpiryScheduler` sweeps on `komora.gift.sweep-cron` (default every 15
+minutes) and closes anything in `AWAITING_ADDRESS` past its 24-hour window: status `EXPIRED`, the recipient's
+chat released, and the sender told «@нік поки не відповів про адресу…». To rehearse it without waiting a day,
+`UPDATE gift_order SET expires_at = now() - interval '1 minute' WHERE status = 'AWAITING_ADDRESS';`.
+
+**Honest scope, and what is deliberately not built.** SelfPickup and NovaPoshta were examined at the schema
+level across all 40 live tools on 2026-09-10. `SelfPickup` builds its address out of `silpo_list_branches`
+data and `NovaPoshta` out of `silpo_find_nova_poshta_offices` data; **neither `silpo_create_shopping_cart`
+nor `silpo_update_shopping_cart` has any field naming who may collect an order**, and no tool among the 40
+creates an order at all — checkout is a Silpo web link the sender opens and pays through. So "your friend
+collects it himself" cannot be expressed through this API. It is not built, appears in no user-facing string,
+and must not appear in the pitch. Same for split payment, for the same reason as task 68's group round.
+
+**One thing assumed rather than proved.** That Silpo's courier dials `address.phone` rather than the
+account's profile phone. The field is stored — that much was verified live, written and read back — but only
+a real paid delivery shows which number actually rings. Product owner's call to proceed on that assumption
+(2026-09-10). If you run a paid gift order, note which phone rang and update this line.

@@ -54,6 +54,8 @@ public class IntentRouterService {
     private final OrderHistoryService orderHistoryService;
     private final DishRequestService dishRequestService;
     private final LoyaltyBenefitsService loyaltyBenefitsService;
+    private final GiftOrderService giftOrderService;
+    private final GiftConsentService giftConsentService;
     private final ObservabilityService observabilityService;
     private final ApplicationEventPublisher eventPublisher;
     private final String systemPrompt;
@@ -76,6 +78,8 @@ public class IntentRouterService {
             OrderHistoryService orderHistoryService,
             DishRequestService dishRequestService,
             LoyaltyBenefitsService loyaltyBenefitsService,
+            GiftOrderService giftOrderService,
+            GiftConsentService giftConsentService,
             ObservabilityService observabilityService,
             ApplicationEventPublisher eventPublisher,
             @Value("classpath:prompts/intent-router-system.txt") Resource systemPromptResource) {
@@ -96,6 +100,8 @@ public class IntentRouterService {
         this.orderHistoryService = orderHistoryService;
         this.dishRequestService = dishRequestService;
         this.loyaltyBenefitsService = loyaltyBenefitsService;
+        this.giftOrderService = giftOrderService;
+        this.giftConsentService = giftConsentService;
         this.observabilityService = observabilityService;
         this.eventPublisher = eventPublisher;
         this.systemPrompt = read(systemPromptResource);
@@ -283,6 +289,11 @@ public class IntentRouterService {
             // Read-only, and honest about the split: what the bot applies at checkout versus what only the
             // Silpo app can do, because the live API has no action for coupons, promos or Premium (task 79).
             case MY_BENEFITS -> loyaltyBenefitsService.showOverview(user);
+            // Task 81. The sentence itself goes through: it carries the friend, the address and the theme, and
+            // re-asking for what the person already typed is the failure this router exists to remove.
+            case GIFT_ORDER -> giftOrderService.start(user, text, trigger);
+            // One intent for both directions, like FILTER_UA_PRODUCER_ONLY: the sentence says which way.
+            case GIFT_ADDRESS_CONSENT -> giftConsentService.handleRequest(user, text);
             case HELP -> sendHelp(user);
             case UNKNOWN -> askClarifyingQuestion(user);
         }
@@ -382,6 +393,8 @@ public class IntentRouterService {
         WHERE_IS_MY_ORDER,
         DISH_INGREDIENTS_ORDER,
         MY_BENEFITS,
+        GIFT_ORDER,
+        GIFT_ADDRESS_CONSENT,
         HELP,
         UNKNOWN
     }

@@ -274,6 +274,30 @@ public class GiftOrderService {
         giftCartBuildingService.build(sender, order, null);
     }
 
+    /**
+     * Closes the requests nobody answered, and tells each sender so.
+     *
+     * <p>Nothing is restored here: a request that never got an address never touched the cart. What it did do is
+     * leave somebody waiting on a friend who is not going to reply, and saying nothing would leave them
+     * indefinitely unsure whether the present was on its way.
+     */
+    public void expireUnanswered() {
+        for (GiftOrder order : giftOrderRepository.findAllByStatusAndExpiresAtBefore(
+                GiftOrderStatus.AWAITING_ADDRESS, Instant.now())) {
+            order.setStatus(GiftOrderStatus.EXPIRED);
+            order.setExpiresAt(null);
+            order.setUpdatedAt(Instant.now());
+            giftOrderRepository.save(order);
+            if (order.getRecipientChatId() != null) {
+                conversationStateService.save(order.getRecipientChatId(), ConversationFlow.NONE, null, Map.of());
+            }
+            senderOf(order)
+                    .ifPresent(sender -> telegramOutboundService.sendMessage(
+                            sender.getTelegramChatId(), giftMessageService.requestExpired(label(order))));
+            log.info("gift {} expired with no address from {}", order.getId(), label(order));
+        }
+    }
+
     private void askSenderForPhone(User sender, GiftOrder order) {
         conversationStateService.save(
                 sender.getTelegramChatId(),
