@@ -113,6 +113,14 @@ public final class McpResponses {
     /** {@code silpo_add_or_update_certificates} answers with what it took; a non-empty validations list is a refusal. */
     public static final String[] ADDED = {"added"};
 
+    /**
+     * The Плюхс links. Silpo's own instruction is to show both, and which pair it sends depends on the status: the
+     * subscribe links when there is no subscription, the share links when there is.
+     */
+    public static final String[] PREMIUM_WEB = {"webLink", "shareWebLink"};
+
+    public static final String[] PREMIUM_MOBILE = {"mobileLink", "shareMobileLink"};
+
     public static final String[] LOYALTY_BALANCE = {"balance"};
     public static final String[] BALANCE_TOTAL = {"total"};
     public static final String[] SUMMARY = {"summary"};

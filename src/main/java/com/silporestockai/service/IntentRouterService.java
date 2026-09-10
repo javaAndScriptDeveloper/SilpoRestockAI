@@ -51,6 +51,7 @@ public class IntentRouterService {
     private final PastOrderSeedService pastOrderSeedService;
     private final OrderHistoryService orderHistoryService;
     private final DishRequestService dishRequestService;
+    private final LoyaltyBenefitsService loyaltyBenefitsService;
     private final ObservabilityService observabilityService;
     private final String systemPrompt;
 
@@ -71,6 +72,7 @@ public class IntentRouterService {
             PastOrderSeedService pastOrderSeedService,
             OrderHistoryService orderHistoryService,
             DishRequestService dishRequestService,
+            LoyaltyBenefitsService loyaltyBenefitsService,
             ObservabilityService observabilityService,
             @Value("classpath:prompts/intent-router-system.txt") Resource systemPromptResource) {
         this.claudeApiClient = claudeApiClient;
@@ -89,6 +91,7 @@ public class IntentRouterService {
         this.pastOrderSeedService = pastOrderSeedService;
         this.orderHistoryService = orderHistoryService;
         this.dishRequestService = dishRequestService;
+        this.loyaltyBenefitsService = loyaltyBenefitsService;
         this.observabilityService = observabilityService;
         this.systemPrompt = read(systemPromptResource);
     }
@@ -251,6 +254,9 @@ public class IntentRouterService {
             // The «📦 Замовлення» button (task 57) asks the same service for the fuller view.
             case WHERE_IS_MY_ORDER -> orderHistoryService.showStatus(user, false);
             case DISH_INGREDIENTS_ORDER -> dishRequestService.start(user, classified.themeDescription(), trigger);
+            // Read-only, and honest about the split: what the bot applies at checkout versus what only the
+            // Silpo app can do, because the live API has no action for coupons, promos or Premium (task 79).
+            case MY_BENEFITS -> loyaltyBenefitsService.showOverview(user);
             case HELP -> sendHelp(user);
             case UNKNOWN -> askClarifyingQuestion(user);
         }
@@ -348,6 +354,7 @@ public class IntentRouterService {
         PAST_ORDER_SEED,
         WHERE_IS_MY_ORDER,
         DISH_INGREDIENTS_ORDER,
+        MY_BENEFITS,
         HELP,
         UNKNOWN
     }

@@ -3,9 +3,13 @@ package com.silporestockai.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.silporestockai.client.mcp.McpToolResponse;
 import com.silporestockai.client.mcp.SilpoMcpClient;
+import com.silporestockai.entity.User;
+import com.silporestockai.model.BenefitsOverview;
 import com.silporestockai.model.CartBenefits;
 import com.silporestockai.model.GiftCertificate;
 import com.silporestockai.model.LoyaltyCoupon;
+import com.silporestockai.service.telegram.BenefitsMessageService;
+import com.silporestockai.service.telegram.TelegramOutboundService;
 import com.silporestockai.utils.McpResponses;
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -14,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -40,8 +45,38 @@ public class LoyaltyBenefitsService {
     static final String TOOL_ADD_CERTIFICATES = "silpo_add_or_update_certificates";
     static final String TOOL_PROMO_CODES = "silpo_get_promo_codes";
     static final String TOOL_COUPONS = "silpo_get_my_coupons";
+    static final String TOOL_COUPON_DETAILS = "silpo_get_coupon_details";
+    static final String TOOL_LOYALTY_INFO = "silpo_get_loyalty_info";
+    static final String TOOL_PROMOS = "silpo_get_my_promos";
+    static final String TOOL_PREMIUM = "silpo_get_my_premium_subscription";
+
+    /**
+     * How many coupons get their own details call. The details are worth having — {@code canBeAppliedToOrder} is the
+     * only honest answer to «чи спрацює він», and the toggle alone is not it — but one call per coupon is a round
+     * trip each, and nobody reads past the first few in a chat message.
+     */
+    private static final int COUPONS_WITH_DETAILS = 5;
 
     private final SilpoMcpClient silpoMcpClient;
+    private final SilpoAuthService silpoAuthService;
+    private final BenefitsMessageService benefitsMessageService;
+    private final TelegramOutboundService telegramOutboundService;
+
+    /**
+     * «Які в мене купони?» — the {@code MY_BENEFITS} intent (task 79).
+     *
+     * <p>Read-only, and a pull rather than a subscription: nothing in MCP pushes a new coupon, so this is asked
+     * when a person asks. An unconnected account is told to connect rather than shown six empty lists.
+     */
+    public void showOverview(User user) {
+        long chatId = user.getTelegramChatId();
+        if (!silpoAuthService.isConnected(user.getId())) {
+            telegramOutboundService.sendMessage(
+                    chatId, "Спершу під'єднай акаунт «Сільпо» — без нього я не бачу ні бонусів, ні купонів.");
+            return;
+        }
+        telegramOutboundService.sendMessage(chatId, benefitsMessageService.overviewText(overview(user.getId())));
+    }
 
     /**
      * What could go on the cart in front of the household right now, plus the coupons worth mentioning beside it.
@@ -70,6 +105,135 @@ public class LoyaltyBenefitsService {
                 promoCode == null ? "none" : "present",
                 coupons.size());
         return benefits;
+    }
+
+    /**
+     * Everything the loyalty tools say about this household, for the «які в мене вигоди?» answer (task 79).
+     *
+     * <p>All seven reads, each independently defensive, and {@code anythingRead} to tell the two silences apart: an
+     * account that holds nothing and a server that answered nothing must never read the same way to a person
+     * deciding whether to go looking in the Silpo app.
+     *
+     * <p>Coupons get a second call each for their details, capped, because {@code canBeAppliedToOrder} is the only
+     * honest answer to «чи він спрацює» — the tool's own description says never to infer it from the toggle or the
+     * lifecycle state alone.
+     */
+    public BenefitsOverview overview(UUID userId) {
+        Optional<JsonNode> loyalty = read(userId, TOOL_LOYALTY_INFO, Map.of());
+        Optional<JsonNode> certificates = read(userId, TOOL_CERTIFICATES, Map.of());
+        Optional<JsonNode> promoCodes = read(userId, TOOL_PROMO_CODES, Map.of());
+        Optional<JsonNode> coupons = read(userId, TOOL_COUPONS, Map.of());
+        Optional<JsonNode> promos = read(userId, TOOL_PROMOS, Map.of());
+        Optional<JsonNode> premium = read(userId, TOOL_PREMIUM, Map.of());
+
+        boolean anythingRead = Stream.of(loyalty, certificates, promoCodes, coupons, promos, premium)
+                .anyMatch(Optional::isPresent);
+        if (!anythingRead) {
+            log.info("not one loyalty tool answered for user {}", userId);
+            return BenefitsOverview.unreadable();
+        }
+
+        List<LoyaltyCoupon> withDetails = new ArrayList<>();
+        List<LoyaltyCoupon> plain =
+                coupons.map(LoyaltyBenefitsService::couponsOf).orElseGet(List::of);
+        for (int i = 0; i < plain.size(); i++) {
+            LoyaltyCoupon coupon = plain.get(i);
+            withDetails.add(i < COUPONS_WITH_DETAILS ? withDetails(userId, coupon) : coupon);
+        }
+
+        return new BenefitsOverview(
+                loyalty.flatMap(LoyaltyBenefitsService::bonusBalance).orElse(null),
+                certificates.map(LoyaltyBenefitsService::certificatesOf).orElseGet(List::of),
+                promoCodes.map(LoyaltyBenefitsService::promoCodesOf).orElseGet(List::of),
+                withDetails,
+                promos.map(LoyaltyBenefitsService::promoTitles).orElseGet(List::of),
+                premium.flatMap(node -> McpResponses.findString(node, McpResponses.SUMMARY))
+                        .orElse(null),
+                premium.map(LoyaltyBenefitsService::premiumLinks).orElseGet(List::of),
+                true);
+    }
+
+    /** One coupon plus whatever {@code silpo_get_coupon_details} adds; the coupon is kept either way. */
+    private LoyaltyCoupon withDetails(UUID userId, LoyaltyCoupon coupon) {
+        if (coupon.id() <= 0) {
+            return coupon;
+        }
+        Optional<JsonNode> details = read(userId, TOOL_COUPON_DETAILS, Map.of("businessCouponId", coupon.id()));
+        if (details.isEmpty()) {
+            return coupon;
+        }
+        JsonNode node = details.get();
+        return new LoyaltyCoupon(
+                coupon.id(),
+                coupon.title(),
+                coupon.rewardText(),
+                coupon.endDate(),
+                coupon.active(),
+                McpResponses.findNode(node, McpResponses.CAN_BE_APPLIED)
+                        .map(JsonNode::asBoolean)
+                        .orElse(coupon.canBeApplied()),
+                McpResponses.findString(node, McpResponses.LIMIT_TEXT).orElse(coupon.limitText()),
+                progressText(node));
+    }
+
+    /**
+     * «1200 з 2500 грн» when the coupon tracks an accumulation, null when it does not.
+     *
+     * <p>The numbers come already converted to the app's display scale, per the tool's description, so nothing here
+     * scales or rounds them a second time.
+     */
+    private static String progressText(JsonNode node) {
+        Optional<JsonNode> progress = McpResponses.findNode(node, McpResponses.PROGRESS);
+        if (progress.isEmpty() || progress.get().isNull()) {
+            return null;
+        }
+        JsonNode value = progress.get();
+        Optional<BigDecimal> current = McpResponses.findNumber(value, McpResponses.PROGRESS_CURRENT);
+        Optional<BigDecimal> target = McpResponses.findNumber(value, McpResponses.PROGRESS_TARGET);
+        if (current.isEmpty() || target.isEmpty()) {
+            return null;
+        }
+        String unit = McpResponses.findString(value, McpResponses.PROGRESS_UNIT).orElse("");
+        return "%s з %s %s"
+                .formatted(current.get().toPlainString(), target.get().toPlainString(), unit)
+                .trim();
+    }
+
+    private static Optional<BigDecimal> bonusBalance(JsonNode root) {
+        return McpResponses.findNode(root, McpResponses.LOYALTY_BALANCE)
+                .flatMap(balance -> McpResponses.findNumber(balance, McpResponses.BALANCE_TOTAL));
+    }
+
+    private static List<String> promoCodesOf(JsonNode root) {
+        List<String> codes = new ArrayList<>();
+        for (JsonNode node : McpResponses.findArray(root, McpResponses.PROMO_CODES)) {
+            if (node.isTextual()) {
+                codes.add(node.asText());
+            } else {
+                McpResponses.findString(node, McpResponses.PROMO_CODE).ifPresent(codes::add);
+            }
+        }
+        return codes;
+    }
+
+    private static List<String> promoTitles(JsonNode root) {
+        List<String> titles = new ArrayList<>();
+        for (JsonNode node : McpResponses.findArray(root, McpResponses.PROMOS)) {
+            if (node.isTextual()) {
+                titles.add(node.asText());
+            } else {
+                McpResponses.findString(node, McpResponses.COUPON_TITLE).ifPresent(titles::add);
+            }
+        }
+        return titles;
+    }
+
+    /** Silpo asks for both its links to be shown with the Premium status, whichever way that status went. */
+    private static List<String> premiumLinks(JsonNode root) {
+        List<String> links = new ArrayList<>();
+        McpResponses.findString(root, McpResponses.PREMIUM_WEB).ifPresent(links::add);
+        McpResponses.findString(root, McpResponses.PREMIUM_MOBILE).ifPresent(links::add);
+        return links;
     }
 
     /**

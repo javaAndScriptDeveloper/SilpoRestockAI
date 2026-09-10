@@ -42,6 +42,8 @@ public final class HelpContent {
     public static final String EXAMPLE_BLACKOUT = "— «Світло вимкнули» — їжа без плити й холодильника.";
     public static final String EXAMPLE_WEEKDAY = "— «Що їмо в середу?» — раціон по днях.";
     public static final String EXAMPLE_CALENDAR = "— «Підключи Google Календар» — вноситиму доставки в календар.";
+    public static final String EXAMPLE_BENEFITS = "— «Які в мене купони й бонуси?» — покажу баланс, сертифікати та "
+            + "промокоди (їх застосую сам при замовленні) і купони «Сільпо» (їх вмикають у застосунку).";
 
     private static final String GROUP = """
             Компанією: додай мене в груповий чат — зберу напої на всіх за спільною згодою. Кожен пише реплаєм, \
@@ -66,7 +68,8 @@ public final class HelpContent {
                     EXAMPLE_HANGOVER,
                     EXAMPLE_BLACKOUT,
                     EXAMPLE_WEEKDAY,
-                    EXAMPLE_CALENDAR)
+                    EXAMPLE_CALENDAR,
+                    EXAMPLE_BENEFITS)
             + "\n\n"
             + GROUP;
 

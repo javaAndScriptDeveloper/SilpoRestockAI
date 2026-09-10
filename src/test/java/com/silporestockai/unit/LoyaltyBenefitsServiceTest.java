@@ -48,7 +48,11 @@ class LoyaltyBenefitsServiceTest {
     @BeforeEach
     void setUp() {
         silpoMcpClient = mock(SilpoMcpClient.class);
-        service = new LoyaltyBenefitsService(silpoMcpClient);
+        service = new LoyaltyBenefitsService(
+                silpoMcpClient,
+                mock(com.silporestockai.service.SilpoAuthService.class),
+                new com.silporestockai.service.telegram.BenefitsMessageService(),
+                mock(com.silporestockai.service.telegram.TelegramOutboundService.class));
         answers("silpo_get_my_certificates", "{\"certificates\":[]}");
         answers("silpo_get_promo_codes", "{\"success\":true,\"promoCodes\":[],\"meta\":{\"total\":0}}");
         answers("silpo_get_my_coupons", "{\"success\":true,\"coupons\":[]}");
