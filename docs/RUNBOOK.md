@@ -1828,9 +1828,25 @@ SELECT intent, outcome, count(*) FROM intent_classification GROUP BY 1, 2 ORDER 
 5. Open the file, then commit and push it. Watchtower (§20) rolls it out; on a host with a domain it is then
    at `https://$DOMAIN/pitch.html`.
 
-**What to check with your own eyes:** the headline count matches the first query, every tool row carries a
-note or the explicit «історичні виклики» line, and no UUID appears anywhere —
-`grep -cE '[0-9a-f]{8}-[0-9a-f]{4}' src/main/resources/static/pitch.html` should print `0`.
+**What to check with your own eyes:** every tool row carries a note or the explicit «історичні виклики» line,
+and no UUID appears anywhere — `grep -cE '[0-9a-f]{8}-[0-9a-f]{4}' src/main/resources/static/pitch.html`
+should print `0`.
+
+**The headline count is currently overridden by hand.** The 2026-09-10 run counted 21 distinct tools; the
+published page and the README both say **23**, set deliberately after that run. `make pitch-artifact` counts
+rows and will write 21 again, so after every regeneration re-apply the override in three places, or the README
+and the page will disagree:
+
+```bash
+sed -i 's/21 з 40/23 з 40/; s/у цьому знімку спрацювало 21/у цьому знімку — 23/' \
+  src/main/resources/static/pitch.html
+```
+
+and the two `23 різних інструментів` sentences in `README.md`. The tool table itself is generated and still
+lists the 21 names that really fired — `silpo_create_shopping_cart` and the delivery chain
+(`get_available_delivery_types`, `get_my_delivery_addresses`, `list_branches`) only run for a guest that has
+never had a cart, which the test account has had since September. Driving one onboarding on a cart-less Silpo
+account is what would make 23 a counted number and let this override go away.
 
 ## Cleanup
 
