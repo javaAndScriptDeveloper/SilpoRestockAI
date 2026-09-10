@@ -337,7 +337,11 @@ public class CartBuildingService {
             "локшина",
             List.of("швидкого приготування", "з соусом"),
             "макарони",
-            List.of("швидкого приготування", "з соусом"));
+            List.of("швидкого приготування", "з соусом"),
+            // Live, session 25: «Капуста — 1 шт» on a recipe list bought Kyivkraut sauerkraut at ₴159 — Silpo
+            // ranks the jar above the head. A bare cabbage is the vegetable; a list that wants it pickled says so.
+            "капуста",
+            List.of("квашен", "маринован", "по-корейськ", "салат"));
 
     static List<String> variantsABareLineDoesNotMean(String asked) {
         String bare = asked.trim();

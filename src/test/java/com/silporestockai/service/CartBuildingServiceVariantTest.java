@@ -40,4 +40,11 @@ class CartBuildingServiceVariantTest {
     void bareNoodlesNeverMeanInstantOnes() {
         assertThat(CartBuildingService.variantsABareLineDoesNotMean("локшина")).contains("швидкого приготування");
     }
+
+    @Test
+    void aBareCabbageIsTheVegetableNotTheJar() {
+        assertThat(CartBuildingService.variantsABareLineDoesNotMean("капуста")).contains("квашен", "маринован");
+        assertThat(CartBuildingService.variantsABareLineDoesNotMean("капуста квашена"))
+                .isEmpty();
+    }
 }
