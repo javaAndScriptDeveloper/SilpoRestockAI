@@ -27,15 +27,35 @@ class ShoppingListPriceEstimateServiceTest {
     }
 
     @Test
-    void scalesABaselineLinePriceWhenTheUnitsMatch() {
-        // Last time: 2 л of milk for 80 грн. This week the list wants 3 л.
-        BasketItem lastTime = new BasketItem("p-milk", "Молоко", "л", new BigDecimal("2"), new BigDecimal("80.00"));
+    void multipliesABaselineUnitPriceByTheQuantityWhenTheUnitsMatch() {
+        // Last time: 2 л of milk at 40 грн per litre — Silpo's cart line carries the unit price, the same number
+        // the cart message multiplies. This week the list wants 3 л.
+        BasketItem lastTime = new BasketItem("p-milk", "Молоко", "л", new BigDecimal("2"), new BigDecimal("40.00"));
 
         PriceEstimate estimate =
                 ShoppingListPriceEstimateService.estimate(List.of(item("молоко", "3", "л")), List.of(lastTime));
 
         assertThat(estimate.total()).isEqualByComparingTo("120.00");
         assertThat(estimate.pricedCount()).isEqualTo(1);
+    }
+
+    @Test
+    void neverReadsAPerKilogramPriceAsTheCostOfTheWholeLine() {
+        // Live, 2026-09-11: 0.4 kg of salmon at ₴1399/kg in the baseline priced «Філе риби — 0.6 кг» at ₴2098 and
+        // half a kilo of beetroot at ₴14.99/kg priced a kilo at ₴29.98 — the whole week read ₴4902 for two adults.
+        BasketItem salmon = new BasketItem(
+                "p-salmon",
+                "Сьомга (лосось) філе охолоджене",
+                "кг",
+                new BigDecimal("0.4"),
+                new BigDecimal("1399"),
+                "Філе риби");
+        BasketItem beet = new BasketItem("p-beet", "Буряк", "кг", new BigDecimal("0.5"), new BigDecimal("14.99"));
+
+        PriceEstimate estimate = ShoppingListPriceEstimateService.estimate(
+                List.of(item("Філе риби", "0.6", "кг"), item("Буряк", "1", "кг")), List.of(salmon, beet));
+
+        assertThat(estimate.total()).isEqualByComparingTo("854.39");
     }
 
     @Test
@@ -67,13 +87,14 @@ class ShoppingListPriceEstimateServiceTest {
 
     @Test
     void pricesAListLineFromTheProductTheSameLineBoughtLastTime() {
+        // Two bottles at 37.00 each last time; a count answers with that line cost, not with 37 × the new count.
         BasketItem lastTime = new BasketItem(
-                "p-milk", "Молоко «Яготинське» 2,6% п/е", "шт", new BigDecimal("2"), new BigDecimal("74.00"), "молоко");
+                "p-milk", "Молоко «Яготинське» 2,6% п/е", "шт", new BigDecimal("2"), new BigDecimal("37.00"), "молоко");
 
         PriceEstimate estimate =
                 ShoppingListPriceEstimateService.estimate(List.of(item("Молоко", "1", "шт")), List.of(lastTime));
 
-        assertThat(estimate.total()).isEqualByComparingTo("37.00");
+        assertThat(estimate.total()).isEqualByComparingTo("74.00");
         assertThat(estimate.pricedCount()).isEqualTo(1);
     }
 
@@ -87,7 +108,7 @@ class ShoppingListPriceEstimateServiceTest {
                 "Картопля Сенсейшн універсальна, для смаження та варіння",
                 "кг",
                 new BigDecimal("2"),
-                new BigDecimal("47.98"));
+                new BigDecimal("23.99"));
 
         PriceEstimate estimate = ShoppingListPriceEstimateService.estimate(
                 List.of(item("Цибуля", "1", "кг"), item("Картопля", "1", "кг")), List.of(onion, potato));
@@ -149,8 +170,9 @@ class ShoppingListPriceEstimateServiceTest {
     }
 
     @Test
-    void stillScalesACountWhenTheHouseholdsOwnRequestIsWhatMatched() {
-        // The pairing was recorded when this very line was bought, so «шт» means the same thing on both sides.
+    void answersACountWithLastTimesLineCostEvenForTheSameProduct() {
+        // The pairing says this is the same product, but «2 шт» of bread against «1 шт» bought last time is still
+        // a count against a package count; what the household paid for the line is the honest nearest number.
         BasketItem bread = new BasketItem(
                 "p-bread",
                 "Хліб «Премія»® Фітнес тостовий",
@@ -162,7 +184,7 @@ class ShoppingListPriceEstimateServiceTest {
         PriceEstimate estimate =
                 ShoppingListPriceEstimateService.estimate(List.of(item("Хліб", "2", "шт")), List.of(bread));
 
-        assertThat(estimate.total()).isEqualByComparingTo("69.98");
+        assertThat(estimate.total()).isEqualByComparingTo("34.99");
     }
 
     private static ShoppingListItem item(String name, String quantity, String unit) {
