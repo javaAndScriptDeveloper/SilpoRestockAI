@@ -741,6 +741,36 @@ public class CartBuildingService {
         return updateCart(userId, cartId, Map.of("bonusRequested", bonuses));
     }
 
+    /**
+     * Puts a promo code on the cart (task 79).
+     *
+     * <p>The live {@code silpo_update_shopping_cart} schema carries {@code promoCode} — {@code string | null} —
+     * right beside {@code bonusRequested}, so this is a real application rather than a display of a code the
+     * household would have to retype in the Silpo app. Same best-effort contract as the bonuses: Silpo refusing a
+     * code costs a discount, and losing the order over it would cost far more.
+     */
+    public boolean applyPromoCode(UUID userId, String cartId, String promoCode) {
+        return updateCart(userId, cartId, Map.of("promoCode", promoCode));
+    }
+
+    /**
+     * What the cart costs right now, straight from Silpo.
+     *
+     * <p>Every benefit changes the amount, and {@code silpo_add_or_update_certificates} says in its own description
+     * to read the cart back and check whether the total moved. The confirmation message quotes this number, so the
+     * saving a household is told about is Silpo's arithmetic and not ours. Empty when the cart could not be read —
+     * that is a reason to stay quiet about the new total, never to fail the order.
+     */
+    public Optional<BigDecimal> readCartTotal(UUID userId, String cartId) {
+        try {
+            JsonNode cart = call(userId, TOOL_CART_BY_ID, Map.of("shoppingCartId", cartId));
+            return McpResponses.findNumber(cart, McpResponses.TOTAL);
+        } catch (RuntimeException e) {
+            log.warn("could not re-read cart {} after applying benefits: {}", cartId, e.getMessage());
+            return Optional.empty();
+        }
+    }
+
     /** One {@code silpo_update_shopping_cart} call: the cart's own required fields read back, plus {@code changes}. */
     private boolean updateCart(UUID userId, String cartId, Map<String, Object> changes) {
         try {
