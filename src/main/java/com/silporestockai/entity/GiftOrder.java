@@ -106,10 +106,20 @@ public class GiftOrder {
         return recipientUsername == null ? "друга" : "@" + recipientUsername;
     }
 
-    /** Whether this gift is still holding the household's only cart. */
+    /**
+     * Whether this gift is still holding the household's only cart.
+     *
+     * <p>The snapshot is the evidence, not the status. It exists from the moment the cart was repointed and
+     * nowhere else, so anything that got that far is holding the cart — including a gift that never reached a
+     * screen. Live on 2026-09-10 that was not a hypothetical: a ₴423 gift was refused by Silpo's ₴799 minimum
+     * before it could be presented, and a status-based check left the household's cart pointed at a friend's
+     * door with nothing on any path to put it back.
+     */
     public boolean holdsTheCart() {
-        return (status == GiftOrderStatus.CART_PRESENTED || status == GiftOrderStatus.CONFIRMED)
-                && ownDelivery != null
-                && !ownDelivery.isEmpty();
+        return ownDelivery != null
+                && !ownDelivery.isEmpty()
+                && status != GiftOrderStatus.CANCELLED
+                && status != GiftOrderStatus.EXPIRED
+                && status != GiftOrderStatus.UNREACHABLE;
     }
 }

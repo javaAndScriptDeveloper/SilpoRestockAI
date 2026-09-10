@@ -27,8 +27,13 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class GiftCartCustodyService {
 
+    /**
+     * Every state a repointed cart can be sitting in. {@code RESOLVED} belongs here because a build can fail
+     * after the address has moved — Silpo's ₴799 minimum refuses small carts outright — and that gift is holding
+     * the cart just as firmly as one waiting on a tap.
+     */
     private static final List<GiftOrderStatus> HOLDING =
-            List.of(GiftOrderStatus.CART_PRESENTED, GiftOrderStatus.CONFIRMED);
+            List.of(GiftOrderStatus.RESOLVED, GiftOrderStatus.CART_PRESENTED, GiftOrderStatus.CONFIRMED);
 
     private final GiftOrderRepository giftOrderRepository;
     private final CartBuildingService cartBuildingService;

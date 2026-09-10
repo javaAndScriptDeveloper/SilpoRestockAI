@@ -77,6 +77,22 @@ class GiftCartCustodyIntegrationTest extends AbstractIntegrationTest {
                 .isEqualTo(GiftOrderStatus.AWAITING_ADDRESS);
     }
 
+    /**
+     * Live on 2026-09-10: a ₴423 gift was refused by Silpo's ₴799 minimum after the cart had already been moved
+     * to the friend's branch, so the row never left {@code RESOLVED}. A status-based check called that "holding
+     * nothing" and left the household's cart pointed at somebody else's door with nothing to put it back.
+     */
+    @Test
+    void aGiftWhoseCartBuildFailedAfterTheMoveIsStillHoldingTheCart() {
+        UUID sender = senderHolding(9404L, GiftOrderStatus.RESOLVED, Map.of("deliveryType", "DeliveryHome"));
+
+        assertThat(giftCartCustodyService.releaseCartIfHeld(sender)).isTrue();
+        assertThat(giftOrderRepository.findAll())
+                .singleElement()
+                .extracting(GiftOrder::getStatus)
+                .isEqualTo(GiftOrderStatus.CANCELLED);
+    }
+
     @Test
     void aHouseholdWithNoGiftInFlightIsUntouched() {
         var user = userAccountService.findOrCreate(9403L);
