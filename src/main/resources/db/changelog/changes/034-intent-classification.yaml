@@ -1,0 +1,45 @@
+databaseChangeLog:
+  - changeSet:
+      id: 034-intent-classification
+      author: komora
+      comment: >-
+        Task 55: one row per intent classification, including the ones the model could not make. The pitch
+        artifact's intent distribution counts these rows — a distribution derived from customer_order would be
+        short by every intent that answers a question instead of building a cart.
+      changes:
+        - createTable:
+            tableName: intent_classification
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: intent
+                  type: varchar(64)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: outcome
+                  type: varchar(16)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: confidence
+                  type: double precision
+              - column:
+                  name: user_id
+                  type: uuid
+              - column:
+                  name: classified_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+        - createIndex:
+            tableName: intent_classification
+            indexName: idx_intent_classification_intent
+            columns:
+              - column:
+                  name: intent

@@ -5,6 +5,7 @@ import com.silporestockai.client.stt.SpeechToTextClient;
 import com.silporestockai.entity.MealPlan;
 import com.silporestockai.entity.ShoppingListItem;
 import com.silporestockai.entity.User;
+import com.silporestockai.model.IntentClassifiedEvent;
 import com.silporestockai.model.OrderTrigger;
 import com.silporestockai.service.telegram.HelpContent;
 import com.silporestockai.service.telegram.TelegramOutboundService;
@@ -16,6 +17,7 @@ import java.util.List;
 import java.util.Locale;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
 
@@ -53,6 +55,7 @@ public class IntentRouterService {
     private final DishRequestService dishRequestService;
     private final LoyaltyBenefitsService loyaltyBenefitsService;
     private final ObservabilityService observabilityService;
+    private final ApplicationEventPublisher eventPublisher;
     private final String systemPrompt;
 
     public IntentRouterService(
@@ -74,6 +77,7 @@ public class IntentRouterService {
             DishRequestService dishRequestService,
             LoyaltyBenefitsService loyaltyBenefitsService,
             ObservabilityService observabilityService,
+            ApplicationEventPublisher eventPublisher,
             @Value("classpath:prompts/intent-router-system.txt") Resource systemPromptResource) {
         this.claudeApiClient = claudeApiClient;
         this.speechToTextClient = speechToTextClient;
@@ -93,6 +97,7 @@ public class IntentRouterService {
         this.dishRequestService = dishRequestService;
         this.loyaltyBenefitsService = loyaltyBenefitsService;
         this.observabilityService = observabilityService;
+        this.eventPublisher = eventPublisher;
         this.systemPrompt = read(systemPromptResource);
     }
 
@@ -181,6 +186,7 @@ public class IntentRouterService {
         } catch (RuntimeException e) {
             log.warn("could not classify intent for text", e);
             observabilityService.recordIntent("failed");
+            record(IntentLogService.FAILED, IntentLogService.FAILED, null, user, receivedAt);
             return false;
         }
         IntentType intent = parse(classified.intent());
@@ -188,14 +194,31 @@ public class IntentRouterService {
             // Deliberately no per-intent tag: which intents fire is task 55's artefact, a plain list rather than a
             // Grafana panel, and keeping IntentType private is what stops the two from drifting into each other.
             observabilityService.recordIntent("unclassified");
+            record(
+                    IntentLogService.UNCLASSIFIED,
+                    IntentLogService.UNCLASSIFIED,
+                    classified.confidence(),
+                    user,
+                    receivedAt);
             return false;
         }
         if (unlessIntents.contains(intent.name())) {
+            // Not recorded: the classification worked and the intent is real. Who declined to consume it is a fact
+            // about the open check-in, not about the router's reach, and task 55's page is about the reach.
             return false;
         }
         observabilityService.recordIntent("routed");
+        record(intent.name(), IntentLogService.ROUTED, classified.confidence(), user, receivedAt);
         dispatch(user, text, classified, intent, receivedAt);
         return true;
+    }
+
+    /**
+     * One row in task 55's evidence table. Published rather than saved here: the classification is a fact about
+     * the conversation, and who writes it down is not this service's business.
+     */
+    private void record(String intent, String outcome, Double confidence, User user, Instant at) {
+        eventPublisher.publishEvent(new IntentClassifiedEvent(intent, outcome, confidence, user.getId(), at));
     }
 
     /** The ways a person says «stop preferring Ukrainian producers»; anything else under the intent turns it on. */
