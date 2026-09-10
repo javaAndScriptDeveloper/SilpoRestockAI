@@ -112,6 +112,35 @@ public class UserProfile {
     @Column(name = "capability_reveal_sent_at")
     private Instant capabilityRevealSentAt;
 
+    /** Where a friend's gift may be delivered (task 81). Null unless this household opted in. */
+    @Column(name = "gift_delivery_address", length = 512)
+    private String giftDeliveryAddress;
+
+    /** The number a courier delivering that gift should call. Stored with the address, never separately. */
+    @Column(name = "gift_delivery_phone", length = 32)
+    private String giftDeliveryPhone;
+
+    /**
+     * Whether a friend naming this household by {@code @nickname} may have a gift sent here without being asked
+     * (task 81). False for every profile that has not said otherwise, including every profile that existed
+     * before the column did.
+     */
+    @Column(name = "gift_address_shareable", nullable = false)
+    @Builder.Default
+    private Boolean giftAddressShareable = false;
+
+    /**
+     * Whether a gift can be sent here with no exchange at all.
+     *
+     * <p>The flag alone is not enough: an address cleared afterwards would otherwise resolve to nothing at the
+     * one moment it is needed, which is halfway through building somebody's cart.
+     */
+    public boolean acceptsGifts() {
+        return Boolean.TRUE.equals(giftAddressShareable)
+                && giftDeliveryAddress != null
+                && !giftDeliveryAddress.isBlank();
+    }
+
     /**
      * How this household should be planned for right now, which is not always how they said they cook (task 67).
      *
