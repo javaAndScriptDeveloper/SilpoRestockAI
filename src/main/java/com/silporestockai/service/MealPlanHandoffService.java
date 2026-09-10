@@ -56,6 +56,7 @@ public class MealPlanHandoffService {
     private final ShoppingListPriceEstimateService priceEstimateService;
     private final ShoppingListMessageService shoppingListMessageService;
     private final CapabilityRevealService capabilityRevealService;
+    private final BudgetWarningService budgetWarningService;
 
     /**
      * The listener itself does nothing but leave the publishing thread. Everything it would otherwise do lives in
@@ -86,9 +87,14 @@ public class MealPlanHandoffService {
                                 MealPlan plan = mealPlanService.generateWeeklyPlan(userId);
                                 List<ShoppingListItem> list =
                                         shoppingListService.deriveFromMealPlan(plan.getId(), plan.getSourceType());
+                                PriceEstimate estimate = priceEstimateService.estimate(userId, list);
                                 telegramOutboundService.sendMessage(
                                         user.getTelegramChatId(),
-                                        summarise(plan, list.size(), priceEstimateService.estimate(userId, list)));
+                                        // Task 66: the plan summary is the earliest place a sum is shown, so it is
+                                        // the earliest place a household can hear that the week is over budget —
+                                        // while there is still a whole list to edit rather than a cart to unpick.
+                                        budgetWarningService.appendTo(
+                                                summarise(plan, list.size(), estimate), userId, estimate.total()));
                                 // Never straight to a cart. Eighty-four bananas went through unseen once; the
                                 // list is shown and ordered only after somebody agrees to it.
                                 shoppingListBuilderService.present(user, list);

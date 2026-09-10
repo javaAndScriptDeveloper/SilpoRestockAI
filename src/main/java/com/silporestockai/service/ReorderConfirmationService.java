@@ -29,6 +29,7 @@ import com.silporestockai.repository.TrustLevelRepository;
 import com.silporestockai.service.telegram.CartMessageService;
 import com.silporestockai.service.telegram.ReorderMessageService;
 import com.silporestockai.service.telegram.TelegramOutboundService;
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.DayOfWeek;
 import java.time.Duration;
@@ -91,6 +92,7 @@ public class ReorderConfirmationService {
     private final TrustLevelRepository trustLevelRepository;
     private final ConversationStateService conversationStateService;
     private final ReorderMessageService reorderMessageService;
+    private final BudgetWarningService budgetWarningService;
     private final TelegramOutboundService telegramOutboundService;
     private final SilpoMcpClient silpoMcpClient;
     private final ApplicationEventPublisher events;
@@ -159,7 +161,7 @@ public class ReorderConfirmationService {
         state.put(KEY_DECISIONS, new LinkedHashMap<String, Object>());
         conversationStateService.save(chatId, ConversationFlow.REORDER_CONFIRMATION, STEP_AWAITING_DECISION, state);
 
-        send(chatId, order, slot, Map.of());
+        send(user, order, slot, Map.of());
         log.info("presented delta order {} to user {}", draft.getId(), user.getId());
     }
 
@@ -239,7 +241,7 @@ public class ReorderConfirmationService {
         context.put(KEY_DECISIONS, asStringKeys(decisions));
         conversationStateService.save(
                 user.getTelegramChatId(), ConversationFlow.REORDER_CONFIRMATION, STEP_AWAITING_DECISION, context);
-        send(user.getTelegramChatId(), delta, slotOf(state), decisions);
+        send(user, delta, slotOf(state), decisions);
     }
 
     private void pickSlot(
@@ -252,7 +254,7 @@ public class ReorderConfirmationService {
         context.put(KEY_SLOT, slots.get(index).id());
         conversationStateService.save(
                 user.getTelegramChatId(), ConversationFlow.REORDER_CONFIRMATION, STEP_AWAITING_DECISION, context);
-        send(user.getTelegramChatId(), delta, slots.get(index), decisions);
+        send(user, delta, slots.get(index), decisions);
     }
 
     /**
@@ -389,10 +391,14 @@ public class ReorderConfirmationService {
         trustLevelRepository.save(trust);
     }
 
-    private void send(long chatId, DeltaOrder order, OfferedSlot slot, Map<Integer, Boolean> decisions) {
+    private void send(User user, DeltaOrder order, OfferedSlot slot, Map<Integer, Boolean> decisions) {
+        // Task 66: the same comparison the first order gets. A top-up is usually far under a weekly budget and
+        // says nothing — which is the point: it speaks on the reorder that is not.
+        BigDecimal total = order.cart() == null ? null : order.cart().total();
         telegramOutboundService.sendMessageWithButtons(
-                chatId,
-                reorderMessageService.orderText(order, slot, decisions),
+                user.getTelegramChatId(),
+                budgetWarningService.appendTo(
+                        reorderMessageService.orderText(order, slot, decisions), user.getId(), total),
                 reorderMessageService.orderButtons(order, decisions));
     }
 

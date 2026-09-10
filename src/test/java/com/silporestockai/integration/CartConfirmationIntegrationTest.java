@@ -671,4 +671,62 @@ class CartConfirmationIntegrationTest extends AbstractIntegrationTest {
         assertThat(lastMessageText()).doesNotContain("Спробую ще раз трохи пізніше");
         assertThat(customerOrderRepository.findAll()).isEmpty();
     }
+
+    /**
+     * Task 66. The scripted cart is ₴73.50; a household that said ₴50 a week is ₴23.50 over, and hears so on the
+     * same message as the «Підтвердити» it does not block.
+     */
+    @Test
+    void aCartOverTheStatedWeeklyBudgetSaysByHowMuch() {
+        User user = onboardedUser();
+        setWeeklyBudget(user, new BigDecimal("50"));
+
+        cartConfirmationService.present(user, shoppingList());
+
+        assertThat(lastMessageText())
+                .contains("⚠ Це на 23.50 грн більше за твій тижневий бюджет (50 грн)")
+                .contains("Разом: 73.50 грн");
+        // Additive text only: the decision itself is untouched.
+        assertThat(TELEGRAM.sentMessages().getLast().path("reply_markup").toString())
+                .contains(CartMessageService.CALLBACK_CONFIRM);
+    }
+
+    /** The scripted ₴73.50 against the default ₴2500: no warning, and no «ти в межах бюджету» either. */
+    @Test
+    void aCartInsideTheBudgetSaysNothingAboutIt() {
+        cartConfirmationService.present(onboardedUser(), shoppingList());
+
+        assertThat(lastMessageText()).doesNotContain("бюджет");
+    }
+
+    /** An older profile, or one edited to drop the field: silence, not a comparison against nothing. */
+    @Test
+    void aProfileWithNoBudgetIsNotComparedAgainstOne() {
+        User user = onboardedUser();
+        setWeeklyBudget(user, null);
+
+        cartConfirmationService.present(user, shoppingList());
+
+        assertThat(lastMessageText()).contains("Разом: 73.50 грн").doesNotContain("бюджет");
+    }
+
+    /**
+     * Bonuses are still unspent on the cart the warning sits under, so the difference it names is not the sum that
+     * will be charged — and it says so rather than letting the household read it as final (tasks 78 and 79).
+     */
+    @Test
+    void aWarningOnACartWithBenefitsStillPendingSaysTheyWillLowerIt() {
+        User user = onboardedUser();
+        setWeeklyBudget(user, new BigDecimal("50"));
+
+        cartConfirmationService.present(user, shoppingList());
+
+        assertThat(lastMessageText()).contains("Частину покриють вигоди вище");
+    }
+
+    private void setWeeklyBudget(User user, BigDecimal budget) {
+        UserProfile profile = userProfileRepository.findByUserId(user.getId()).orElseThrow();
+        profile.setWeeklyBudget(budget);
+        userProfileRepository.save(profile);
+    }
 }

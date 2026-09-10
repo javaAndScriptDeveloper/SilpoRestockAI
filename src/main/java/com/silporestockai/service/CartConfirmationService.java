@@ -78,6 +78,7 @@ public class CartConfirmationService {
     private final LoyaltyBenefitsService loyaltyBenefitsService;
     private final InventoryTrendService inventoryTrendService;
     private final ObservabilityService observabilityService;
+    private final BudgetWarningService budgetWarningService;
     private final CustomerOrderRepository customerOrderRepository;
     private final BaselineBasketRepository baselineBasketRepository;
     private final ConversationStateService conversationStateService;
@@ -225,7 +226,11 @@ public class CartConfirmationService {
             boolean hasBaseline = cartBuildingService.hasBaseline(user.getId());
             telegramOutboundService.sendMessageWithButtons(
                     chatId,
-                    cartMessageService.belowMinimumText(summary, selectedSlot, type, hasBaseline, benefits),
+                    withBudgetWarning(
+                            cartMessageService.belowMinimumText(summary, selectedSlot, type, hasBaseline, benefits),
+                            user,
+                            summary,
+                            benefits),
                     cartMessageService.belowMinimumButtons(summary, hasBaseline));
             log.info(
                     "presented cart {} as draft order {} to user {}, {} short of the minimum order",
@@ -237,7 +242,8 @@ public class CartConfirmationService {
         }
         telegramOutboundService.sendMessageWithButtons(
                 chatId,
-                cartMessageService.cartText(summary, selectedSlot, type, benefits),
+                withBudgetWarning(
+                        cartMessageService.cartText(summary, selectedSlot, type, benefits), user, summary, benefits),
                 cartMessageService.cartButtons(summary, !slots.isEmpty(), benefits));
         log.info("presented cart {} as draft order {} to user {}", summary.cartId(), order.getId(), user.getId());
         return true;
@@ -288,13 +294,21 @@ public class CartConfirmationService {
             // The whole baseline was not enough. Nothing more to offer from here; the Silpo app is.
             telegramOutboundService.sendMessageWithButtons(
                     chatId,
-                    cartMessageService.belowMinimumText(topped, selectedSlot, order.getType(), false, benefits),
+                    withBudgetWarning(
+                            cartMessageService.belowMinimumText(topped, selectedSlot, order.getType(), false, benefits),
+                            user,
+                            topped,
+                            benefits),
                     cartMessageService.belowMinimumButtons(topped, false));
             return;
         }
         telegramOutboundService.sendMessageWithButtons(
                 chatId,
-                cartMessageService.cartText(topped, selectedSlot, order.getType(), benefits),
+                withBudgetWarning(
+                        cartMessageService.cartText(topped, selectedSlot, order.getType(), benefits),
+                        user,
+                        topped,
+                        benefits),
                 cartMessageService.cartButtons(topped, !slots.isEmpty(), benefits));
         log.info(
                 "topped cart {} up with {} baseline lines for user {}",
@@ -373,8 +387,28 @@ public class CartConfirmationService {
         CartBenefits benefits = benefitsOf(state);
         telegramOutboundService.sendMessageWithButtons(
                 user.getTelegramChatId(),
-                cartMessageService.cartText(summary, slots.get(index), order.getType(), benefits),
+                withBudgetWarning(
+                        cartMessageService.cartText(summary, slots.get(index), order.getType(), benefits),
+                        user,
+                        summary,
+                        benefits),
                 cartMessageService.cartButtons(summary, !slots.isEmpty(), benefits));
+    }
+
+    /**
+     * The cart message with task 66's budget line under it, when this household is over the budget it gave at
+     * onboarding.
+     *
+     * <p>Every render of a cart goes through here, the below-minimum one included: a household whose weekly budget
+     * is under Silpo's ₴799 delivery minimum is exactly the one that most needs to hear the two numbers said out
+     * loud, and it is the only case where a cart can be both below the minimum and over budget at once.
+     *
+     * <p>Benefits still pending are named to the warning, so the difference is not presented as final on the one
+     * screen where a button is about to reduce it (tasks 78 and 79).
+     */
+    private String withBudgetWarning(String message, User user, CartSummary summary, CartBenefits benefits) {
+        boolean benefitsPending = (benefits != null && benefits.hasApplicable()) || summary.bonusDecisionPending();
+        return budgetWarningService.appendTo(message, user.getId(), summary.total(), benefitsPending);
     }
 
     private static List<OfferedSlot> slotsOf(ConversationState state) {
@@ -394,9 +428,14 @@ public class CartConfirmationService {
         if (summary.belowMinimumOrder()) {
             // A confirm tap on a keyboard that never had one: there is no checkout link to hand over yet.
             boolean hasBaseline = cartBuildingService.hasBaseline(user.getId());
+            CartBenefits pending = benefitsOf(state);
             telegramOutboundService.sendMessageWithButtons(
                     chatId,
-                    cartMessageService.belowMinimumText(summary, null, order.getType(), hasBaseline, benefitsOf(state)),
+                    withBudgetWarning(
+                            cartMessageService.belowMinimumText(summary, null, order.getType(), hasBaseline, pending),
+                            user,
+                            summary,
+                            pending),
                     cartMessageService.belowMinimumButtons(summary, hasBaseline));
             return;
         }

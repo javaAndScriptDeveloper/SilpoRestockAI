@@ -8,6 +8,7 @@ import com.silporestockai.entity.User;
 import com.silporestockai.model.ConversationFlow;
 import com.silporestockai.model.OrderType;
 import com.silporestockai.model.PlannedIngredient;
+import com.silporestockai.model.PriceEstimate;
 import com.silporestockai.model.ShoppingListDelta;
 import com.silporestockai.model.ShoppingListDraft;
 import com.silporestockai.model.TelegramIncomingUpdate;
@@ -70,6 +71,7 @@ public class ShoppingListBuilderService {
     private final ShoppingListMessageService messages;
     private final TelegramOutboundService telegramOutboundService;
     private final ShoppingListPriceEstimateService priceEstimateService;
+    private final BudgetWarningService budgetWarningService;
     private final String systemPrompt;
 
     public ShoppingListBuilderService(
@@ -83,6 +85,7 @@ public class ShoppingListBuilderService {
             ShoppingListMessageService messages,
             TelegramOutboundService telegramOutboundService,
             ShoppingListPriceEstimateService priceEstimateService,
+            BudgetWarningService budgetWarningService,
             @Value("classpath:prompts/shopping-list-system.txt") Resource systemPromptResource) {
         this.claudeApiClient = claudeApiClient;
         this.shoppingListService = shoppingListService;
@@ -94,6 +97,7 @@ public class ShoppingListBuilderService {
         this.messages = messages;
         this.telegramOutboundService = telegramOutboundService;
         this.priceEstimateService = priceEstimateService;
+        this.budgetWarningService = budgetWarningService;
         this.systemPrompt = read(systemPromptResource);
     }
 
@@ -136,9 +140,12 @@ public class ShoppingListBuilderService {
             return;
         }
         makeActive(user, items);
+        PriceEstimate estimate = priceEstimateService.estimate(user.getId(), items);
         telegramOutboundService.sendMessageWithButtons(
                 chatId,
-                messages.listText(items, priceEstimateService.estimate(user.getId(), items)),
+                // Task 66: said under the list rather than under the cart, because this is the screen with
+                // «Змінити» on it — a warning is worth more where something can still be taken out.
+                budgetWarningService.appendTo(messages.listText(items, estimate), user.getId(), estimate.total()),
                 messages.listButtons());
     }
 
