@@ -436,6 +436,14 @@ public class TelegramRoutingService {
             return;
         }
         if (incoming instanceof TelegramIncomingUpdate.ButtonTap tap
+                && CalendarIntegrationService.CALLBACK_LATER.equals(tap.data())) {
+            // Task 71's «Пізніше». Global, like every self-contained tap here: the offer is sent while the list
+            // flow is the active one, and it must stay answerable after the household has moved on from it.
+            telegramOutboundService.answerCallback(tap.callbackQueryId());
+            calendarIntegrationService.declineConnection(user);
+            return;
+        }
+        if (incoming instanceof TelegramIncomingUpdate.ButtonTap tap
                 && MealPlanHandoffService.CALLBACK_RETRY.equals(tap.data())) {
             telegramOutboundService.answerCallback(tap.callbackQueryId());
             mealPlanHandoffService.retry(user);

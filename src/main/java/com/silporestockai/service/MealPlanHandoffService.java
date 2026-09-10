@@ -56,6 +56,7 @@ public class MealPlanHandoffService {
     private final ShoppingListPriceEstimateService priceEstimateService;
     private final ShoppingListMessageService shoppingListMessageService;
     private final CapabilityRevealService capabilityRevealService;
+    private final CalendarIntegrationService calendarIntegrationService;
     private final BudgetWarningService budgetWarningService;
 
     /**
@@ -109,6 +110,10 @@ public class MealPlanHandoffService {
                                         List.of(TelegramButton.callback("Спробувати ще раз", CALLBACK_RETRY)));
                                 return;
                             }
+                            // Task 71: the last moment at which connecting a calendar still catches this
+                            // household's *first* delivery — the list is on screen and no cart has been confirmed.
+                            // Either answer leaves «Замовити» exactly where it was.
+                            calendarIntegrationService.offerDuringOnboarding(user);
                             // Task 70: the moment free text starts being useful is the moment a first plan exists,
                             // so the teaser goes out here — once per household, and never on the failure path.
                             // Outside the try on purpose: a Telegram hiccup on the teaser must not be reported as
