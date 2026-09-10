@@ -148,7 +148,7 @@ public class AdHocOrderService {
                 .filter(line -> !line.alsoKnownAs().isEmpty())
                 .collect(Collectors.toMap(HangoverLine::name, HangoverLine::alsoKnownAs));
         cartConfirmationService.present(
-                user, items, OrderType.AD_HOC, false, trigger, new MatchingHints(personsWords, alsoSearch));
+                user, items, OrderType.AD_HOC, false, trigger, new MatchingHints(personsWords, alsoSearch, false));
         log.info("presented a hangover-relief cart to user {}", user.getId());
     }
 

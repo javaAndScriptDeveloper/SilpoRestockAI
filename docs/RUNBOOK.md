@@ -708,6 +708,33 @@ a profile deleted this way starts over; a profile merely edited does not.
 | Tap «🧾 Анкета», change one answer, tap «Так, оновити» | A second plan and list arrive; the teaser does not, and `capability_reveal_sent_at` keeps its original value |
 | Tap «❓ Інструкція» | The full instruction, byte-for-byte as before task 70 — five of its example lines are the same constants the teaser renders (`HelpContent`), so drift between them is not possible |
 
+### Task 73: verify a blackout cart holds nothing that needs a fridge
+
+Drive it with the sentence, not the command — «світло вимкнули» goes through `IntentRouterService`, which
+is the path the bug was found on; `/blackout` skips that classification.
+
+| Do this | Expect |
+|---|---|
+| Send «світло вимкнули» | Six lines and no more: water, tinned fish, bread, biscuits, juice, pâté |
+| Read every line | Nothing a fridge would hold — no cheese, no sliced ham, no dairy, nothing «охолоджений» or «заморожений» |
+| `grep 'it needs a fridge' logs/app.log` | Any drop names a genuinely chilled product. A loaf, a syrup or a sunflower oil in that list is a false positive in `CartBuildingService.needsAFridge` |
+| Read the total | A few hundred hryvnia, with the shortfall against ₴799 stated and the top-up offered — not a weekly shop |
+
+**Measured live on 2026-09-10** (branch `1edddb40-e664-609c-a1a7-f9004aa8afa6`), before and after:
+
+| | Before | After |
+|---|---|---|
+| Lines | 11 | 6 |
+| Goods total | ₴778.77 | ₴388.91 |
+| Needs a fridge | Сир Spomlek «Радамер» ₴84.90, Шинка Алан ₴69.99 | none |
+| The rest | + Горіх волоський ₴129.00, Банан ₴85.99, Яблуко ₴29.99 | Паштет Podravka 2×₴72.49, Тунець «Повна Чаша» 2×₴61.49, Вода «Природне джерело» 2×₴15.99, Хліб «Київхліб» «Тост» ₴31.99, Печиво Super Kontik ₴28.99, Сік Jaffa ₴27.99 |
+
+Two things that run only shows up live, both fixed: Silpo's search is a plain text match, so a line
+narrowed to «паштет консервований» returned nothing and the rescue pass bought a ₴99 tin where the plain
+«паштет» shelf has one at ₴72.49 — keep blackout lines one plain word each. And the fridge markers match
+the product name's **first word**, because matching anywhere dropped «Хліб «Київхліб» британський світлий з
+молоком нарізаний» as dairy.
+
 ---
 
 ## 8. The scheduled check-in
@@ -956,9 +983,12 @@ to a document.
 
 **Send:** `/blackout`
 
-**Expect:** «Збираю щось на поїсти без плити й холодильника.» then a small cart — ready meals, tinned
-fish, pâté, bread, nuts, biscuits, juice, water — with the same confirm/cancel buttons as any other
-cart.
+**Expect:** «Збираю щось на поїсти без плити й холодильника.» then a six-line cart — water, juice, bread,
+tinned fish, tinned pâté, biscuits — with the same confirm/cancel buttons as any other cart.
+
+The cart is expected to come back **under Silpo's ₴799 minimum**, with the shortfall named and the
+«Докласти з мого набору» button offered. That is the designed outcome (task 73), not a bug: an emergency
+order is small, and the threshold is the shop's rule to state rather than the agent's to pad around.
 
 **Verify:**
 
@@ -974,8 +1004,13 @@ SELECT count(*) FROM baseline_basket;   -- unchanged from before /blackout
 
 An emergency lunch is explicitly not evidence about what the household normally eats.
 
-**Judge the results:** read the item list. It should be genuinely no-cook food. If Silpo's catalogue
-answers a query badly, the fix is the curated list in `BlackoutModeService`, not a smarter inference.
+**Judge the results:** read the item list. It should be genuinely no-cook food, and **not one line may be
+something that needs a fridge** — no cheese, no ham or other sliced deli meat, no dairy, nothing frozen or
+«охолоджений». That is enforced on the candidate pool (`CartBuildingService.needsAFridge`, reached through
+`MatchingHints.withoutAFridge()`), so a chilled product in the cart means the marker list has a gap, not
+that the matcher chose badly. Each drop is logged as `dropping «…» as a candidate for «…»: it needs a
+fridge`. If Silpo's catalogue answers a query badly in some other way, the fix is the curated list in
+`BlackoutModeService`, not a smarter inference.
 
 ---
 

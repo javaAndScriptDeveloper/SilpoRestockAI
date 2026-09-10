@@ -18,12 +18,16 @@ import java.util.Map;
  *       charcoal tablets, only a ₴464 imported supplement called «Активоване вугілля», while Атоксіл sits on the
  *       same shelf at ₴119. A line bound to one name buys that name at whatever it costs; a line searched under
  *       every name of its need buys the cheapest thing that actually serves it.
+ *   <li>{@code noColdChain} — this household has no working refrigerator (task 73). Not a preference the
+ *       matcher weighs against price: a chilled product never reaches the candidate pool at all, because a
+ *       mode whose whole promise is «нічого не треба готувати й нічого не треба тримати в холоді» cannot keep
+ *       the second half of it by asking a model nicely. See {@code CartBuildingService.needsAFridge}.
  * </ul>
  */
-public record MatchingHints(String personsWords, Map<String, List<String>> alsoSearch) {
+public record MatchingHints(String personsWords, Map<String, List<String>> alsoSearch, boolean noColdChain) {
 
     /** Nothing known: a weekly plan, a baseline reorder — every line is exactly its own name. */
-    public static final MatchingHints NONE = new MatchingHints(null, Map.of());
+    public static final MatchingHints NONE = new MatchingHints(null, Map.of(), false);
 
     public MatchingHints {
         alsoSearch = alsoSearch == null ? Map.of() : Map.copyOf(alsoSearch);
@@ -31,7 +35,12 @@ public record MatchingHints(String personsWords, Map<String, List<String>> alsoS
 
     /** Only the person's own sentence, for a cart whose lines already say what to search for. */
     public static MatchingHints ofWords(String personsWords) {
-        return new MatchingHints(personsWords, Map.of());
+        return new MatchingHints(personsWords, Map.of(), false);
+    }
+
+    /** A cart for a household with the power off: nothing in it may need a fridge or a freezer. */
+    public static MatchingHints withoutAFridge() {
+        return new MatchingHints(null, Map.of(), true);
     }
 
     /** The other names to search this line's need under, or empty — never null. */

@@ -140,14 +140,95 @@ public class CartBuildingService {
             "сковорід");
 
     /**
+     * Name fragments that mark a product as one a household with no electricity cannot keep.
+     *
+     * <p>Task 73's live repro: «світло вимкнули» came back with Сир Spomlek «Радамер» at ₴84.90 and Шинка Алан
+     * at ₴69.99 in the bag. Both were asked for by name by the curated list of the day, and that list is fixed —
+     * but a shelf-stable line reaches a chilled shelf all the same, because «паштет» has a refrigerated aisle and
+     * so does «сік». A mode whose promise is that nothing in the bag needs cold cannot keep it by asking the
+     * matcher nicely, so these are a floor under the pool exactly like {@link #NOT_GROCERIES_FOR_PEOPLE}: a
+     * refrigerated candidate the matcher never sees is one it can never pick.
+     *
+     * <p>By name, because the live catalog offers nothing else to go on — a product from
+     * {@code silpo_find_products_batch} carries {@code name}, {@code slug}, {@code price}, {@code oldPrice},
+     * {@code stock}, {@code available}, {@code weighted}, {@code step}, {@code displayRatio} and ids, and not one
+     * field about storage, category or temperature (verified live, 2026-09-10).
+     *
+     * <p>Matched against the <em>first word</em> of the product name, because that is where Silpo puts the
+     * category: «Сир Spomlek «Радамер» нарізка», «Шинка Алан Куряча в/к», «Молоко Яготинське 2.6%». Anywhere in
+     * the name is too greedy and was measured to be: a live run dropped «Хліб «Київхліб» британський світлий з
+     * молоком нарізаний» — a loaf of bread — because «молоком» is in it. Stems rather than whole words, because
+     * Ukrainian declines: «ковбас» covers ковбаса/ковбаси/ковбасні, and «сир» has to reach «сирок».
+     */
+    private static final List<String> COLD_SHELF_CATEGORIES = List.of(
+            "сир",
+            "шинка",
+            "ковбас",
+            "сосиск",
+            "сардельк",
+            "салямі",
+            "молоко",
+            "кефір",
+            "йогурт",
+            "ряжанк",
+            "сметан",
+            "вершки",
+            "творог",
+            "морозиво",
+            "пельмен",
+            "вареник",
+            "напівфабрикат");
+
+    /**
+     * First words that begin like a {@link #COLD_SHELF_CATEGORIES} stem and are not that category at all. «Сироп»
+     * is a bottle of syrup, not a cheese; «масло» is the ambiguous one and is decided below rather than here,
+     * since «Масло вершкове Селянське» and «Масло соняшникове» differ only past the first word.
+     */
+    private static final List<String> NOT_A_COLD_SHELF_AFTER_ALL = List.of("сироп");
+
+    /**
+     * Storage said outright, wherever it appears in the name — «Салат Олів'є ваговий, охолоджений» leads with a
+     * category that is not cold on its own, and a freezer with no power is a fridge with no power, only worse.
+     */
+    private static final List<String> KEPT_COLD_ANYWHERE = List.of("охолодж", "заморож");
+
+    /**
+     * Whether this product has to be kept cold, judged by its name. See {@link #COLD_SHELF_CATEGORIES}.
+     *
+     * <p>Public because the blackout tests read it: what the mode promises and what the pool refuses have to be
+     * the same sentence, and a test that restates the list would let the two drift apart silently.
+     */
+    public static boolean needsAFridge(String productName) {
+        String name = productName == null ? "" : productName.trim().toLowerCase(Locale.ROOT);
+        if (KEPT_COLD_ANYWHERE.stream().anyMatch(name::contains)) {
+            return true;
+        }
+        String category = name.split("[\\s,.]+", 2)[0];
+        if (NOT_A_COLD_SHELF_AFTER_ALL.stream().anyMatch(category::startsWith)) {
+            return false;
+        }
+        // The one category the first word cannot settle: butter is a fridge, sunflower oil is a shelf, and both
+        // are «масло» until the second word.
+        if (category.startsWith("масло")) {
+            return name.contains("вершков");
+        }
+        return COLD_SHELF_CATEGORIES.stream().anyMatch(category::startsWith);
+    }
+
+    /**
      * {@link #availableOnly}, minus the hits that are obviously not food for people (see the list above), minus
-     * the ones the branch cannot cover in the asked amount.
+     * the ones the branch cannot cover in the asked amount, minus — for a household with no power — everything
+     * that needs a fridge.
      *
      * <p>The stock rule is deterministic on purpose: the matcher was told to avoid short stock and still took
      * «Банан» at 0.4 kg for a 1 kg line («хоча запасу мало»), and Silpo then refused the whole cart with
      * {@code product.offer.stock.max}. A candidate that would be refused is not a candidate.
+     *
+     * <p>The cold-chain rule has no «unless the line asked for it» escape, unlike the pet-food one: under that
+     * flag there is no working fridge in the household, so a line that asks for cheese is a line that cannot be
+     * filled, and saying so is the honest answer.
      */
-    private static List<JsonNode> plausibleFor(ShoppingListItem item, List<JsonNode> candidates) {
+    private static List<JsonNode> plausibleFor(ShoppingListItem item, List<JsonNode> candidates, boolean noColdChain) {
         String requestedName = item.getName();
         String asked = requestedName == null ? "" : requestedName.toLowerCase(Locale.ROOT);
         List<String> markers = NOT_GROCERIES_FOR_PEOPLE.stream()
@@ -161,6 +242,10 @@ public class CartBuildingService {
                     .toLowerCase(Locale.ROOT);
             if (markers.stream().anyMatch(name::contains)) {
                 log.debug("dropping «{}» as a candidate for «{}»: not groceries for people", name, requestedName);
+                continue;
+            }
+            if (noColdChain && needsAFridge(name)) {
+                log.info("dropping «{}» as a candidate for «{}»: it needs a fridge", name, requestedName);
                 continue;
             }
             if (variantMarkers.stream().anyMatch(name::contains)) {
@@ -267,12 +352,15 @@ public class CartBuildingService {
      * this list once.
      */
     private static List<JsonNode> candidatesUnder(
-            ShoppingListItem item, List<String> names, Map<String, List<JsonNode>> productsByQuery) {
+            ShoppingListItem item,
+            List<String> names,
+            Map<String, List<JsonNode>> productsByQuery,
+            boolean noColdChain) {
         List<JsonNode> union = new ArrayList<>();
         List<String> seen = new ArrayList<>();
         for (String name : names) {
-            for (JsonNode product :
-                    plausibleFor(item, productsByQuery.getOrDefault(name.toLowerCase(Locale.ROOT), List.of()))) {
+            for (JsonNode product : plausibleFor(
+                    item, productsByQuery.getOrDefault(name.toLowerCase(Locale.ROOT), List.of()), noColdChain)) {
                 String id = McpResponses.findString(product, McpResponses.PRODUCT_ID)
                         .orElse(null);
                 if (id == null || !seen.contains(id)) {
@@ -1119,7 +1207,7 @@ public class CartBuildingService {
                     .map(item -> {
                         List<String> names = new ArrayList<>(List.of(item.getName()));
                         names.addAll(hints.alsoSearchFor(item.getName()));
-                        return candidatesUnder(item, names, productsByQuery);
+                        return candidatesUnder(item, names, productsByQuery, hints.noColdChain());
                     })
                     .toList();
             for (int i = 0; i < toMatch.size(); i++) {
@@ -1276,7 +1364,7 @@ public class CartBuildingService {
         List<List<JsonNode>> candidatesFor = new ArrayList<>();
         for (Map.Entry<Integer, List<String>> entry : alternatives.entrySet()) {
             ShoppingListItem item = stillMissing.get(entry.getKey());
-            List<JsonNode> union = candidatesUnder(item, entry.getValue(), productsByQuery);
+            List<JsonNode> union = candidatesUnder(item, entry.getValue(), productsByQuery, hints.noColdChain());
             if (!union.isEmpty()) {
                 toMatch.add(item);
                 candidatesFor.add(union);

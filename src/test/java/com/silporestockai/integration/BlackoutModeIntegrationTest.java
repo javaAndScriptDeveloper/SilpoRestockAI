@@ -19,6 +19,7 @@ import com.silporestockai.repository.CustomerOrderRepository;
 import com.silporestockai.repository.SilpoOAuthTokenRepository;
 import com.silporestockai.repository.UserProfileRepository;
 import com.silporestockai.repository.UserRepository;
+import com.silporestockai.service.CartBuildingService;
 import com.silporestockai.service.UserAccountService;
 import com.silporestockai.service.telegram.CartMessageService;
 import com.silporestockai.support.StubMcpServer;
@@ -188,9 +189,14 @@ class BlackoutModeIntegrationTest extends AbstractIntegrationTest {
         JsonNode search = MCP.callArguments("silpo_find_products_batch").getFirst();
         List<String> searched = new ArrayList<>();
         search.path("products").forEach(term -> searched.add(term.asText()));
-        assertThat(searched).contains("консерви рибні", "вода питна негазована", "хліб", "сир нарізаний");
-        // Nothing that has to be cooked or kept cold.
+        assertThat(searched)
+                .containsExactlyInAnyOrder(
+                        "вода питна негазована", "сік", "хліб", "консерви рибні", "паштет", "печиво");
+        // Task 73's live repro: sliced cheese and sliced ham were in the bag of a household with no power.
+        assertThat(searched).doesNotContain("сир нарізаний", "шинка нарізана");
+        // Nothing that has to be cooked or kept cold — the same rule the candidate pool enforces.
         assertThat(searched).doesNotContain("пельмені", "молоко", "м'ясо");
+        assertThat(searched).noneMatch(CartBuildingService::needsAFridge);
     }
 
     @Test
