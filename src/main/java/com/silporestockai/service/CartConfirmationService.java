@@ -7,6 +7,7 @@ import com.silporestockai.entity.CustomerOrder;
 import com.silporestockai.entity.ShoppingListItem;
 import com.silporestockai.entity.User;
 import com.silporestockai.exception.CartBuildException;
+import com.silporestockai.exception.DeliverySlotUnavailableException;
 import com.silporestockai.exception.NoSilpoDeliveryAddressException;
 import com.silporestockai.model.AppliedBenefits;
 import com.silporestockai.model.CartBenefits;
@@ -146,6 +147,16 @@ public class CartConfirmationService {
                     chatId,
                     "У «Сільпо» немає збереженої адреси доставки, тому я не можу створити кошик. Додай адресу "
                             + "в застосунку «Сільпо» (Профіль → Мої адреси доставки) і напиши мені ще раз.");
+            return false;
+        } catch (DeliverySlotUnavailableException e) {
+            // Task 76: its own message, because it is the one refusal nothing about the list would fix — and the
+            // slot was already re-picked once by the time this is thrown. «Виправ список» here was a dead end.
+            log.error("no delivery slot left to build a cart for user {}", user.getId(), e);
+            observabilityService.recordFailureMessage("cart_build", "no_slot");
+            telegramOutboundService.sendMessage(
+                    chatId,
+                    "Немає доступних слотів доставки найближчим часом — «Сільпо» не пропонує жодного вікна на цю "
+                            + "адресу. Спробуй трохи пізніше, список я зберіг.");
             return false;
         } catch (CartBuildException e) {
             log.error("could not build a cart for user {}", user.getId(), e);

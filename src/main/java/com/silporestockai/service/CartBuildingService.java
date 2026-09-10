@@ -9,6 +9,7 @@ import com.silporestockai.entity.PartnerPromotion;
 import com.silporestockai.entity.ShoppingListItem;
 import com.silporestockai.entity.UserProfile;
 import com.silporestockai.exception.CartBuildException;
+import com.silporestockai.exception.DeliverySlotUnavailableException;
 import com.silporestockai.exception.NoSilpoDeliveryAddressException;
 import com.silporestockai.exception.SilpoMcpException;
 import com.silporestockai.model.BasketItem;
@@ -1692,11 +1693,34 @@ public class CartBuildingService {
             List<String> promotedProductIds,
             List<String> skipped,
             List<String> toppedUp) {
-        return getVerifiedCart(userId, context, deliverySlot, unresolved, promotedProductIds, skipped, toppedUp, false);
+        return getVerifiedCart(
+                userId, context, deliverySlot, unresolved, promotedProductIds, skipped, toppedUp, Recovered.NOTHING);
     }
 
     /**
-     * The one Silpo refusal the cart can fix by itself is stock. The search prefilter drops a candidate the branch
+     * What this read has already tried to fix, so that neither repair is attempted twice on the same cart. Both
+     * are once-only for the same reason: a second refusal of a repair Silpo just accepted is not a race any more,
+     * it is a disagreement, and chasing it would spend a person's wait on a loop.
+     *
+     * @param slot whether the delivery window was re-picked and booked (task 76) — the cart message says so
+     */
+    private record Recovered(boolean stock, boolean slot) {
+
+        private static final Recovered NOTHING = new Recovered(false, false);
+
+        private Recovered withStock() {
+            return new Recovered(true, slot);
+        }
+
+        private Recovered withSlot() {
+            return new Recovered(stock, true);
+        }
+    }
+
+    /**
+     * The two Silpo refusals the cart can fix by itself: stock, and a delivery window that has gone stale.
+     *
+     * <p>The stock one. The search prefilter drops a candidate the branch The search prefilter drops a candidate the branch
      * is short of, but a line that never went through a search — a baseline line in a reorder or a top-up, a
      * pre-resolved product id — arrives with no stock figure at all, and Silpo answers the whole cart with
      * {@code product.offer.stock.max} and no checkout link. Live that turned a three-line reorder into «Сільпо
@@ -1712,9 +1736,9 @@ public class CartBuildingService {
             List<String> promotedProductIds,
             List<String> skipped,
             List<String> toppedUp,
-            boolean healedOnce) {
+            Recovered recovered) {
         JsonNode cart = call(userId, TOOL_CART_BY_ID, Map.of("shoppingCartId", context.cartId()));
-        if (!healedOnce) {
+        if (!recovered.stock()) {
             StockHealing healing = takeOutWhatTheBranchLacks(userId, context, cart);
             if (healing.changedCart()) {
                 java.util.Set<String> toppedUpNames = (toppedUp == null ? List.<String>of() : toppedUp)
@@ -1741,8 +1765,38 @@ public class CartBuildingService {
                         promotedProductIds,
                         skipped,
                         stillToppedUp,
-                        true);
+                        recovered.withStock());
             }
+        }
+
+        // Task 76: the window booked on this cart has gone. Time passes between picking a slot and building the
+        // cart — a «Змінити» round-trip is minutes of it — and Silpo hands the whole cart back with no checkout
+        // link. Nothing about the list is wrong, so nothing is asked of the person: a valid window is picked by
+        // the same rule as the first one, booked, and the cart read again. The old message for this said «Виправ
+        // список і спробуй ще раз», which sent people to edit a list that was already right.
+        if (!recovered.slot() && staleSlot(cart)) {
+            List<OfferedSlot> offered = offeredTimeSlots(userId, context);
+            if (offered.isEmpty()) {
+                log.warn("cart {} is on a stale slot and Silpo offers no other", context.cartId());
+                throw new DeliverySlotUnavailableException(
+                        "Silpo offered no delivery slot to move cart %s onto".formatted(context.cartId()),
+                        List.of("немає доступних слотів доставки"));
+            }
+            OfferedSlot fresh = offered.getFirst();
+            log.info(
+                    "the slot booked on cart {} is no longer available; re-picked {} and booking it",
+                    context.cartId(),
+                    fresh.id());
+            bookSlot(userId, context.cartId(), fresh);
+            return getVerifiedCart(
+                    userId,
+                    context.withSlot(fresh),
+                    fresh,
+                    unresolved,
+                    promotedProductIds,
+                    skipped,
+                    toppedUp,
+                    recovered.withSlot());
         }
 
         List<BasketItem> items = McpResponses.findArray(cart, McpResponses.ITEMS).stream()
@@ -1832,7 +1886,8 @@ public class CartBuildingService {
                     toppedUp == null ? List.of() : toppedUp,
                     savings,
                     goodsTotal,
-                    minimumOrder);
+                    minimumOrder,
+                    recovered.slot());
         }
         if (isBlank(checkoutWebLink) || isBlank(checkoutMobileLink)) {
             log.error(
@@ -1864,7 +1919,8 @@ public class CartBuildingService {
                 toppedUp == null ? List.of() : toppedUp,
                 savings,
                 goodsTotal,
-                null);
+                null,
+                recovered.slot());
         log.info(
                 "MCP <- cart {} verified: {} items, total {}, bonuses available {}, unresolved {}",
                 summary.cartId(),
@@ -1983,6 +2039,18 @@ public class CartBuildingService {
      * household will read them, and their bare catalog names for matching other lists.
      */
     private record StockHealing(boolean changedCart, List<String> gone, List<String> removedNames) {}
+
+    /**
+     * Whether Silpo is refusing this cart over the window booked on it.
+     *
+     * <p>Two codes for one condition, both seen live: {@code timeslot.not_available} on a window that has been
+     * taken or has passed, {@code timeslot.not_found} on one the branch no longer offers at all.
+     */
+    private static boolean staleSlot(JsonNode cart) {
+        return McpResponses.findArray(cart, McpResponses.VALIDATIONS).stream()
+                .map(validation -> validation.path("message").asText())
+                .anyMatch(message -> "timeslot.not_available".equals(message) || "timeslot.not_found".equals(message));
+    }
 
     /**
      * A cart-level validation is an object ({@code level}, {@code type}, {@code message}, {@code context}), not the

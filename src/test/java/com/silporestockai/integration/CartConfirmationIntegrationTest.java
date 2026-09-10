@@ -166,6 +166,55 @@ class CartConfirmationIntegrationTest extends AbstractIntegrationTest {
                 "checkoutMobileLink":"silpo://checkout/cart-1"}""");
     }
 
+    /**
+     * Task 76: the realistic shape of the live failure. A household edits the list twice — «давай замість гречки
+     * рис», then one more change — and by the final build the window picked at the start has been taken. The bot
+     * used to answer «Кошик зібрати не вдалось: обраний час доставки більше недоступний. Виправ список і спробуй
+     * ще раз», sending them to fix a list that was already right. Nothing is asked now: a free window is booked
+     * and the cart message says the time moved.
+     */
+    @Test
+    void aRevisionLoopThatOutlivesItsSlotRebooksInsteadOfBlamingTheList() {
+        scriptSilpo();
+        User user = onboardedUser();
+
+        // Two rounds that build cleanly, as the «Змінити» loop does.
+        cartConfirmationService.present(user, shoppingList());
+        cartConfirmationService.present(user, shoppingList());
+
+        // The third build finds the window gone: Silpo refuses the cart, and offers a later one instead.
+        MCP.respondToToolInOrder(
+                "silpo_get_shopping_cart_by_id",
+                CART_WITH_A_STALE_SLOT,
+                CART_WITH_A_STALE_SLOT,
+                CART_WITH_A_STALE_SLOT,
+                CART_ON_A_FRESH_SLOT);
+        MCP.respondToTool(
+                "silpo_get_time_slots",
+                "{\"timeSlots\":[{\"id\":\"slot-9\",\"from\":\"2026-09-05T20:00:00Z\",\"available\":true}]}");
+
+        boolean presented = cartConfirmationService.present(user, shoppingList());
+
+        assertThat(presented).isTrue();
+        String text = TELEGRAM.sentMessages().getLast().path("text").asText();
+        assertThat(text).contains("Зібрав кошик").contains("підібрав найближчий вільний");
+        assertThat(text).doesNotContain("Виправ список");
+        assertThat(MCP.calledTools()).contains("silpo_update_shopping_cart");
+    }
+
+    private static final String CART_WITH_A_STALE_SLOT = """
+            {"cartId":"cart-1","branchId":"branch-7","companyId":"company-3","deliveryType":"delivery",\
+            "items":[{"productId":"p-1","name":"Цибуля","unit":"кг","quantity":0.5,"price":25.5}],\
+            "total":25.5,"validations":[{"level":"error","type":"timeslot","message":"timeslot.not_available"}]}""";
+
+    private static final String CART_ON_A_FRESH_SLOT = """
+            {"cartId":"cart-1","branchId":"branch-7","companyId":"company-3","deliveryType":"delivery",\
+            "items":[{"productId":"p-1","name":"Цибуля","unit":"кг","quantity":0.5,"price":25.5},\
+            {"productId":"p-2","name":"Гречка","unit":"кг","quantity":1,"price":48}],\
+            "total":73.5,"validations":[],\
+            "checkoutWebLink":"https://silpo.ua/checkout/cart-1",\
+            "checkoutMobileLink":"silpo://checkout/cart-1"}""";
+
     /** An onboarded, Silpo-connected user — the only kind that ever reaches a cart. */
     private User onboardedUser() {
         User user = userAccountService.findOrCreate(CHAT_ID);

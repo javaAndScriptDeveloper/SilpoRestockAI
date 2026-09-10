@@ -1705,6 +1705,38 @@ names and the cheapest suitable one wins, rather than the one whose name matches
 The cart lands well under Silpo's ₴799 minimum, so the message ends with the top-up offer; that is task 09's
 behaviour and not a failure of this one.
 
+## 23. An expired delivery slot (task 76)
+
+**The failure this replaces**, seen live on 2026-09-10 at 17:01 while driving §22's hangover request: every
+line resolved, the cart was read back, and the household got
+
+```
+Кошик зібрати не вдалось:
+- обраний час доставки більше недоступний
+Виправ список і спробуй ще раз.
+```
+
+The list was already right; the window booked on the cart had been taken while the request was being built.
+
+**What happens now:** `CartBuildingService.getVerifiedCart` recognises `timeslot.not_available` /
+`timeslot.not_found`, takes the first slot `silpo_get_time_slots` still offers, books it with
+`silpo_update_shopping_cart`, and reads the cart again — once. The log line to look for is
+
+```
+the slot booked on cart <id> is no longer available; re-picked <start> and booking it
+```
+
+and the cart message then carries `(попередній час уже зайняли — підібрав найближчий вільний)` under its
+«Доставка:» line. With no slot left to move to, the message is «Немає доступних слотів доставки найближчим
+часом…» — never «виправ список».
+
+**Forcing it on the live account is not straightforward:** the only path that books a window is confirming
+a cart, and a cart under the ₴799 minimum has no confirm button, so the stale state arrives on Silpo's own
+clock (a slot goes unavailable roughly at its cutoff). The recovery itself is covered by
+`CartBuildingIntegrationTest.booksAFreshSlotWhenTheOneOnTheCartIsGone`,
+`…saysThereIsNoSlotAtAllRatherThanBlamingTheListWhenNoneAreOffered` and, in the revision-loop shape the task
+asks for, `CartConfirmationIntegrationTest.aRevisionLoopThatOutlivesItsSlotRebooksInsteadOfBlamingTheList`.
+
 ## Cleanup
 
 ### Start completely from scratch

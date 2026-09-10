@@ -22,6 +22,8 @@ import java.util.Map;
  *     its minimum order against; null for carts stored before this field existed
  * @param minimumOrder Silpo's minimum delivery order when the cart came back under it and so has no checkout link
  *     yet — the household decides what to do about that; null when the cart can check out
+ * @param deliverySlotRepicked whether this cart is on a window picked during the build because the one booked on
+ *     it had gone (task 76) — the message says so, since the household chose the earlier one
  */
 public record CartSummary(
         String cartId,
@@ -40,7 +42,48 @@ public record CartSummary(
         List<String> toppedUp,
         BigDecimal savings,
         BigDecimal goodsTotal,
-        BigDecimal minimumOrder) {
+        BigDecimal minimumOrder,
+        boolean deliverySlotRepicked) {
+
+    /** The pre-task-76 shape: the window this cart was built for is the one it was booked on. */
+    public CartSummary(
+            String cartId,
+            String deliverySlot,
+            Instant deliverySlotStartsAt,
+            List<BasketItem> items,
+            BigDecimal total,
+            List<String> validations,
+            BigDecimal bonusAvailable,
+            boolean bonusDecisionPending,
+            String checkoutWebLink,
+            String checkoutMobileLink,
+            List<String> unresolved,
+            List<String> promotedProductIds,
+            List<String> skipped,
+            List<String> toppedUp,
+            BigDecimal savings,
+            BigDecimal goodsTotal,
+            BigDecimal minimumOrder) {
+        this(
+                cartId,
+                deliverySlot,
+                deliverySlotStartsAt,
+                items,
+                total,
+                validations,
+                bonusAvailable,
+                bonusDecisionPending,
+                checkoutWebLink,
+                checkoutMobileLink,
+                unresolved,
+                promotedProductIds,
+                skipped,
+                toppedUp,
+                savings,
+                goodsTotal,
+                minimumOrder,
+                false);
+    }
 
     /** The pre-minimum-order shape: a cart that could check out. */
     public CartSummary(
@@ -241,7 +284,8 @@ public record CartSummary(
                 toppedUp,
                 savings,
                 goodsTotal,
-                minimumOrder);
+                minimumOrder,
+                deliverySlotRepicked);
     }
 
     /**

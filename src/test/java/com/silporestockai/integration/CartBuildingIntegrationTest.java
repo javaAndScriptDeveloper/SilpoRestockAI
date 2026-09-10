@@ -13,6 +13,7 @@ import com.silporestockai.entity.ShoppingListItem;
 import com.silporestockai.entity.SilpoOAuthToken;
 import com.silporestockai.entity.User;
 import com.silporestockai.exception.CartBuildException;
+import com.silporestockai.exception.DeliverySlotUnavailableException;
 import com.silporestockai.model.CartContext;
 import com.silporestockai.model.CartSummary;
 import com.silporestockai.repository.SilpoOAuthTokenRepository;
@@ -75,7 +76,8 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
                     "silpo_get_available_delivery_types",
                     "silpo_list_branches",
                     "silpo_create_shopping_cart",
-                    "silpo_remove_cart_products"));
+                    "silpo_remove_cart_products",
+                    "silpo_update_shopping_cart"));
         } catch (IOException e) {
             throw new IllegalStateException("could not start the MCP stub", e);
         }
@@ -417,6 +419,78 @@ class CartBuildingIntegrationTest extends AbstractIntegrationTest {
 
         JsonNode added = MCP.callArguments("silpo_add_or_update_cart_products").getFirst();
         assertThat(added.path("products").get(0).path("productId").asText()).isEqualTo("p-2");
+    }
+
+    /** A cart Silpo refuses because the window booked on it has gone: no checkout link, one blocking validation. */
+    private static final String CART_WITH_A_STALE_SLOT = """
+            {"cartId":"cart-1","branchId":"branch-7","companyId":"company-3","deliveryType":"delivery",\
+            "timeslot":{"start":"2026-09-10T06:00:00+00:00","end":"2026-09-10T07:30:00+00:00"},\
+            "items":[{"productId":"p-2","name":"Гречка","unit":"кг","quantity":1,"price":48}],\
+            "calculation":{"total":48,"productsTotal":48},\
+            "validations":[{"level":"error","type":"timeslot","message":"timeslot.not_available"}]}""";
+
+    /** The same cart once a fresh window is booked on it: Silpo hands over the checkout links again. */
+    private static final String CART_ON_A_FRESH_SLOT = """
+            {"cartId":"cart-1","branchId":"branch-7","companyId":"company-3","deliveryType":"delivery",\
+            "timeslot":{"start":"2026-09-11T06:00:00+00:00","end":"2026-09-11T07:30:00+00:00"},\
+            "items":[{"productId":"p-2","name":"Гречка","unit":"кг","quantity":1,"price":48}],\
+            "calculation":{"total":48,"productsTotal":48},"validations":[],\
+            "checkoutWebLink":"https://silpo.ua/checkout/cart-1",\
+            "checkoutMobileLink":"silpo://checkout/cart-1"}""";
+
+    private void scriptStaleSlotThenFresh() {
+        MCP.respondToTool("silpo_get_my_shopping_cart", "{\"cartId\":\"cart-1\"}");
+        MCP.respondToToolInOrder(
+                "silpo_get_shopping_cart_by_id",
+                CART_WITH_A_STALE_SLOT,
+                CART_WITH_A_STALE_SLOT,
+                CART_WITH_A_STALE_SLOT,
+                CART_ON_A_FRESH_SLOT);
+        MCP.respondToTool("silpo_clear_shopping_cart", "{\"ok\":true}");
+        MCP.respondToTool("silpo_update_shopping_cart", "{\"success\":true}");
+        MCP.respondToTool("silpo_find_products_batch", """
+                {"queries":[{"query":"гречка","products":[{"name":"Гречка","productId":"p-2",\
+                "companyId":"company-3","branchId":"branch-7","price":48,"displayRatio":"1кг","stock":9,\
+                "available":true}]}]}""");
+        MCP.respondToTool("silpo_add_or_update_cart_products", "{\"ok\":true}");
+    }
+
+    /**
+     * Task 76: minutes pass between picking a slot and building the cart — a «Змінити» round-trip is most of
+     * them — and Silpo then refuses the cart with «timeslot.not_available». The household read «Кошик зібрати не
+     * вдалось… Виправ список і спробуй ще раз» over a list that was never the problem. The slot is booked afresh
+     * instead, with nothing asked of anyone.
+     */
+    @Test
+    void booksAFreshSlotWhenTheOneOnTheCartIsGone() {
+        UUID userId = connectedUser(8435L);
+        scriptStaleSlotThenFresh();
+        MCP.respondToTool("silpo_get_time_slots", """
+                {"timeSlots":[{"start":"2026-09-11T06:00:00+00:00","end":"2026-09-11T07:30:00+00:00",\
+                "available":true}]}""");
+
+        CartSummary summary = cartBuildingService.buildCart(userId, List.of(item("гречка", "1", "кг")));
+
+        assertThat(summary.deliverySlotRepicked()).isTrue();
+        assertThat(summary.deliverySlot()).isEqualTo("2026-09-11T06:00:00+00:00");
+        assertThat(summary.checkoutWebLink()).isNotBlank();
+        assertThat(MCP.calledTools()).contains("silpo_update_shopping_cart");
+    }
+
+    /**
+     * Task 76: the honest case. The slot on the cart is gone and Silpo has nothing to move it to — which is a
+     * different sentence, and still not «виправ список».
+     */
+    @Test
+    void saysThereIsNoSlotAtAllRatherThanBlamingTheListWhenNoneAreOffered() {
+        UUID userId = connectedUser(8436L);
+        scriptStaleSlotThenFresh();
+        MCP.respondToToolInOrder("silpo_get_time_slots", """
+                {"timeSlots":[{"start":"2026-09-11T06:00:00+00:00","end":"2026-09-11T07:30:00+00:00",\
+                "available":true}]}""", "{\"timeSlots\":[]}");
+
+        assertThatThrownBy(() -> cartBuildingService.buildCart(userId, List.of(item("гречка", "1", "кг"))))
+                .isInstanceOf(DeliverySlotUnavailableException.class);
     }
 
     private static ShoppingListItem readyMealItem(String name, String productId) {

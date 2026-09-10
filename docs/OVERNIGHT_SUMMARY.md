@@ -1332,3 +1332,30 @@ isotonic is now named as suitable; only energy drinks and plain sweet soda are n
 Nothing specific to this task — the numbers above are from the real catalog. Worth knowing: the branch
 carries no регідрон and no charcoal tablets, so the rehydration line is an isotonic drink and the sorbent
 line is Атоксіл. If a branch ever stocks the ₴30 sachets, they win on price with no further change.
+
+# Session 20b — a stale delivery slot fixes itself (task 76), 2026-09-10
+
+The bug arrived on its own while task 72 was being verified: the hangover request resolved all three lines,
+the cart was read back, and the chat said «Кошик зібрати не вдалось: обраний час доставки більше
+недоступний. Виправ список і спробуй ще раз». The list was right; the window booked on the cart had been
+taken during the minute the cart took to build. A «Змінити» round-trip makes that gap minutes long, which
+is why the screenshot in the task shows the same thing after an ingredient swap.
+
+`getVerifiedCart` already heals a cart once for stock and re-reads it, so the slot recovery is the same
+shape: recognise `timeslot.not_available` (and `timeslot.not_found`, the other code for the same
+condition), take the first window `silpo_get_time_slots` still offers, book it with
+`silpo_update_shopping_cart`, read the cart again. Once — a second refusal of a window Silpo just accepted
+is a disagreement, not a race. The `CartContext` moves onto the new window too: the catalog is scoped by
+the slot, and searching the old one is what once returned nothing for 25 ordinary product names.
+
+The household is told, because they picked the earlier window: «(попередній час уже зайняли — підібрав
+найближчий вільний)» under the «Доставка:» line. And the genuine dead end — no window at all — is its own
+exception (`DeliverySlotUnavailableException`) with its own sentence, so «виправ список» is never said
+about a delivery slot again.
+
+## What needs your eyes
+
+The recovery has not been watched on the live account, only the failure it replaces (17:01 today, in the
+log). Booking a stale window on purpose needs a confirmed cart, and this account's carts sit under the ₴799
+minimum — so the stale state arrives on Silpo's own clock. Three tests cover it, including the revision
+loop; a live sighting is worth having when a cart of yours is over the minimum.

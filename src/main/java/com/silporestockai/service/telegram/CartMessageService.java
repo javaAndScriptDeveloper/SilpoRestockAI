@@ -100,6 +100,12 @@ public class CartMessageService {
                     .append(" грн");
         }
         text.append("\n\nДоставка: ").append(DeliverySlots.describe(slot));
+        if (summary.deliverySlotRepicked()) {
+            // Task 76: the household picked the earlier window, so a silent swap would be a lie by omission —
+            // and the failure it replaces («обраний час доставки більше недоступний. Виправ список») sent people
+            // to edit a list that had nothing to do with it.
+            text.append("\n(попередній час уже зайняли — підібрав найближчий вільний)");
+        }
         CartBenefits offered = benefits == null ? CartBenefits.none() : benefits;
         if (offered.hasApplicable()) {
             // More than one kind of benefit, so the list has to carry the detail the single button cannot.

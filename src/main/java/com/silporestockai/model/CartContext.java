@@ -22,6 +22,14 @@ public record CartContext(
         String timeslotEnd) {
 
     /**
+     * The same cart, now on this delivery window (task 76). The catalog is scoped by the window, so a cart moved
+     * onto a fresh slot has to carry it — searching the old one returns nothing for perfectly ordinary names.
+     */
+    public CartContext withSlot(OfferedSlot slot) {
+        return slot == null ? this : new CartContext(cartId, branchId, companyId, deliveryType, slot.id(), slot.end());
+    }
+
+    /**
      * The branch / delivery-type / time-slot triple that every catalog-scoped Silpo tool wants
      * ({@code silpo_get_my_favorites}, {@code silpo_get_my_offline_orders}, the product searches). Their schemas
      * mark all three required, so a missing value goes out as an empty string rather than being dropped — the
