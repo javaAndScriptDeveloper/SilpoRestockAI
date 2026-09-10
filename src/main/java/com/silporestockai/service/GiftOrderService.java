@@ -115,7 +115,9 @@ public class GiftOrderService {
         resolve(sender, request, trigger);
     }
 
-    private void resolve(User sender, GiftRequest request, OrderTrigger trigger) {
+    private void resolve(User sender, GiftRequest raw, OrderTrigger trigger) {
+        // The model has more than one way of writing «nothing», and one of them is a non-blank string.
+        GiftRequest request = raw == null ? null : raw.cleaned();
         String theme =
                 request == null || request.theme() == null || request.theme().isBlank()
                         ? "подарунковий набір"
