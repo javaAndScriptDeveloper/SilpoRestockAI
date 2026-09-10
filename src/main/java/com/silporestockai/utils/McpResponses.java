@@ -80,6 +80,43 @@ public final class McpResponses {
     public static final String[] CHECKOUT_WEB = {"checkoutWebLink", "webLink"};
     public static final String[] CHECKOUT_MOBILE = {"checkoutMobileLink", "mobileLink"};
 
+    /**
+     * «Лояльність та акції» (tasks 78 and 79). Only three of these mechanisms have a cart-mutation tool behind them
+     * on the live server — certificates, promo codes and the bonuses above — and the rest are read to be shown.
+     */
+    public static final String[] CERTIFICATES = {"certificates"};
+
+    public static final String[] BARCODE = {"barcode"};
+    public static final String[] PINCODE = {"pincode", "pinCode", "pin"};
+    public static final String[] CERTIFICATE_VALUE = {"value", "balance", "amount", "sum"};
+
+    /** {@code expireDate} carries no timezone offset in this API — kept as text, never parsed into an instant. */
+    public static final String[] EXPIRES_ON = {"expireDate", "expiryDate", "expiresAt", "validTo"};
+
+    public static final String[] COUPONS = {"coupons"};
+    public static final String[] COUPON_ID = {"businessCouponId", "id", "couponId"};
+    public static final String[] COUPON_TITLE = {"description", "title", "name"};
+    public static final String[] REWARD_TEXT = {"rewardText", "reward"};
+    public static final String[] END_DATE = {"endDate", "expireDate", "validTo"};
+    public static final String[] ACTIVE = {"active", "isActive"};
+    public static final String[] CAN_BE_APPLIED = {"canBeAppliedToOrder"};
+    public static final String[] LIMIT_TEXT = {"limitText", "warningText"};
+    public static final String[] PROGRESS = {"progress"};
+    public static final String[] PROGRESS_CURRENT = {"current"};
+    public static final String[] PROGRESS_TARGET = {"target"};
+    public static final String[] PROGRESS_UNIT = {"unit"};
+
+    public static final String[] PROMO_CODES = {"promoCodes"};
+    public static final String[] PROMO_CODE = {"promoCode", "code"};
+    public static final String[] PROMOS = {"promos"};
+
+    /** {@code silpo_add_or_update_certificates} answers with what it took; a non-empty validations list is a refusal. */
+    public static final String[] ADDED = {"added"};
+
+    public static final String[] LOYALTY_BALANCE = {"balance"};
+    public static final String[] BALANCE_TOTAL = {"total"};
+    public static final String[] SUMMARY = {"summary"};
+
     /** Order history (task 35): the list, one order's id and date. Items inside an order use {@link #ITEMS}. */
     public static final String[] ORDERS = {"orders", "items", "results", "data"};
 
