@@ -317,8 +317,15 @@ public class CartMessageService {
 
     public List<TelegramButton> slotButtons(List<OfferedSlot> slots) {
         List<TelegramButton> buttons = new ArrayList<>();
+        // Silpo can offer the same window twice under two slot ids (live, session 25: every Friday window came
+        // back as a pair, Saturday's once). Two buttons reading «пт, 11 вер · 09:00–10:30» are one choice; the
+        // first id is booked, and the callback still indexes the original list.
+        java.util.Set<String> seen = new java.util.HashSet<>();
         for (int i = 0; i < slots.size(); i++) {
-            buttons.add(TelegramButton.callback(DeliverySlots.describe(slots.get(i)), CALLBACK_SLOT_PREFIX + i));
+            String label = DeliverySlots.describe(slots.get(i));
+            if (seen.add(label)) {
+                buttons.add(TelegramButton.callback(label, CALLBACK_SLOT_PREFIX + i));
+            }
         }
         return buttons;
     }
