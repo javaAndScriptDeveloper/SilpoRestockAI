@@ -25,6 +25,20 @@ class GiftRequestCleaningTest {
         assertThat(cleaned.address()).isEqualTo("Київ, вулиця Хрещатик, 22");
     }
 
+    /**
+     * The second live run spelled the same nothing differently, and this one mattered more: an address of
+     * «-null» is not blank, so «відправ подарунок @olena_test» was taken for a sentence that had named an
+     * address and went down the wrong path entirely.
+     */
+    @Test
+    void soIsTheOtherSpellingTheModelUses() {
+        GiftRequest cleaned = new GiftRequest("olena_test", "-null", "-null", null, "щось до кави").cleaned();
+
+        assertThat(cleaned.address()).isNull();
+        assertThat(cleaned.flat()).isNull();
+        assertThat(cleaned.recipientUsername()).isEqualTo("olena_test");
+    }
+
     @Test
     void soIsAPlainNullWordOrAnEmptyString() {
         GiftRequest cleaned = new GiftRequest("null", "  ", null, "NULL", "  подарунок  ").cleaned();

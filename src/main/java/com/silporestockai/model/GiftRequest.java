@@ -16,9 +16,14 @@ public record GiftRequest(String recipientUsername, String address, String flat,
      * The same request with the model's ways of saying «nothing» turned into real nulls.
      *
      * <p>Live on 2026-09-10 the structured call answered {@code phone=".null"} for a sentence that named no
-     * number, and that string went all the way onto the cart as a courier's phone. A plain null check does not
-     * catch it, and neither does {@code isBlank}. Cleaned once here, at the boundary where model output enters
-     * the system, rather than at each of the five places that ask whether a field was filled in.
+     * number, and that string went all the way onto the cart as a courier's phone. The next run spelled the same
+     * nothing {@code "-null"}, and «відправ подарунок @olena_test» came back with {@code address="-null"} — which
+     * is not blank, so it was taken for an address the sender had typed and sent the whole request down the wrong
+     * path. Real nulls do arrive as nulls; these are strings sitting beside them.
+     *
+     * <p>Hence the punctuation-tolerant comparison rather than a list of the two spellings seen so far. Cleaned
+     * once here, at the boundary where model output enters the system, rather than at each of the five places
+     * that ask whether a field was filled in.
      */
     public GiftRequest cleaned() {
         return new GiftRequest(clean(recipientUsername), clean(address), clean(flat), clean(phone), clean(theme));
@@ -29,6 +34,7 @@ public record GiftRequest(String recipientUsername, String address, String flat,
             return null;
         }
         String trimmed = value.strip();
-        return trimmed.equalsIgnoreCase("null") || trimmed.equalsIgnoreCase(".null") ? null : trimmed;
+        String bare = trimmed.replaceAll("^\\p{Punct}+", "").replaceAll("\\p{Punct}+$", "");
+        return bare.isEmpty() || bare.equalsIgnoreCase("null") ? null : trimmed;
     }
 }
