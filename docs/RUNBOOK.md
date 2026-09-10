@@ -735,6 +735,66 @@ narrowed to «паштет консервований» returned nothing and the
 the product name's **first word**, because matching anywhere dropped «Хліб «Київхліб» британський світлий з
 молоком нарізаний» as dairy.
 
+### Task 66: verify the budget warning appears only when it should
+
+Both numbers already exist, so nothing needs to be arranged except the gap between them: set
+`user_profile.weekly_budget` under the total the current list or cart carries. No MCP call is added by
+this feature — `select count(*) from mcp_tool_call` before and after a list view proves it.
+
+| Do this | Expect |
+|---|---|
+| With a list whose estimate exceeds the budget, tap «Показати весь список» | Under «Орієнтовно ~N грн», one line: «⚠ Це на X грн більше за твій тижневий бюджет (B грн). Замовляємо, чи щось прибрати?», with X = N − B exactly |
+| Raise `weekly_budget` above the total and show the list again | No warning, and no «ти в межах бюджету» either — silence is the whole point |
+| Tap «Замовити» and read the cart | The same line under the cart, now against the real «Разом», keyboard untouched: «Підтвердити» is exactly where it was |
+| Do it on a cart below Silpo's ₴799 minimum | Both are said: the shortfall paragraph, then the budget line — the below-minimum cart is the one case that can be under the minimum and over the budget at once |
+| `update user_profile set weekly_budget=null` and show the list | Nothing about budgets anywhere; the estimate line is unchanged |
+
+**Measured live on 2026-09-10**: a ready-meals list estimated at ₴2409.04 against a ₴2100 budget produced
+«на 309.04 грн більше»; the same list as a cart of ₴607.04 against a ₴100 budget produced «на 507.04 грн
+більше» underneath the ₴290.96 shortfall paragraph.
+
+### Task 67: verify a crunch week reverts without ever touching the profile
+
+The one thing worth checking with your own eyes is the column: `cooking_time_preference` must read the
+same before, during and after. Shorten `CRUNCH_WEEK_DURATION` (e.g. `2m`) to watch the automatic revert
+instead of waiting a week — the sweep runs on `SPECIAL_MODE_SWEEP_CRON`, hourly by default, so shorten
+that too, and take both back out afterwards.
+
+| Do this | Expect |
+|---|---|
+| `select cooking_time_preference from user_profile` | Note it. It is the assertion for every row below |
+| Send «цей тиждень нема часу готувати, запара на роботі» | «Зрозумів, запара. До <date> беру тільки готову їжу…», then a regenerated plan of ready meals — every `shopping_list_item` row carries a `silpo_product_id` and an `estimated_price` |
+| `select special_mode, cooking_time_preference from user_profile` | `CRUNCH_WEEK`, and the preference **unchanged** |
+| Say it again | «Режим запари вже увімкнений — тримаю готову їжу до <date>» and nothing else: no second plan, `special_mode_expires_at` unmoved |
+| Send «вже не запара, повертай як було» | «Добре, запара позаду…» and a recipe plan again — list rows with no `silpo_product_id`; `special_mode` back to `NONE`, preference still unchanged |
+| Wait out the shortened expiry instead | «Тиждень запари закінчився — повертаємось до звичайного режиму готування», same revert |
+| Try it while a gastritis mode is active | Refused with «вже активний інший режим» — one mode at a time, as task 25 decided |
+| Try it as a `READY_MEALS_ONLY` household | «Ти й так на готовій їжі» — no mode, no regeneration |
+
+**Known live snag, not this task's:** a ready-meals cart can hold cooked food, and Silpo only delivers that
+between 10:00 and 22:00. On an early slot the cart comes back with `timeslot.cooked_food.limited` and **no
+checkout link at all**, which surfaces as «Кошик зібрати не вдалось». Seen on 2026-09-10 with Піца Верона
+and Салат Цезар on a 09:00–10:30 window. Task 76 re-picks a slot Silpo has withdrawn; it does not yet
+re-pick one that this cart's contents are not allowed to use.
+
+### Task 71: verify the calendar offer, and that neither answer blocks the order
+
+The offer only goes out when there is something to offer, so to see it at all the household must have no
+`google_oauth_token` row. Back the row up before deleting it — `create table gtok as select * from
+google_oauth_token` — and put it back afterwards.
+
+| Do this | Expect |
+|---|---|
+| With no token, reach a first plan (finish onboarding, or tap «Спробувати ще раз» under a failed plan) | Four messages in order: the plan summary, the list with «Замовити», the calendar offer with «Підключити»/«Пізніше», then task 70's teaser |
+| Tap «Пізніше» | One line: «Гаразд, без календаря. Захочеш пізніше — напиши «підключи гугл календар»…». No token written, list and its «Замовити» untouched |
+| Tap «Підключити», finish the Google consent, then confirm the first order | The branded callback page and the chat confirmation from task 60, and that **first** delivery lands in the calendar |
+| Tap «Підключити», but confirm the order before finishing the consent | The order goes through normally; only the calendar event is missed. Nothing waits for OAuth |
+| Restore the token and reach a first plan again | No offer at all — an already-connected household is not asked twice |
+| Unset the Google credentials and reach a first plan | No offer, no error: an offer nobody can accept is worse than no offer |
+
+The tap is `gcal:later`, not `cal:later` — `cal:` is `CalendarViewService`'s weekday prefix, and under it
+«Пізніше» was read as a day of the week and answered «Не знайшов цей день у поточному плані.»
+
 ---
 
 ## 8. The scheduled check-in

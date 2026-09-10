@@ -1359,3 +1359,66 @@ The recovery has not been watched on the live account, only the failure it repla
 log). Booking a stale window on purpose needs a confirmed cart, and this account's carts sit under the ₴799
 minimum — so the stale state arrives on Silpo's own clock. Three tests cover it, including the revision
 loop; a live sighting is worth having when a cart of yours is over the minimum.
+
+# Session 23 — the budget, the crunch week and the calendar offer (tasks 66, 67, 71), 2026-09-10 (evening)
+
+Three tasks the user picked from the backlog, one commit each, and all three verified against the real
+Silpo MCP and the real chat rather than only in tests. Each ran through `superpowers:brainstorming`, which
+classified all three as *bounded* — an existing flow to change in a repo that already holds it — so the
+design was a short one in chat and there is no spec/plan document for any of them.
+
+## 66 — the two numbers that never met
+
+`weekly_budget` has been collected since task 20 and the cart total known before confirmation since task
+39, and nothing ever compared them. `BudgetWarningService` is the whole feature: one comparison, one
+lookup, and an `appendTo` every flow that already prints a sum calls — the plan summary, the shopping
+list, the first cart, a topped-up cart, a re-picked slot, a below-minimum cart, and a reorder.
+
+It is silent unless the sum is over, and silent when there is no budget stored. That is the interesting
+half: «ти в межах бюджету» on twelve carts in a row teaches people to stop reading the message that also
+carries «Не знайшов». It blocks nothing — the warning is a sentence above the «Підтвердити» that was
+always there. Where tasks 78/79 still have a benefit to apply, the warning says the difference will
+shrink, so it never presents a pre-discount sum as final.
+
+Live: a ready-meals list estimated at ₴2409.04 against the account's ₴2100 budget said «на 309.04 грн
+більше»; the same goods as a ₴607.04 cart against a ₴100 budget said «на 507.04 грн більше», underneath
+the ₴290.96 shortfall paragraph. Zero new MCP calls, as the task required.
+
+## 67 — a crunch week is a deadline, not a change of habit
+
+The mechanism is task 25's, pointed at a different field: one `special_mode` row with
+`started_at`/`expires_at`, the same sweep, the same `SPECIAL_MODE_END` intent for ending it early. What
+is new is that it must not leave a mark. `UserProfile.effectiveCookingTimePreference()` applies the
+override at the point of reading and the column keeps what onboarding stored — which is also what makes
+the revert free: end the mode and the planner sees the real preference again, with nothing to restore.
+
+Two answers that are not a mode change: saying it twice answers with the end date rather than restarting
+the clock, and saying it as a household that already eats ready meals changes nothing and says so —
+otherwise it would cost a plan regeneration and, a week later, an announcement of a return to a normal
+they never left.
+
+Live: «цей тиждень нема часу готувати, запара на роботі» classified at 0.98, the plan came back as five
+ready-meal lines with real product ids, and `cooking_time_preference` read `COOKS_DAILY` throughout. «вже
+не запара, повертай як було» put the recipe week back, still `COOKS_DAILY`.
+
+## 71 — offering the calendar while the first delivery can still land in it
+
+Task 18 built the integration; only a household that already knew it existed ever got it. The offer now
+goes out after the first plan and its list, before any cart is confirmed, and «Підключити» is a link into
+the same OAuth flow tasks 18 and 60 own — an earlier entry point, not a new mechanism. Nothing waits for
+it: whether the browser consent finishes before or after the cart only decides whether *this* delivery
+reaches the calendar, never whether the order can be placed.
+
+Live, with the account's token temporarily removed and put back: the offer arrived in the right place with
+both buttons, «Пізніше» answered in one line and wrote nothing, and a household that already has a token
+was not asked again.
+
+## What needs your eyes
+
+The copy, mainly — three new user-facing strings, and the crunch-week ones carry a date («До 17 вересня»).
+
+One real bug found while verifying 67, and left alone because it is not this task's: a ready-meals cart can
+hold cooked food, which Silpo only delivers between 10:00 and 22:00. On an early window the cart comes back
+with `timeslot.cooked_food.limited` and **no checkout link at all**, and the chat says «Кошик зібрати не
+вдалось». Task 76 re-picks a window Silpo has withdrawn; it does not yet re-pick one this cart's contents
+are not allowed to use. Written up as its own backlog task.
