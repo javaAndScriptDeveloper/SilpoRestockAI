@@ -22,6 +22,7 @@ import com.silporestockai.repository.UserRepository;
 import com.silporestockai.service.telegram.GroupEventMessageService;
 import com.silporestockai.service.telegram.TelegramOutboundService;
 import com.silporestockai.utils.GroupEventSettings;
+import com.silporestockai.utils.GroupOrderScope;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -125,7 +126,7 @@ public class GroupEventService {
                 .status(GroupEventStatus.COLLECTING_REPLIES)
                 .createdAt(Instant.now())
                 .build();
-        // «@bot збери напої на п'ятницю, бюджет 2000» — the opening words may already carry the settings.
+        // «@бот збери на п'ятницю, бюджет 2000» — the opening words may already carry the settings.
         GroupEventSettings.parse(openingWords, LocalDate.now(KYIV)).ifPresent(parsed -> {
             event.setBudget(parsed.budget());
             event.setEventTag(parsed.eventTag());
@@ -153,7 +154,7 @@ public class GroupEventService {
 
     private void onText(TelegramIncomingUpdate.GroupText text) {
         if (text.mentionsBot() && !text.addressedToBot()) {
-            // The one mention the bot reads: «@bot збери напої» with no round open starts one, and the person
+            // The one mention the bot reads: any @mention with no round open starts a round, and the person
             // who asked is the organizer. A mention while a round is open is chatter like any other.
             boolean roundOpen = eventRepository
                     .findFirstByTelegramGroupChatIdAndStatusInOrderByCreatedAtDesc(text.chatId(), BEFORE_AGREEMENT)
@@ -225,8 +226,12 @@ public class GroupEventService {
         }
         upsertParticipant(event, text, body, false);
         long count = participantRepository.findByGroupEventId(event.getId()).size();
-        telegramOutboundService.sendReply(
-                text.chatId(), text.messageId(), messages.replyAck(text.displayName(), count));
+        // Task 74: the reply is stored either way — the model reads the whole sentence and works around the
+        // part it cannot buy — but a person who asked for crisps hears it now, not from their absence later.
+        String ack = GroupOrderScope.asksForFood(body)
+                ? messages.drinksOnlyAck(text.displayName(), count)
+                : messages.replyAck(text.displayName(), count);
+        telegramOutboundService.sendReply(text.chatId(), text.messageId(), ack);
     }
 
     private void upsertParticipant(

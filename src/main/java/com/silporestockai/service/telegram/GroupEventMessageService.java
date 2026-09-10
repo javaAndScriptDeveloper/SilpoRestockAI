@@ -39,9 +39,11 @@ public class GroupEventMessageService {
      *     make it an administrator, so the intro asks for exactly that
      */
     public String intro(boolean seesEveryMessage) {
-        String tag = "Коли треба зібрати напої на компанію — тегни мене й попроси: «@бот збери напої на п'ятницю, "
-                + "бюджет 2000». Хто попросить, той і організатор. Далі читаю лише реплаї на свої повідомлення й "
-                + "свої кнопки.";
+        // Task 74: the ask is a shared order for the company, not a drinks run. Any mention with no round open
+        // starts one, so the example phrase is free to be the general one.
+        String tag = "Коли треба зібрати спільну закупку на компанію — тегни мене й попроси: «@бот збери на "
+                + "п'ятницю, бюджет 2000». Хто попросить, той і організатор. Далі читаю лише реплаї на свої "
+                + "повідомлення й свої кнопки.";
         if (seesEveryMessage) {
             return "Привіт! " + tag;
         }
@@ -64,7 +66,8 @@ public class GroupEventMessageService {
 
     public String greeting(String organizerName) {
         return """
-                Збираю напої на компанію — в кошик «Сільпо» організатора, оплата як зазвичай.
+                Збираю спільну закупку на компанію — в кошик «Сільпо» організатора, оплата як зазвичай. \
+                Поки що це напої: їжу на всіх ще не вмію.
 
                 Кожен — відповідай реплаєм на це повідомлення, що п'єш: «пиво світле», «червоне вино», «не п'ю — сік». \
                 Можна з поясненням: «сьогодні за кермом», «це на ДР». Крапка «.» — на мій розсуд.
@@ -81,6 +84,16 @@ public class GroupEventMessageService {
 
     public String replyAck(String name, long count) {
         return "Записав, %s. Відповіли: %d.".formatted(name, count);
+    }
+
+    /**
+     * Task 74: said to the person who just asked for food, in the moment they asked. The alternative was silence
+     * until a proposal arrived with no crisps in it, which reads as the bot having ignored them.
+     */
+    public String drinksOnlyAck(String name, long count) {
+        return "Записав, %s. Відповіли: %d. Тільки скажу чесно: поки що я збираю на компанію лише напої — їжу "
+                        .formatted(name, count)
+                + "доведеться взяти окремо.";
     }
 
     public String lateReplyAck(String name) {

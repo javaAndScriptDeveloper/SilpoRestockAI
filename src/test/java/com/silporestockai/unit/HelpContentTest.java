@@ -39,6 +39,20 @@ class HelpContentTest {
         }
     }
 
+    /**
+     * Task 74: the pitch is a shared order for a company, and «напої» appears only where it tells the truth
+     * about what the round resolves today — never in the headline that sells the feature.
+     */
+    @Test
+    void theGroupPitchIsAnOrderForACompanyNotADrinkingMode() {
+        String pitch = HelpContent.FULL.substring(HelpContent.FULL.indexOf("Компанією:"));
+        // The pitch is one paragraph; its first sentence is what sells the feature.
+        String headline = pitch.substring(0, pitch.indexOf('.') + 1);
+
+        assertThat(headline).contains("спільну закупку").doesNotContain("напо");
+        assertThat(pitch).contains("Поки що збираю напої");
+    }
+
     /** The reveal is the teaser, not the reference — it must stay short and point at the full list. */
     @Test
     void theRevealIsShorterThanTheInstructionAndPointsAtIt() {

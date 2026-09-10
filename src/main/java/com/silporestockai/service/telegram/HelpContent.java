@@ -45,9 +45,18 @@ public final class HelpContent {
     public static final String EXAMPLE_BENEFITS = "— «Які в мене купони й бонуси?» — покажу баланс, сертифікати та "
             + "промокоди (їх застосую сам при замовленні) і купони «Сільпо» (їх вмикають у застосунку).";
 
+    /**
+     * Task 74: the headline sells the mechanism, and the mechanism is a company agreeing on one order together.
+     * The live copy said «зберу напої на всіх» and read back as «режим бухати» — a consensus feature undersold
+     * as a party trick. What the round actually resolves gets a sentence of its own rather than the headline:
+     * the limit is real (task 68 stopped at drinks deliberately — what a company may eat is an allergy question,
+     * and a group chat is not where that consent can be taken), and leaving it out of the pitch would be the
+     * other kind of dishonesty.
+     */
     private static final String GROUP = """
-            Компанією: додай мене в груповий чат — зберу напої на всіх за спільною згодою. Кожен пише реплаєм, \
-            що п'є, організатор закриває список, я пропоную, усі тиснуть 👍 — і кошик у «Сільпо» організатора.""";
+            Компанією: додай мене в груповий чат — зберу спільну закупку на всіх за згодою кожного. Кожен пише \
+            реплаєм, що йому взяти, організатор закриває список, я пропоную, усі тиснуть 👍 — і кошик у «Сільпо» \
+            організатора. Поки що збираю напої; їжу на компанію — ще ні.""";
 
     /** Everything, behind the «❓ Інструкція» button. */
     public static final String FULL = BUTTONS

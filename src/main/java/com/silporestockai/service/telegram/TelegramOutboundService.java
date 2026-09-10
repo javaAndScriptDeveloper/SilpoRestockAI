@@ -252,7 +252,7 @@ public class TelegramOutboundService {
      * Whether this bot sees every message in a group it belongs to.
      *
      * <p>Telegram's privacy mode — on by default for every bot — delivers a bot only commands addressed to it,
-     * replies to its own messages and service messages. A plain «@bot збери напої» never reaches it, which is
+     * replies to its own messages and service messages. A plain «@бот збери на п'ятницю» never reaches it, which is
      * exactly the sentence that opens a group round (task 68). Found live on 2026-09-09: the tag went out, the
      * webhook stayed silent, {@code getWebhookInfo} showed nothing pending. Two things lift the restriction — the
      * bot being a group administrator, or privacy mode switched off in BotFather — and the group intro says so

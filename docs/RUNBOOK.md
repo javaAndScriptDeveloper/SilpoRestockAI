@@ -1220,13 +1220,29 @@ task 55 parses for the unique-tool list instead of collecting the same data twic
 
 ---
 
-## 18. A group drinks round (task 68)
+## 18. A group order round (tasks 68, 74)
 
 A group chat is not a household: it gets no `users` row, no onboarding, no intent router. Everything a group
 sends goes to `GroupEventService`, whose state is `group_event.status`. A round starts when somebody tags the
-bot and asks («@bot збери напої на п'ятницю, бюджет 2000»); from then on the bot reads only replies to its own
-messages and taps on its own buttons — a further mention or a `/command` is ignored like any other message
-(product decision, session 15 review).
+bot and asks («@бот збери на п'ятницю, бюджет 2000» — any mention with no round open does it); from then on the
+bot reads only replies to its own messages and taps on its own buttons — a further mention or a `/command` is
+ignored like any other message (product decision, session 15 review).
+
+**Scope, and how it is said (task 74).** The round resolves **drinks only** — task 68 stopped there on purpose,
+since a company's allergies cannot be consented to in a group chat. The copy no longer *sells* it as a drinks
+run, though: «Інструкція», the group intro and the greeting all pitch «спільна закупка на компанію» and then say
+in their own sentence that drinks are what it collects today. Somebody who asks for food is told so at once
+(`GroupOrderScope.asksForFood` → `drinksOnlyAck`), and the proposal's own note repeats it for whatever that word
+list misses. Nothing about resolution changed: `GroupEventIntegrationTest.fullRound` passes untouched.
+
+**Driving a group round with synthetic webhooks** (session 21, and the trap in it): a made-up group chat id
+works — every outbound send fails with `[400] Bad Request: chat not found`, which is loud in the log but
+lands *after* `TelegramOutboundService` has already printed the message text, so the copy is readable. Two
+things must be real, though. A reply is only «addressed to the bot» when `reply_to_message.from.id` is the
+**bot's real id** (`getMe`, not a made-up one) — with a wrong id the update is dropped as
+`ignoring an unaddressed message in group …`. And the failed greeting leaves `greeting_message_id` null, so
+set it by hand (`UPDATE group_event SET greeting_message_id = …`) before replying to it. Delete the
+`group_event` and `group_event_participant` rows afterwards.
 
 ### Set-up
 
@@ -1247,9 +1263,10 @@ messages and taps on its own buttons — a further mention or a `/command` is ig
 
 | Do this | Expect |
 |---|---|
-| Add the bot to a group | A one-line intro («тегни мене…»), no round, no `group_event` row. With privacy mode on, the intro opens with «Спершу зроби мене адміністратором групи» — until then the tag below never arrives |
+| Add the bot to a group | A one-line intro («Коли треба зібрати спільну закупку на компанію — тегни мене…»), no round, no `group_event` row. With privacy mode on, the intro opens with «Спершу зроби мене адміністратором групи» — until then the tag below never arrives |
 | «@bot збери напої на п'ятницю, бюджет 2000» (or tap «🔄 Новий збір» under the last round's summary) | A greeting with the rules and one button «✅ Всі відповіли»; `group_event` row in `COLLECTING_REPLIES`, `organizer_telegram_user_id` = whoever tagged/tapped, budget/tag/date already parsed from the tag text |
 | Reply to the greeting: «вино червоне», «пиво світле, це на ДР», «.» | Each gets «Записав, {ім'я}. Відповіли: N.» as a reply; one row per person, a second reply overwrites the text |
+| Reply to the greeting asking for food: «чіпси й пиво», «візьми шашлик» | «Записав, {ім'я}. Відповіли: N. Тільки скажу чесно: поки що я збираю на компанію лише напої — їжу доведеться взяти окремо.» The reply is still stored and still counted; the beer in it is still bought (task 74) |
 | Write anything in the group without replying to the bot — including a second `@bot …` while the round is open, and `/anything` | Nothing. `logs/app.log` at DEBUG: `ignoring an unaddressed message in group …`; no Claude call, no MCP call |
 | Organizer, as a reply to the greeting: «бюджет 1500, привід: ДР, дата 20.09» | «Прийняв: бюджет 1500 грн · привід: ДР · дата 20.09.2026» |
 | Someone other than the organizer taps «Всі відповіли» | A toast «Це кнопка організатора.», nothing else |

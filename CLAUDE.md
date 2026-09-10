@@ -65,8 +65,10 @@ fits; do not invent a parallel structure.
 - **A group chat is never a household.** `TelegramRoutingService` splits group/supergroup updates off before any
   `User` lookup and hands them to `GroupEventService`; the round's state lives in `group_event.status`, not in
   `conversation_state`. The bot reacts in a group only to a reply to its own message or a tap on its own button; the one mention it
-  reads is «@bot збери напої…» with no round open, which starts one. Everything else is dropped at DEBUG. Every count in that flow
-  is a count of stored reply rows: the Bot API never lists a group's members.
+  reads is any @mention with no round open, which starts one («@бот збери на п'ятницю…» is what the copy advertises since task 74).
+  Everything else is dropped at DEBUG. Every count in that flow is a count of stored reply rows: the Bot API never lists a group's
+  members. The round resolves **drinks only** — task 68's deliberate scope, because a company's allergies cannot be consented to in a
+  group chat — and task 74 made every user-facing string say so plainly instead of selling the feature as a drinks run.
 - `@Slf4j` for logging; no manual `LoggerFactory`.
 
 ## Commands
