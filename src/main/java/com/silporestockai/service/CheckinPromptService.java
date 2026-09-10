@@ -9,6 +9,7 @@ import com.silporestockai.model.ConversationFlow;
 import com.silporestockai.model.OrderStatus;
 import com.silporestockai.repository.CheckinRepository;
 import com.silporestockai.repository.CustomerOrderRepository;
+import com.silporestockai.repository.UserProfileRepository;
 import com.silporestockai.repository.UserRepository;
 import com.silporestockai.service.telegram.CheckinMessageService;
 import com.silporestockai.service.telegram.TelegramOutboundService;
@@ -41,6 +42,7 @@ public class CheckinPromptService {
     static final java.time.Duration QUIET_AFTER_ACTIVITY = java.time.Duration.ofMinutes(2);
 
     private final UserRepository userRepository;
+    private final UserProfileRepository userProfileRepository;
     private final CheckinRepository checkinRepository;
     private final CustomerOrderRepository customerOrderRepository;
     private final ConversationStateService conversationStateService;
@@ -62,6 +64,13 @@ public class CheckinPromptService {
         int prompted = 0;
         for (User user : candidates) {
             try {
+                if (userProfileRepository.findByUserId(user.getId()).isEmpty()) {
+                    // A baseline with no profile is a household mid-onboarding (or one whose profile was reset for a
+                    // fresh run). Asking «що закінчилось?» before the greeting has even landed is the wrong first
+                    // frame, and the answer would be routed to onboarding anyway.
+                    log.debug("check-in skipped for user {}: no finished profile", user.getId());
+                    continue;
+                }
                 if (isDue(user) && !isBusyElsewhere(user)) {
                     prompt(user);
                     prompted++;
