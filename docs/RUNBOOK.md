@@ -1789,6 +1789,49 @@ clock (a slot goes unavailable roughly at its cutoff). The recovery itself is co
 `…saysThereIsNoSlotAtAllRatherThanBlamingTheListWhenNoneAreOffered` and, in the revision-loop shape the task
 asks for, `CartConfirmationIntegrationTest.aRevisionLoopThatOutlivesItsSlotRebooksInsteadOfBlamingTheList`.
 
+## 24. The pitch artifact: what the agent really calls (task 55)
+
+**What it is:** one page — `src/main/resources/static/pitch.html`, served at `/pitch.html` — listing every
+`silpo_*` tool this system has really called, how often, how many of those failed, and which flow reaches for
+each; then how many times each chat intent fired, including the ones the classifier missed. It is the answer
+to «Якість використання MCP» and «Агентність рішення» that a Grafana panel cannot give: something a judge
+reads once, carefully, from a QR code.
+
+**Where the numbers come from:** `mcp_tool_call` (task 37, one row per `McpToolCalledEvent`) and
+`intent_classification` (this task, one row per classification the router makes — `ROUTED` with the intent's
+own name, `UNCLASSIFIED` below the confidence threshold or on an unknown name, `FAILED` when the model call
+threw). Nothing on the page is typed by hand except the per-tool note, and
+`PitchArtifactServiceTest.theFlowNotesAndTheToolsTheCodeCallsAreTheSameSet` fails the build if a note outlives
+its call site or a new tool arrives without one — which is what makes the page's «жоден теперішній флоу цього
+інструмента не тягне» line true rather than hopeful.
+
+**It is a snapshot, and deliberately so.** The endpoint that renders it sits behind `X-Metrics-Token` like
+the metrics report; the public page is a committed file baked into the image. A public endpoint reading the
+tables per request would be a live feed in all but name — during the demo window other people are testing the
+bot, and the numbers would move under a judge who scanned the code five minutes earlier.
+
+### Regenerating it before a recording
+
+1. Run the app against live Silpo MCP (`make run`), with `METRICS_TOKEN` set in `.env`.
+2. Drive every flow that reaches MCP. The synthetic-webhook driver from §16a is the fast way; pace the sends
+   with `python3 -c "import time; time.sleep(N)"` (`sleep` is a no-op in some sandboxes and firing them at
+   once trips the Claude circuit breaker), and reset `conversation_state.current_flow` to `NONE` between
+   steps or a cart confirmation swallows everything after it.
+3. Check the coverage before publishing an understated number:
+
+```sql
+SELECT tool_name, count(*), count(*) FILTER (WHERE is_error) FROM mcp_tool_call GROUP BY 1 ORDER BY 2 DESC;
+SELECT intent, outcome, count(*) FROM intent_classification GROUP BY 1, 2 ORDER BY 3 DESC;
+```
+
+4. `make pitch-artifact` — writes `src/main/resources/static/pitch.html`.
+5. Open the file, then commit and push it. Watchtower (§20) rolls it out; on a host with a domain it is then
+   at `https://$DOMAIN/pitch.html`.
+
+**What to check with your own eyes:** the headline count matches the first query, every tool row carries a
+note or the explicit «історичні виклики» line, and no UUID appears anywhere —
+`grep -cE '[0-9a-f]{8}-[0-9a-f]{4}' src/main/resources/static/pitch.html` should print `0`.
+
 ## Cleanup
 
 ### Start completely from scratch

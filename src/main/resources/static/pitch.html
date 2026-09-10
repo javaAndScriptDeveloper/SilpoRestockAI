@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Комора — що агент справді викликає</title>
+<style>:root { color-scheme: light dark;
+  --bg:#fbfaf7; --fg:#1b1a17; --muted:#6b6760; --line:#e3ded4; --card:#fff; --accent:#0f7a3d;
+  --bad:#a3341f; }
+@media (prefers-color-scheme: dark) { :root {
+  --bg:#16161a; --fg:#eceae4; --muted:#9c968c; --line:#2e2e34; --card:#1e1e23; --accent:#6cc48d;
+  --bad:#e08d76; } }
+* { box-sizing: border-box; }
+body { margin:0; padding:2.5rem 1.25rem 4rem; background:var(--bg); color:var(--fg);
+  font:16px/1.55 -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+header, section, footer { max-width: 62rem; margin: 0 auto; }
+.eyebrow { margin:0 0 .35rem; font-size:.8rem; letter-spacing:.09em; text-transform:uppercase;
+  color:var(--accent); font-weight:600; }
+h1 { margin:0 0 .6rem; font-size:clamp(1.7rem, 4vw, 2.5rem); line-height:1.15; letter-spacing:-.02em; }
+.lede { margin:0 0 2rem; max-width:46rem; color:var(--muted); }
+h2 { margin:2.75rem 0 .4rem; font-size:1.15rem; letter-spacing:-.01em; }
+.note { margin:.2rem 0 1rem; max-width:46rem; color:var(--muted); font-size:.9rem; }
+.stats { display:grid; gap:.9rem; grid-template-columns:repeat(auto-fit, minmax(15rem, 1fr));
+  margin-bottom:.5rem; }
+.stat { background:var(--card); border:1px solid var(--line); border-radius:.7rem; padding:1.1rem 1.2rem; }
+.stat .value { margin:0; font-size:2rem; font-weight:650; letter-spacing:-.03em; color:var(--accent); }
+.stat .label { margin:.15rem 0 0; font-weight:600; }
+.stat .detail { margin:.15rem 0 0; color:var(--muted); font-size:.88rem; }
+.scroll { overflow-x:auto; border:1px solid var(--line); border-radius:.7rem; background:var(--card); }
+table { border-collapse:collapse; width:100%; font-size:.92rem; }
+th, td { text-align:left; padding:.6rem .85rem; border-bottom:1px solid var(--line);
+  vertical-align:top; }
+thead th { font-size:.78rem; letter-spacing:.06em; text-transform:uppercase; color:var(--muted);
+  font-weight:600; white-space:nowrap; }
+tbody tr:last-child td { border-bottom:0; }
+td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+td.bad { color:var(--bad); font-weight:600; }
+td.empty { color:var(--muted); text-align:center; padding:1.6rem; }
+td.muted { color:var(--muted); font-style:italic; }
+code { font:.88em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+footer { margin-top:3rem; padding-top:1.2rem; border-top:1px solid var(--line); color:var(--muted);
+  font-size:.85rem; }
+footer p { max-width:46rem; margin:0; }
+</style>
+</head>
+<body>
+<header>
+<p class="eyebrow">Комора · Silpo AI Factory</p>
+<h1>Що агент справді викликає</h1>
+<p class="lede">Знімок одного реального прогону через усі сценарії. Кожне число тут — порахований рядок у базі, не цифра зі слайда: виклики MCP пише <code>mcp_tool_call</code>, класифікації — <code>intent_classification</code>.</p>
+</header>
+<section class="stats">
+<div class="stat"><p class="value">21 з 40</p><p class="label">інструментів Silpo MCP задіяно</p><p class="detail">1583 виклики, 14 з помилкою</p></div>
+<div class="stat"><p class="value">19</p><p class="label">інтентів справді спрацювало</p><p class="detail">18 з 19 класифікацій розпізнано</p></div>
+</section>
+<section>
+<h2>MCP-інструменти</h2>
+<p class="note">Порядок — за кількістю викликів. Нотатка каже, який флоу тягне інструмент і навіщо.</p>
+<div class="scroll"><table>
+<thead><tr><th>Інструмент</th><th class="num">Викликів</th><th class="num">З помилкою</th><th>Де використовується</th></tr></thead>
+<tbody>
+<tr><td><code>silpo_get_shopping_cart_by_id</code></td><td class="num">444</td><td class="num">0</td><td>Збірка кошика (#13): перечитати кошик після змін — звідти беруться суми, яких немає у відповіді на додавання.</td></tr>
+<tr><td><code>silpo_get_my_shopping_cart</code></td><td class="num">280</td><td class="num">0</td><td>Збірка кошика (#13): що зараз у кошику домогосподарства.</td></tr>
+<tr><td><code>silpo_get_time_slots</code></td><td class="num">247</td><td class="num">0</td><td>Налаштування доставки (#34) і автопідбір слота (#76): вільні вікна доставки, у тому числі коли попередній слот прострочився.</td></tr>
+<tr><td><code>silpo_find_products_batch</code></td><td class="num">198</td><td class="num bad">1</td><td>Збірка кошика (#13): кожен рядок списку шукається в каталозі одним батчем; ним же добираються готові страви й товари партнерських розміщень.</td></tr>
+<tr><td><code>silpo_add_or_update_cart_products</code></td><td class="num">143</td><td class="num bad">4</td><td>Збірка кошика (#13) і дельта-дозамовлення (#14): додавання позицій та зміна кількостей.</td></tr>
+<tr><td><code>silpo_clear_shopping_cart</code></td><td class="num">116</td><td class="num">0</td><td>Збірка кошика (#50): кошик очищується перед кожною новою збіркою, щоб замовлення не успадкувало вчорашнє.</td></tr>
+<tr><td><code>silpo_get_my_online_orders</code></td><td class="num">29</td><td class="num">0</td><td>Онбординг (#35) і статус замовлення (#56): минулі онлайн-покупки як базис, і «де моє замовлення» — читання без жодної зміни.</td></tr>
+<tr><td><code>silpo_get_my_offline_orders</code></td><td class="num">22</td><td class="num bad">1</td><td>Статус замовлення (#56): покупки в магазині, коли онлайн-історії ще немає.</td></tr>
+<tr><td><code>silpo_remove_cart_products</code></td><td class="num">16</td><td class="num">0</td><td>Правки списку (#12): позиція, яку прибрали з кошика.</td></tr>
+<tr><td><code>silpo_get_my_certificates</code></td><td class="num">15</td><td class="num">0</td><td>Вигоди гостя (#78): подарункові сертифікати домогосподарства.</td></tr>
+<tr><td><code>silpo_get_my_coupons</code></td><td class="num">15</td><td class="num">0</td><td>Вигоди гостя (#79): купони гостя — показуються, бо застосувати їх може тільки застосунок «Сільпо».</td></tr>
+<tr><td><code>silpo_get_promo_codes</code></td><td class="num">15</td><td class="num">0</td><td>Вигоди гостя (#79): промокоди, які кошик може прийняти.</td></tr>
+<tr><td><code>silpo_get_my_family</code></td><td class="num">8</td><td class="num">0</td><td>Онбординг (#09): склад домогосподарства з профілю «Сільпо» — щоб не питати те, що вже відоме.</td></tr>
+<tr><td><code>silpo_get_my_favorites</code></td><td class="num">8</td><td class="num bad">4</td><td>Онбординг (#09): улюблені товари як стартовий базис раціону.</td></tr>
+<tr><td><code>silpo_get_my_food_restrictions</code></td><td class="num">8</td><td class="num">0</td><td>Онбординг (#09): харчові обмеження з профілю «Сільпо».</td></tr>
+<tr><td><code>silpo_update_shopping_cart</code></td><td class="num">6</td><td class="num bad">1</td><td>Налаштування доставки (#34): адреса, тип доставки і слот проставляються в кошик до генерації посилання на оплату.</td></tr>
+<tr><td><code>silpo_get_coupon_details</code></td><td class="num">4</td><td class="num">0</td><td>Вигоди гостя (#79): умови конкретного купона, щоб не обіцяти знижку, якої не буде.</td></tr>
+<tr><td><code>silpo_get_promotions</code></td><td class="num">3</td><td class="num bad">3</td><td class="muted">Історичні виклики: жоден теперішній флоу цього інструмента не тягне.</td></tr>
+<tr><td><code>silpo_get_loyalty_info</code></td><td class="num">2</td><td class="num">0</td><td>Вигоди гостя (#78): скільки бонусів на рахунку і скільки з них можна списати на цей кошик.</td></tr>
+<tr><td><code>silpo_get_my_premium_subscription</code></td><td class="num">2</td><td class="num">0</td><td>Вигоди гостя (#79): статус Premium — інформаційно, оскільки керувати підпискою через API не можна.</td></tr>
+<tr><td><code>silpo_get_my_promos</code></td><td class="num">2</td><td class="num">0</td><td>Вигоди гостя (#79): персональні промо-пропозиції гостя.</td></tr>
+</tbody>
+</table></div>
+<p class="note">Код тягне 26 різних інструментів; у цьому знімку спрацювало 21. Різниця — не неповний тест, а стани, яких на тестовому акаунті не було: наприклад, ланцюг створення кошика (<code>silpo_create_shopping_cart</code>, типи доставки, адреси, магазини) виконується тільки для гостя, який ще жодного разу не мав кошика.</p>
+</section>
+<section>
+<h2>Розподіл інтентів</h2>
+<p class="note">Вільний текст у чаті класифікується і йде у той сервіс, який уже вміє це робити. Нерозпізнані спроби — теж рядки: сторінка відповідає на питання про точність до того, як його поставлять.</p>
+<div class="scroll"><table>
+<thead><tr><th>Інтент</th><th class="num">Разів</th><th class="num">Частка</th><th>Як це звучить у чаті</th></tr></thead>
+<tbody>
+<tr><td><code>AD_HOC_SCHEDULED_PURCHASE</code></td><td class="num">1</td><td class="num">5 %</td><td>«замов до п'ятниці вино та сир по знижці»</td></tr>
+<tr><td><code>BLACKOUT</code></td><td class="num">1</td><td class="num">5 %</td><td>«світла не буде до вечора»</td></tr>
+<tr><td><code>CALENDAR_CONNECT</code></td><td class="num">1</td><td class="num">5 %</td><td>«підключи мій календар»</td></tr>
+<tr><td><code>CALENDAR_VIEW</code></td><td class="num">1</td><td class="num">5 %</td><td>«що їмо в середу?»</td></tr>
+<tr><td><code>DISH_INGREDIENTS_ORDER</code></td><td class="num">1</td><td class="num">5 %</td><td>«замов усе на карбонару» або фото страви</td></tr>
+<tr><td><code>FILTER_UA_PRODUCER_ONLY</code></td><td class="num">1</td><td class="num">5 %</td><td>«бери тільки українських виробників»</td></tr>
+<tr><td><code>HANGOVER_RELIEF</code></td><td class="num">1</td><td class="num">5 %</td><td>«вчора перебрав, треба щось відпоїтись»</td></tr>
+<tr><td><code>HELP</code></td><td class="num">1</td><td class="num">5 %</td><td>«що ти вмієш?»</td></tr>
+<tr><td><code>LIST_MODIFY</code></td><td class="num">1</td><td class="num">5 %</td><td>«додай протеїн і прибери печиво»</td></tr>
+<tr><td><code>LIST_VIEW</code></td><td class="num">1</td><td class="num">5 %</td><td>«покажи список»</td></tr>
+<tr><td><code>MY_BENEFITS</code></td><td class="num">1</td><td class="num">5 %</td><td>«які в мене вигоди?»</td></tr>
+<tr><td><code>PAST_ORDER_SEED</code></td><td class="num">1</td><td class="num">5 %</td><td>«візьми за основу мою минулу покупку»</td></tr>
+<tr><td><code>REORDER</code></td><td class="num">1</td><td class="num">5 %</td><td>«дозамов те, що закінчилось»</td></tr>
+<tr><td><code>SPECIAL_MODE_END</code></td><td class="num">1</td><td class="num">5 %</td><td>«все, повертаємось до звичайного»</td></tr>
+<tr><td><code>SPECIAL_MODE_LEANER</code></td><td class="num">1</td><td class="num">5 %</td><td>«хочу мінус 200 ккал на день»</td></tr>
+<tr><td><code>SPECIAL_MODE_MASS_GAIN</code></td><td class="num">1</td><td class="num">5 %</td><td>«набираю масу»</td></tr>
+<tr><td><code>SPECIAL_MODE_MEDICAL_GASTRITIS</code></td><td class="num">1</td><td class="num">5 %</td><td>«у мене загострився гастрит»</td></tr>
+<tr><td><code>UNCLASSIFIED</code></td><td class="num">1</td><td class="num">5 %</td><td>фраза, якої класифікатор не впізнав — бот перепитує</td></tr>
+<tr><td><code>WHERE_IS_MY_ORDER</code></td><td class="num">1</td><td class="num">5 %</td><td>«де моє замовлення?»</td></tr>
+</tbody>
+</table></div>
+<p class="note">Розпізнано: 18 з 19 · не розпізнано: 1 · збій класифікатора: 0</p>
+</section>
+<footer>
+<p>Знімок за 10.09.2026, 19:25 (Київ). Це не живий лог: сторінка перегенеровується вручну перед демо і публікується як статичний файл. Тут немає жодного повідомлення, товару чи ідентифікатора людини — тільки імена інструментів, лічильники та імена інтентів.</p>
+</footer>
+</body>
+</html>

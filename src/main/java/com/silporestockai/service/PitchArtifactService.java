@@ -39,6 +39,13 @@ public class PitchArtifactService {
     /** Which flow reaches for each tool, and why. The one part of the page a human wrote. */
     public static final Map<String, String> FLOW_NOTES = flowNotes();
 
+    /**
+     * What an unnoted tool means. A test asserts the notes and the call sites cover each other exactly, so a tool
+     * with no note is one no current flow calls — the row survives from an older run.
+     */
+    public static final String NO_LONGER_CALLED =
+            "Історичні виклики: жоден теперішній флоу цього інструмента не тягне.";
+
     /** What a person actually types to make each intent fire — so a judge reads speech, not an enum. */
     private static final Map<String, String> INTENT_EXAMPLES = intentExamples();
 
@@ -124,11 +131,20 @@ public class PitchArtifactService {
                     .append(tool.failures() > 0 ? " bad" : "")
                     .append("\">")
                     .append(tool.failures())
-                    .append("</td><td>")
-                    .append(escape(FLOW_NOTES.getOrDefault(tool.tool(), "")))
+                    .append("</td><td")
+                    .append(FLOW_NOTES.containsKey(tool.tool()) ? ">" : " class=\"muted\">")
+                    .append(escape(FLOW_NOTES.getOrDefault(tool.tool(), NO_LONGER_CALLED)))
                     .append("</td></tr>\n");
         }
-        page.append("</tbody>\n</table></div>\n</section>\n");
+        page.append("</tbody>\n</table></div>\n")
+                .append("<p class=\"note\">Код тягне ")
+                .append(FLOW_NOTES.size())
+                .append(" різних інструментів; у цьому знімку спрацювало ")
+                .append(tools.size())
+                .append(". Різниця — не неповний тест, а стани, яких на тестовому акаунті не було: наприклад, ")
+                .append("ланцюг створення кошика (<code>silpo_create_shopping_cart</code>, типи доставки, адреси, ")
+                .append("магазини) виконується тільки для гостя, який ще жодного разу не мав кошика.</p>\n")
+                .append("</section>\n");
 
         page.append("<section>\n<h2>Розподіл інтентів</h2>\n")
                 .append("<p class=\"note\">Вільний текст у чаті класифікується і йде у той сервіс, який уже вміє ")
@@ -382,6 +398,7 @@ public class PitchArtifactService {
             td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
             td.bad { color:var(--bad); font-weight:600; }
             td.empty { color:var(--muted); text-align:center; padding:1.6rem; }
+            td.muted { color:var(--muted); font-style:italic; }
             code { font:.88em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
             footer { margin-top:3rem; padding-top:1.2rem; border-top:1px solid var(--line); color:var(--muted);
               font-size:.85rem; }
