@@ -178,9 +178,15 @@ public class GiftOrderService {
             giftOrderRepository.save(order);
             telegramOutboundService.sendMessage(sender.getTelegramChatId(), giftMessageService.addressInHand(label));
             // They agreed to store an address, not to this delivery — and somebody has to be home for a courier.
-            telegramOutboundService.sendMessage(
-                    friend.getTelegramChatId(),
-                    giftMessageService.tellRecipientAboutTheGift(senderLabel(sender), "найближчим часом"));
+            // Best effort, though: a friend who has since blocked the bot is a reason not to reach them, never a
+            // reason to fail the order the sender is paying for.
+            try {
+                telegramOutboundService.sendMessage(
+                        friend.getTelegramChatId(),
+                        giftMessageService.tellRecipientAboutTheGift(senderLabel(sender), "найближчим часом"));
+            } catch (RuntimeException e) {
+                log.warn("could not tell {} that a gift is coming: {}", label, e.getMessage());
+            }
             giftCartBuildingService.build(sender, order, trigger);
             return;
         }
@@ -195,8 +201,22 @@ public class GiftOrderService {
 
         conversationStateService.save(
                 friend.getTelegramChatId(), ConversationFlow.GIFT_ADDRESS_REQUEST, null, Map.of());
-        telegramOutboundService.sendMessage(
-                friend.getTelegramChatId(), giftMessageService.askRecipientForAddress(senderLabel(sender), theme));
+        try {
+            telegramOutboundService.sendMessage(
+                    friend.getTelegramChatId(), giftMessageService.askRecipientForAddress(senderLabel(sender), theme));
+        } catch (RuntimeException e) {
+            // Here the message *is* the mechanism — there is no address without it — so a failure to deliver
+            // makes this the same situation as a friend who never used the bot, and it is answered the same way.
+            log.warn("could not ask {} for a gift address: {}", label, e.getMessage());
+            conversationStateService.save(friend.getTelegramChatId(), ConversationFlow.NONE, null, Map.of());
+            order.setStatus(GiftOrderStatus.UNREACHABLE);
+            order.setExpiresAt(null);
+            order.setUpdatedAt(Instant.now());
+            giftOrderRepository.save(order);
+            telegramOutboundService.sendMessage(
+                    sender.getTelegramChatId(), giftMessageService.recipientUnreachable(label));
+            return;
+        }
         telegramOutboundService.sendMessage(
                 sender.getTelegramChatId(), giftMessageService.waitingOnTheRecipient(label));
     }
