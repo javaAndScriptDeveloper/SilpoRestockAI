@@ -262,18 +262,19 @@ public class CartConfirmationService {
             // Silpo's minimum order, and the household's call what to do about it. The cart is shown exactly as
             // built; topping it up from the baseline is a button, not a default — twelve lines of vegetables under
             // a carbonara was the first thing a person said «забагато лишнього» about.
-            boolean hasBaseline = cartBuildingService.hasBaseline(user.getId());
+            // A gift is never topped up from the household's own baseline: that would send this family's milk
+            // and bread to a friend's door under a bow (live, session 25). The sender names a bigger present.
+            boolean hasBaseline = type != OrderType.GIFT && cartBuildingService.hasBaseline(user.getId());
+            String text = withBudgetWarning(
+                    cartMessageService.belowMinimumText(summary, selectedSlot, type, hasBaseline, benefits),
+                    user,
+                    summary,
+                    benefits);
+            if (type == OrderType.GIFT) {
+                text = text + "\n\n" + GIFT_BELOW_MINIMUM_HINT;
+            }
             telegramOutboundService.sendMessageWithButtons(
-                    chatId,
-                    giftFramed(
-                            withBudgetWarning(
-                                    cartMessageService.belowMinimumText(
-                                            summary, selectedSlot, type, hasBaseline, benefits),
-                                    user,
-                                    summary,
-                                    benefits),
-                            gift),
-                    cartMessageService.belowMinimumButtons(summary, hasBaseline));
+                    chatId, giftFramed(text, gift), cartMessageService.belowMinimumButtons(summary, hasBaseline));
             log.info(
                     "presented cart {} as draft order {} to user {}, {} short of the minimum order",
                     summary.cartId(),
@@ -296,6 +297,11 @@ public class CartConfirmationService {
         return true;
     }
 
+    /** What a sender reads under a gift that is short of the minimum — the baseline is not on offer for a gift. */
+    static final String GIFT_BELOW_MINIMUM_HINT = "Це подарунок, тож зі свого звичайного набору я нічого не докладаю. "
+            + "Назви більший подарунок — наприклад «щось до кави і торт» — або докинь у застосунку «Сільпо»: кошик "
+            + "уже стоїть на адресі друга.";
+
     /** Says who a cart is for, when it is for somebody else. Unchanged for every ordinary order. */
     private String giftFramed(String text, GiftOrder gift) {
         return gift == null ? text : cartMessageService.giftWrapped(text, gift.recipientLabel());
@@ -307,6 +313,11 @@ public class CartConfirmationService {
      */
     private void topUp(User user, ConversationState state, CustomerOrder order, CartSummary summary) {
         long chatId = user.getTelegramChatId();
+        if (order.getType() == OrderType.GIFT) {
+            // Keyboards outlive code: a gift cart sent before this rule still carries the button.
+            telegramOutboundService.sendMessage(chatId, GIFT_BELOW_MINIMUM_HINT);
+            return;
+        }
         if (!summary.belowMinimumOrder()) {
             log.debug("ignoring a top-up tap for cart {}: it is not below the minimum", summary.cartId());
             return;
