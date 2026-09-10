@@ -38,8 +38,14 @@ public record CartBenefits(List<GiftCertificate> certificates, String promoCode,
         return !certificateList().isEmpty() || (promoCode != null && !promoCode.isBlank());
     }
 
-    /** Whether there is anything at all to say — applicable or merely worth mentioning. */
-    public boolean isEmpty() {
+    /**
+     * Whether there is anything at all to say — applicable or merely worth mentioning.
+     *
+     * <p>Deliberately not named {@code isEmpty}: this record is written into {@code conversation_state.context_json}
+     * and read back on the next webhook, and Jackson would take an {@code is…} method for a fourth component,
+     * serialise {@code "empty"} and then refuse to read its own output back.
+     */
+    public boolean nothingToOffer() {
         return !hasApplicable() && couponList().isEmpty();
     }
 }

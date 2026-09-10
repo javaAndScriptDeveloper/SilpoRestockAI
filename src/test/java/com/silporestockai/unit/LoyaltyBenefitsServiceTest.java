@@ -77,12 +77,12 @@ class LoyaltyBenefitsServiceTest {
     void anExceptionAnywhereDegradesToNoOfferRatherThanFailingTheCart() {
         when(silpoMcpClient.callTool(any(), any(), eq(USER_ID))).thenThrow(new IllegalStateException("silpo is down"));
 
-        assertThat(service.cartBenefits(USER_ID).isEmpty()).isTrue();
+        assertThat(service.cartBenefits(USER_ID).nothingToOffer()).isTrue();
     }
 
     @Test
     void theLiveEmptyAccountOffersNothingAtAll() {
-        assertThat(service.cartBenefits(USER_ID).isEmpty()).isTrue();
+        assertThat(service.cartBenefits(USER_ID).nothingToOffer()).isTrue();
     }
 
     @Test

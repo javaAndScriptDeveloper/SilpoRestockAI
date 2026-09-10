@@ -1,7 +1,11 @@
 package com.silporestockai.service.telegram;
 
+import com.silporestockai.model.AppliedBenefits;
 import com.silporestockai.model.BasketItem;
+import com.silporestockai.model.CartBenefits;
 import com.silporestockai.model.CartSummary;
+import com.silporestockai.model.GiftCertificate;
+import com.silporestockai.model.LoyaltyCoupon;
 import com.silporestockai.model.OfferedSlot;
 import com.silporestockai.model.OrderType;
 import com.silporestockai.model.TelegramButton;
@@ -26,7 +30,22 @@ import org.springframework.stereotype.Service;
 public class CartMessageService {
 
     public static final String CALLBACK_CONFIRM = "cart:confirm";
+
+    /**
+     * The bonus-only confirm (task 24). Kept for the keyboards already sitting in real chats — Telegram never
+     * withdraws a message, so a tap on last week's cart must still mean something — and still sent whenever
+     * bonuses are the only benefit, because «Підтвердити + 250 бонусів» says more than «+ вигоди» ever could.
+     */
     public static final String CALLBACK_CONFIRM_BONUS = "cart:confirm-bonus";
+
+    /**
+     * One tap for every benefit at once (tasks 78 and 79).
+     *
+     * <p>Three independent yes/no questions would be up to eight confirm variants on one keyboard, so the
+     * question is asked once and the cart text above it says exactly what the yes covers.
+     */
+    public static final String CALLBACK_CONFIRM_BENEFITS = "cart:confirm-benefits";
+
     public static final String CALLBACK_SLOT_MENU = "cart:slotmenu";
     public static final String CALLBACK_SLOT_PREFIX = "cart:slot:";
     public static final String CALLBACK_CANCEL = "cart:cancel";
@@ -45,6 +64,18 @@ public class CartMessageService {
      * see {@code PartnerPromotionService} — just not announced.
      */
     public String cartText(CartSummary summary, OfferedSlot slot, OrderType type) {
+        return cartText(summary, slot, type, CartBenefits.none());
+    }
+
+    /**
+     * The same cart, with what the household's loyalty account can put against it (tasks 78 and 79).
+     *
+     * <p>Two blocks, deliberately worded differently. What Silpo has a tool for — bonuses, certificates, a promo
+     * code — is listed as an offer under «Твої вигоди», because one tap below actually applies it. A coupon has no
+     * apply path anywhere in the live API, so it is a sentence about what Silpo itself will do at checkout, and
+     * carries no promise this bot could break.
+     */
+    public String cartText(CartSummary summary, OfferedSlot slot, OrderType type, CartBenefits benefits) {
         StringBuilder text =
                 new StringBuilder(type == OrderType.AD_HOC ? "Зібрав кошик:\n" : "Зібрав кошик на тиждень:\n");
         text.append(cartLinesText(summary));
@@ -69,10 +100,36 @@ public class CartMessageService {
                     .append(" грн");
         }
         text.append("\n\nДоставка: ").append(DeliverySlots.describe(slot));
-        if (summary.bonusDecisionPending()) {
+        CartBenefits offered = benefits == null ? CartBenefits.none() : benefits;
+        if (offered.hasApplicable()) {
+            // More than one kind of benefit, so the list has to carry the detail the single button cannot.
+            text.append("\n\n💳 Твої вигоди:");
+            if (summary.bonusDecisionPending()) {
+                text.append("\n• ").append(amount(summary.bonusAvailable())).append(" балабонусів");
+            }
+            for (GiftCertificate certificate : offered.certificateList()) {
+                text.append("\n• Сертифікат ");
+                if (certificate.value() != null) {
+                    text.append(money(certificate.value())).append(" грн ");
+                }
+                text.append('(').append(certificate.maskedBarcode()).append(')');
+            }
+            if (offered.promoCode() != null && !offered.promoCode().isBlank()) {
+                text.append("\n• Промокод ").append(offered.promoCode());
+            }
+            text.append("\nЗастосую все це, якщо натиснеш «Підтвердити + вигоди».");
+        } else if (summary.bonusDecisionPending()) {
             text.append("\nНа рахунку ")
                     .append(amount(summary.bonusAvailable()))
                     .append(" бонусів — можу списати їх на це замовлення.");
+        }
+        for (LoyaltyCoupon coupon : offered.couponList()) {
+            // Said, never offered: no tool on the live MCP server applies a coupon, so the only honest thing to
+            // do with one is name it and say where it actually works.
+            text.append("\n\n🎟 Купон «")
+                    .append(coupon.label())
+                    .append(coupon.endDate() == null ? "»" : "» (до " + coupon.endDate() + ")")
+                    .append(" — його застосовує саме «Сільпо» при оформленні, я тут нічого не вирішую.");
         }
         return text.toString();
     }
@@ -143,9 +200,23 @@ public class CartMessageService {
      * answers both questions, and there is only one state to make idempotent instead of two.
      */
     public List<TelegramButton> cartButtons(CartSummary summary, boolean hasAlternativeSlots) {
+        return cartButtons(summary, hasAlternativeSlots, CartBenefits.none());
+    }
+
+    /**
+     * The same keyboard, with the one benefits offer (tasks 78 and 79).
+     *
+     * <p>Still exactly one extra button however many benefits there are. When bonuses stand alone it keeps its
+     * task-24 wording, which names the amount; as soon as a certificate or a promo code joins them the label goes
+     * generic and the cart text above carries the detail. A coupon never adds a button — nothing here can apply one.
+     */
+    public List<TelegramButton> cartButtons(CartSummary summary, boolean hasAlternativeSlots, CartBenefits benefits) {
+        CartBenefits offered = benefits == null ? CartBenefits.none() : benefits;
         List<TelegramButton> buttons = new ArrayList<>();
         buttons.add(TelegramButton.callback("Підтвердити", CALLBACK_CONFIRM));
-        if (summary.bonusDecisionPending()) {
+        if (offered.hasApplicable()) {
+            buttons.add(TelegramButton.callback("Підтвердити + вигоди", CALLBACK_CONFIRM_BENEFITS));
+        } else if (summary.bonusDecisionPending()) {
             buttons.add(TelegramButton.callback(
                     "Підтвердити + %s бонусів".formatted(amount(summary.bonusAvailable())), CALLBACK_CONFIRM_BONUS));
         }
@@ -214,6 +285,21 @@ public class CartMessageService {
      * that item.
      */
     public String confirmedText(CartSummary summary, boolean bonusesApplied, OrderType type) {
+        return confirmedText(
+                summary,
+                bonusesApplied
+                        ? new AppliedBenefits(summary.bonusAvailable(), List.of(), null, List.of(), null)
+                        : AppliedBenefits.none(),
+                type);
+    }
+
+    /**
+     * The same closing message, naming every benefit Silpo took (tasks 78 and 79).
+     *
+     * <p>One message rather than two. What was spent belongs beside «Підтвердив», not in a note of its own that
+     * arrives a moment earlier and reads like a second, separate transaction.
+     */
+    public String confirmedText(CartSummary summary, AppliedBenefits applied, OrderType type) {
         StringBuilder text = new StringBuilder("Підтвердив. ");
         if (type == OrderType.INITIAL) {
             text.append("Зберіг цей кошик як еталонний набір — далі буду порівнювати з ним, коли питатиму, ")
@@ -221,10 +307,9 @@ public class CartMessageService {
         } else {
             text.append("Еталонний набір лишаю як був.");
         }
-        if (bonusesApplied) {
-            text.append("\nСписав бонусів: ")
-                    .append(amount(summary.bonusAvailable()))
-                    .append('.');
+        String benefits = appliedBenefitsText(applied);
+        if (benefits != null) {
+            text.append('\n').append(benefits);
         }
         text.append("\n\nОплата — на боці «Сільпо».");
         text.append(checkoutFallbackLine(summary));
@@ -252,6 +337,49 @@ public class CartMessageService {
     /** Said instead of the cart when the bonus call failed but the order went through anyway. */
     public String bonusesUnavailableText() {
         return "Бонуси списати не вдалось — оформив без них.";
+    }
+
+    /**
+     * What Silpo actually took, said before the confirmation itself (tasks 78 and 79).
+     *
+     * <p>Each mechanism is reported on its own because Silpo accepts them independently, and a refusal is read out
+     * rather than swallowed: a household that believes a certificate was spent and finds it unspent at checkout
+     * has been misled by us, not by Silpo. The new total is quoted only when the cart could be read back — an
+     * amount nobody verified is worse than no amount.
+     *
+     * @return the message, or null when there is nothing to say
+     */
+    public String appliedBenefitsText(AppliedBenefits applied) {
+        if (applied == null || !applied.worthSaying()) {
+            return null;
+        }
+        StringBuilder text = new StringBuilder();
+        if (applied.bonusesApplied()) {
+            text.append("\nСписав бонусів: ").append(amount(applied.bonuses())).append('.');
+        }
+        for (String barcode : applied.certificateList()) {
+            text.append("\nСертифікат ").append(maskedBarcode(barcode)).append(" зарахував.");
+        }
+        if (applied.promoCode() != null && !applied.promoCode().isBlank()) {
+            text.append("\nПромокод ").append(applied.promoCode()).append(" застосував.");
+        }
+        for (String refusal : applied.refusalList()) {
+            text.append('\n').append(refusal);
+        }
+        if (applied.newTotal() != null) {
+            text.append("\nРазом після знижок: ")
+                    .append(money(applied.newTotal()))
+                    .append(" грн.");
+        }
+        return text.toString().stripLeading();
+    }
+
+    /** The tail of a barcode, which is how a person recognises their own certificate in a message. */
+    private static String maskedBarcode(String barcode) {
+        if (barcode == null) {
+            return "";
+        }
+        return barcode.length() <= 4 ? barcode : "…" + barcode.substring(barcode.length() - 4);
     }
 
     /** Two decimals, always: a price with one is a typo to the eye. */

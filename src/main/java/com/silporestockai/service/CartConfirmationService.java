@@ -8,9 +8,12 @@ import com.silporestockai.entity.ShoppingListItem;
 import com.silporestockai.entity.User;
 import com.silporestockai.exception.CartBuildException;
 import com.silporestockai.exception.NoSilpoDeliveryAddressException;
+import com.silporestockai.model.AppliedBenefits;
+import com.silporestockai.model.CartBenefits;
 import com.silporestockai.model.CartContext;
 import com.silporestockai.model.CartSummary;
 import com.silporestockai.model.ConversationFlow;
+import com.silporestockai.model.GiftCertificate;
 import com.silporestockai.model.OfferedSlot;
 import com.silporestockai.model.OrderConfirmedEvent;
 import com.silporestockai.model.OrderStatus;
@@ -21,6 +24,7 @@ import com.silporestockai.repository.BaselineBasketRepository;
 import com.silporestockai.repository.CustomerOrderRepository;
 import com.silporestockai.service.telegram.CartMessageService;
 import com.silporestockai.service.telegram.TelegramOutboundService;
+import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.Instant;
@@ -55,10 +59,21 @@ public class CartConfirmationService {
     private static final String KEY_SLOTS = "slots";
     private static final String KEY_SLOT = "slot";
 
+    /**
+     * What the household's loyalty account can put against this cart (tasks 78 and 79).
+     *
+     * <p>In the conversation state rather than in a field, like everything else here: Telegram delivers the confirm
+     * tap as an independent request that may land on another instance, and a benefit read at presentation time has
+     * to survive that gap. Re-reading it on the tap would be three more MCP calls between «Підтвердити» and the
+     * order, on the one screen where a person is watching the clock.
+     */
+    private static final String KEY_BENEFITS = "benefits";
+
     /** Own mapper, as elsewhere in the app: Boot 4 carries both Jackson 2 and Jackson 3. */
     private static final ObjectMapper MAPPER = new ObjectMapper().findAndRegisterModules();
 
     private final CartBuildingService cartBuildingService;
+    private final LoyaltyBenefitsService loyaltyBenefitsService;
     private final InventoryTrendService inventoryTrendService;
     private final ObservabilityService observabilityService;
     private final CustomerOrderRepository customerOrderRepository;
@@ -166,12 +181,15 @@ public class CartConfirmationService {
                 .createdAt(Instant.now())
                 .build());
 
+        CartBenefits benefits = loyaltyBenefitsService.cartBenefits(user.getId());
+
         Map<String, Object> context = new LinkedHashMap<>();
         context.put(KEY_ORDER_ID, order.getId().toString());
         context.put(KEY_SUMMARY, asMap(summary));
         context.put(
                 KEY_SLOTS, slots.stream().map(CartConfirmationService::asMap).toList());
         context.put(KEY_SLOT, summary.deliverySlot());
+        context.put(KEY_BENEFITS, asMap(benefits));
         conversationStateService.save(chatId, ConversationFlow.CART_CONFIRMATION, STEP_AWAITING_DECISION, context);
 
         if (summary.belowMinimumOrder()) {
@@ -193,8 +211,8 @@ public class CartConfirmationService {
         }
         telegramOutboundService.sendMessageWithButtons(
                 chatId,
-                cartMessageService.cartText(summary, selectedSlot, type),
-                cartMessageService.cartButtons(summary, !slots.isEmpty()));
+                cartMessageService.cartText(summary, selectedSlot, type, benefits),
+                cartMessageService.cartButtons(summary, !slots.isEmpty(), benefits));
         log.info("presented cart {} as draft order {} to user {}", summary.cartId(), order.getId(), user.getId());
         return true;
     }
@@ -247,10 +265,11 @@ public class CartConfirmationService {
                     cartMessageService.belowMinimumButtons(topped, false));
             return;
         }
+        CartBenefits benefits = benefitsOf(state);
         telegramOutboundService.sendMessageWithButtons(
                 chatId,
-                cartMessageService.cartText(topped, selectedSlot, order.getType()),
-                cartMessageService.cartButtons(topped, !slots.isEmpty()));
+                cartMessageService.cartText(topped, selectedSlot, order.getType(), benefits),
+                cartMessageService.cartButtons(topped, !slots.isEmpty(), benefits));
         log.info(
                 "topped cart {} up with {} baseline lines for user {}",
                 topped.cartId(),
@@ -290,7 +309,10 @@ public class CartConfirmationService {
         String data = tap.data();
         if (CartMessageService.CALLBACK_CONFIRM.equals(data)) {
             confirm(user, order, state, summary, false);
-        } else if (CartMessageService.CALLBACK_CONFIRM_BONUS.equals(data)) {
+        } else if (CartMessageService.CALLBACK_CONFIRM_BONUS.equals(data)
+                || CartMessageService.CALLBACK_CONFIRM_BENEFITS.equals(data)) {
+            // The old bonus-only payload still means yes. Telegram never withdraws a keyboard, so a cart sent
+            // before tasks 78/79 is still tappable in somebody's chat, and a tap on it must not be dropped.
             confirm(user, order, state, summary, true);
         } else if (CartMessageService.CALLBACK_SLOT_MENU.equals(data)) {
             telegramOutboundService.sendMessageWithButtons(
@@ -322,10 +344,11 @@ public class CartConfirmationService {
         context.put(KEY_SLOT, slots.get(index).id());
         conversationStateService.save(
                 user.getTelegramChatId(), ConversationFlow.CART_CONFIRMATION, STEP_AWAITING_DECISION, context);
+        CartBenefits benefits = benefitsOf(state);
         telegramOutboundService.sendMessageWithButtons(
                 user.getTelegramChatId(),
-                cartMessageService.cartText(summary, slots.get(index), order.getType()),
-                cartMessageService.cartButtons(summary, !slots.isEmpty()));
+                cartMessageService.cartText(summary, slots.get(index), order.getType(), benefits),
+                cartMessageService.cartButtons(summary, !slots.isEmpty(), benefits));
     }
 
     private static List<OfferedSlot> slotsOf(ConversationState state) {
@@ -338,9 +361,9 @@ public class CartConfirmationService {
                 .toList();
     }
 
-    /** Spends the bonuses if asked, stores the order and the baseline, and hands over the checkout link. */
+    /** Spends every agreed benefit, stores the order and the baseline, and hands over the checkout link. */
     private void confirm(
-            User user, CustomerOrder order, ConversationState state, CartSummary summary, boolean spendBonuses) {
+            User user, CustomerOrder order, ConversationState state, CartSummary summary, boolean spendBenefits) {
         long chatId = user.getTelegramChatId();
         if (summary.belowMinimumOrder()) {
             // A confirm tap on a keyboard that never had one: there is no checkout link to hand over yet.
@@ -360,7 +383,8 @@ public class CartConfirmationService {
             cartBuildingService.bookSlot(user.getId(), summary.cartId(), selected);
             order.setDeliverySlot(selectedSlotId);
         }
-        boolean bonusesApplied = spendBonuses && applyBonuses(user.getId(), summary);
+        AppliedBenefits applied =
+                spendBenefits ? applyBenefits(user.getId(), summary, benefitsOf(state)) : AppliedBenefits.none();
 
         order.setStatus(OrderStatus.CONFIRMED);
         order.setConfirmedAt(Instant.now());
@@ -386,14 +410,24 @@ public class CartConfirmationService {
                 summary.items().size()));
         conversationStateService.save(chatId, ConversationFlow.NONE, null, Map.of());
 
-        if (spendBonuses && !bonusesApplied) {
+        if (spendBenefits && !applied.worthSaying()) {
+            // Asked for, and nothing at all came back — not even a refusal to report. The household tapped a
+            // button that promised a discount and must not have to infer from silence that none happened.
             telegramOutboundService.sendMessage(chatId, cartMessageService.bonusesUnavailableText());
         }
         telegramOutboundService.sendMessageWithButtons(
                 chatId,
-                cartMessageService.confirmedText(summary, bonusesApplied, order.getType()),
+                // What Silpo took is named inside this same message: an earlier note of its own read as a second,
+                // separate transaction next to «Підтвердив».
+                cartMessageService.confirmedText(summary, applied, order.getType()),
                 cartMessageService.checkoutButtons(summary));
-        log.info("order {} confirmed for user {}, bonuses applied: {}", order.getId(), user.getId(), bonusesApplied);
+        log.info(
+                "order {} confirmed for user {}: bonuses {}, certificates {}, promo code {}",
+                order.getId(),
+                user.getId(),
+                applied.bonusesApplied(),
+                applied.certificateList().size(),
+                applied.promoCode() == null ? "none" : "applied");
     }
 
     private void cancel(User user, CustomerOrder order) {
@@ -416,6 +450,62 @@ public class CartConfirmationService {
             return false;
         }
         return cartBuildingService.applyBonuses(userId, summary.cartId(), summary.bonusAvailable());
+    }
+
+    /**
+     * Spends everything the household agreed to, one mechanism at a time (tasks 78 and 79).
+     *
+     * <p>Independent on purpose, because Silpo treats them independently: a refused certificate must not cost the
+     * household their bonuses, and none of the three may cost them the order. What did not go through is named in
+     * the message rather than dropped — a benefit a person believes was applied and finds unapplied at checkout is
+     * the one outcome worth more care than a lost discount.
+     *
+     * <p>The total is read back afterwards, as {@code silpo_add_or_update_certificates} itself instructs, so the
+     * amount the household is told is Silpo's own arithmetic.
+     */
+    private AppliedBenefits applyBenefits(UUID userId, CartSummary summary, CartBenefits benefits) {
+        BigDecimal bonuses = applyBonuses(userId, summary) ? summary.bonusAvailable() : null;
+        List<String> refusals = new java.util.ArrayList<>();
+        if (bonuses == null
+                && summary.bonusAvailable() != null
+                && summary.bonusAvailable().signum() > 0) {
+            refusals.add("Бонуси списати не вдалось.");
+        }
+
+        List<String> certificates =
+                loyaltyBenefitsService.applyCertificates(userId, summary.cartId(), benefits.certificateList());
+        for (GiftCertificate certificate : benefits.certificateList()) {
+            if (!certificates.contains(certificate.barcode())) {
+                refusals.add("Сертифікат %s «Сільпо» не прийняло.".formatted(certificate.maskedBarcode()));
+            }
+        }
+
+        String promoCode = null;
+        if (benefits.promoCode() != null && !benefits.promoCode().isBlank()) {
+            if (cartBuildingService.applyPromoCode(userId, summary.cartId(), benefits.promoCode())) {
+                promoCode = benefits.promoCode();
+            } else {
+                refusals.add("Промокод %s «Сільпо» не прийняло.".formatted(benefits.promoCode()));
+            }
+        }
+
+        AppliedBenefits applied = new AppliedBenefits(bonuses, certificates, promoCode, refusals, null);
+        if (!applied.anythingApplied()) {
+            return applied;
+        }
+        // Only worth a round-trip when something actually changed the amount.
+        BigDecimal newTotal =
+                cartBuildingService.readCartTotal(userId, summary.cartId()).orElse(null);
+        return new AppliedBenefits(bonuses, certificates, promoCode, refusals, newTotal);
+    }
+
+    /** The benefits read when this cart was presented; none for a state written before tasks 78/79. */
+    private static CartBenefits benefitsOf(ConversationState state) {
+        Object stored = state.getContext().get(KEY_BENEFITS);
+        if (stored == null) {
+            return CartBenefits.none();
+        }
+        return MAPPER.convertValue(stored, CartBenefits.class);
     }
 
     /**
