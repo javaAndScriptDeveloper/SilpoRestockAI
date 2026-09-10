@@ -1503,6 +1503,25 @@ update tool has a field for who may collect an order — nor does any tool creat
 checkout is a web link the sender pays through. "Your friend collects it himself" cannot be expressed, so it
 appears in no user-facing string and must not appear in the pitch. No split payment, same constraint as 68.
 
+## Five bugs the live run caught and the tests did not
+
+Driving it against the real Silpo MCP was not a formality. **The model spells «nothing» as a string** —
+`phone=".null"` on the first run, `address="-null"` on the second — and neither is blank, so the first wrote
+`.null` onto the live cart as a courier's phone and the second sent a plain «відправ подарунок @нік» down
+the typed-address path, straight past the nickname it had extracted correctly.
+
+Then three that all fell out of one refusal: a ₴423 gift is under Silpo's ₴799 minimum, and the build threw
+*after* the cart had already moved to the friend's branch. The row never left `RESOLVED`, which the custody
+check read as holding nothing; `silpo_cart_id` was only written at presentation, so even once that was fixed
+the restore had a snapshot and no cart to put it on; and the reorder path builds its cart straight through
+`CartBuildingService` rather than `CartConfirmationService.present`, where the release hook had been put — so
+«що треба докупити?» after a gift would have restocked to the friend's door. The custody check now keys off
+the snapshot, which exists only after a repoint; the cart id travels with it in the same save; and the
+release sits on both of the two paths that actually build a cart.
+
+The fifth was fixed on the way rather than caught: Telegram send failures throw, and an unreachable
+recipient would have taken the sender's order down with them.
+
 ## What needs your eyes
 
 All three paths end to end in real Telegram, path (c) with a second real chat — that is the acceptance

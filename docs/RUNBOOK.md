@@ -2325,3 +2325,38 @@ and must not appear in the pitch. Same for split payment, for the same reason as
 account's profile phone. The field is stored — that much was verified live, written and read back — but only
 a real paid delivery shows which number actually rings. Product owner's call to proceed on that assumption
 (2026-09-10). If you run a paid gift order, note which phone rang and update this line.
+
+**What was actually driven live on 2026-09-10 (evening)**, through synthetic webhooks against the real
+Silpo MCP, with the cart read back after every step:
+
+| Path | Result |
+|---|---|
+| (a) typed address, no phone | Asked «Який телефон у друга?», `conversation_state` → `GIFT_SENDER_DETAIL`, gift row `RESOLVED` with `gift_phone` NULL |
+| (a) typed address with phone | Cart moved to Хрещатик 22 / кв. 42 / `+380671234567` / `courrierComment`, products resolved on branch `1edb6b38…` («Вершки «Селянські»», «Круасан «Рудь»» for «щось до кави»), message «🎁 Подарунок для друга» |
+| (b) nickname with consent | `resolution = CONSENTED`, **her** stored phone `+380509998877` on the cart, sender read only «Адресу для @olena_test маю», recipient got «надсилає тобі подарунок» |
+| (c) ask, recipient unreachable | Telegram refused the synthetic chat; the sender got the honest «ще не користувався ботом…» and the row went `UNREACHABLE` |
+| (c) recipient answers | «Київ, вулиця Хрещатик 22, кв. 42, +380509998877» split into street / `42` / phone, sender told only «Адресу для @andrii_test маю», cart presented with «Підтвердити» |
+| Restore | After every gift, «що треба докупити?» logged `restoring the household's own delivery … : true` and the cart read back as Урлівська вулиця with `phone`, `flat` and `courrierComment` all null |
+
+**Still needs a second real Telegram account:** path (c) end to end in one go — the ask landing in a real
+friend's chat and their reply coming back — was exercised in two halves here (the ask against an unreachable
+chat, the reply seeded into a real one). Everything either half touches is the same code the integration
+test drives; what has not happened in one continuous run is two real people.
+
+**Four bugs this live run caught that no test had:**
+
+1. **The model spells «nothing» as a string.** `phone=".null"` on the first run, `address="-null"` on the
+   second. Neither is blank, so the first wrote `.null` onto the cart as a courier's phone and the second
+   sent a plain «відправ подарунок @нік» down the typed-address path. `GiftRequest.cleaned()` now strips
+   surrounding punctuation before comparing, and the prompt asks for real JSON nulls.
+2. **A gift refused on the ₴799 minimum stranded the cart.** The build threw after the address had already
+   moved, so the row never left `RESOLVED` — which a status-based custody check read as "holding nothing".
+   `holdsTheCart()` now keys off the snapshot, which exists only after a repoint.
+3. **The restore had nowhere to write.** `silpo_cart_id` was only set at presentation, so the same refused
+   gift closed its row without restoring anything. The cart id and the snapshot are now one save.
+4. **The reorder path bypassed the release entirely.** `ReorderService` builds its cart straight through
+   `CartBuildingService`, not through `CartConfirmationService.present`, so «що треба докупити?» right after
+   a gift would have restocked to the friend's address.
+
+A fifth was fixed on the way rather than caught: Telegram send failures throw, and an unreachable recipient
+would have taken the sender's order down with them.
