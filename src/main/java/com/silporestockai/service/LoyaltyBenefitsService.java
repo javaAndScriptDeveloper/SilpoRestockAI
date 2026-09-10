@@ -147,8 +147,7 @@ public class LoyaltyBenefitsService {
                 promoCodes.map(LoyaltyBenefitsService::promoCodesOf).orElseGet(List::of),
                 withDetails,
                 promos.map(LoyaltyBenefitsService::promoTitles).orElseGet(List::of),
-                premium.flatMap(node -> McpResponses.findString(node, McpResponses.SUMMARY))
-                        .orElse(null),
+                premium.map(LoyaltyBenefitsService::premiumStatus).orElse(null),
                 premium.map(LoyaltyBenefitsService::premiumLinks).orElseGet(List::of),
                 true);
     }
@@ -226,6 +225,21 @@ public class LoyaltyBenefitsService {
             }
         }
         return titles;
+    }
+
+    /**
+     * The Плюхс status, in Ukrainian.
+     *
+     * <p>Read off which links the response carries rather than off its {@code summary}, which the live server
+     * writes in English («You don't have an active Плюхс premium subscription»). The tool's own contract is that a
+     * subscription that is not active comes with {@code webLink}/{@code mobileLink} to buy one and an active one
+     * with {@code shareWebLink}/{@code shareMobileLink} to share it, so the keys carry the state without anybody
+     * having to pattern-match English prose that could be reworded tomorrow.
+     */
+    private static String premiumStatus(JsonNode root) {
+        boolean active =
+                McpResponses.findString(root, McpResponses.PREMIUM_SHARE).isPresent();
+        return active ? "підписка активна, можеш поділитись нею" : "активної підписки немає — оформити можна тут";
     }
 
     /** Silpo asks for both its links to be shown with the Premium status, whichever way that status went. */

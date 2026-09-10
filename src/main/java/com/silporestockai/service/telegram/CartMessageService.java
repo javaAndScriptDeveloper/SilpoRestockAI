@@ -232,7 +232,21 @@ public class CartMessageService {
      * ways out. Nothing has been added on the household's behalf at this point — that is what the button is for.
      */
     public String belowMinimumText(CartSummary summary, OfferedSlot slot, OrderType type, boolean hasBaseline) {
-        StringBuilder text = new StringBuilder(cartText(summary, slot, type));
+        return belowMinimumText(summary, slot, type, hasBaseline, CartBenefits.none());
+    }
+
+    /**
+     * The same, keeping the coupon note (tasks 78/79) on a cart that cannot check out yet.
+     *
+     * <p>The benefits offer itself is not repeated here — there is no confirm button on this keyboard, so there is
+     * nothing for a «+ вигоди» to attach to. A coupon note is different: it is about what Silpo will do at its own
+     * checkout, which is exactly where a household reading «докинь щось сам у застосунку» is headed.
+     */
+    public String belowMinimumText(
+            CartSummary summary, OfferedSlot slot, OrderType type, boolean hasBaseline, CartBenefits benefits) {
+        CartBenefits mentions =
+                benefits == null ? CartBenefits.none() : new CartBenefits(List.of(), null, benefits.couponList());
+        StringBuilder text = new StringBuilder(cartText(summary, slot, type, mentions));
         text.append("\n\nТоварів тут на ")
                 .append(money(summary.goodsTotal()))
                 .append(" грн, а «Сільпо» доставляє замовлення від ")
@@ -361,7 +375,12 @@ public class CartMessageService {
             text.append("\nСертифікат ").append(maskedBarcode(barcode)).append(" зарахував.");
         }
         if (applied.promoCode() != null && !applied.promoCode().isBlank()) {
-            text.append("\nПромокод ").append(applied.promoCode()).append(" застосував.");
+            // Not «застосував»: live, silpo_update_shopping_cart answers success and stores whatever code it is
+            // given — a made-up one included — with no validation and no discount. All that is actually known
+            // here is that the code is on the cart, so that is all this says.
+            text.append("\nПромокод ")
+                    .append(applied.promoCode())
+                    .append(" передав у кошик — «Сільпо» врахує його при оформленні, якщо він діє.");
         }
         for (String refusal : applied.refusalList()) {
             text.append('\n').append(refusal);

@@ -147,6 +147,42 @@ class CartBenefitsMessageTest {
                 .containsExactly(CartMessageService.CALLBACK_CONFIRM, CartMessageService.CALLBACK_CANCEL);
     }
 
+    /**
+     * A cart under Silpo's minimum has no confirm button, so no benefits offer either — but the coupon note still
+     * belongs there, because that message sends the household to the Silpo app, which is where a coupon works.
+     */
+    @Test
+    void keepsTheCouponNoteOnACartThatCannotCheckOutYet() {
+        CartSummary tooSmall = new CartSummary(
+                "cart-1",
+                "slot-1",
+                Instant.parse("2026-09-03T15:00:00Z"),
+                List.of(new BasketItem("p-1", "Вода", "шт", BigDecimal.ONE, new BigDecimal("42.90"))),
+                new BigDecimal("141.90"),
+                List.of(),
+                BigDecimal.ZERO,
+                false,
+                null,
+                null,
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                null,
+                new BigDecimal("42.90"),
+                new BigDecimal("799"));
+        CartBenefits withCoupon = new CartBenefits(
+                List.of(new GiftCertificate("9001234321", "1", new BigDecimal("500"), null)),
+                "SUMMER10",
+                List.of(new LoyaltyCoupon(1L, "на покупку", "-15%", "2026-10-03", true, true, null, null)));
+
+        String text = service.belowMinimumText(tooSmall, SLOT, OrderType.AD_HOC, true, withCoupon);
+
+        assertThat(text).contains("-15%").contains("бракує");
+        // No offer without a confirm button to attach it to.
+        assertThat(text).doesNotContain("Твої вигоди").doesNotContain("SUMMER10");
+    }
+
     @Test
     void tellsTheHouseholdExactlyWhatSilpoTookAndWhatItRefused() {
         AppliedBenefits applied = new AppliedBenefits(

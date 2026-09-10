@@ -63,8 +63,9 @@ public class BenefitsMessageService {
                     text.append(", прогрес: ").append(coupon.progressText());
                 }
                 if (coupon.limitText() != null && !coupon.limitText().isBlank()) {
+                    // Silpo's terms carry CRLFs mid-sentence; flattened to single spaces so the line reads as one.
                     text.append("\n  ")
-                            .append(coupon.limitText().replace('\r', ' ').replace('\n', ' '));
+                            .append(coupon.limitText().replaceAll("\\s+", " ").trim());
                 }
             }
         }

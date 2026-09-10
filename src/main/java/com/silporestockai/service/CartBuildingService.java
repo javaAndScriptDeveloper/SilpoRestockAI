@@ -748,6 +748,11 @@ public class CartBuildingService {
      * right beside {@code bonusRequested}, so this is a real application rather than a display of a code the
      * household would have to retype in the Silpo app. Same best-effort contract as the bonuses: Silpo refusing a
      * code costs a discount, and losing the order over it would cost far more.
+     *
+     * <p>What a {@code true} here does <em>not</em> mean: that the code is valid. Probed live on 2026-09-10, the
+     * tool answered {@code {"success": true, "summary": "Shopping cart updated"}} to an invented code and stored
+     * it on the cart verbatim, with no validation and no discount. Only the fact that the code reached the cart is
+     * known from here, which is exactly what the message a household reads says.
      */
     public boolean applyPromoCode(UUID userId, String cartId, String promoCode) {
         return updateCart(userId, cartId, Map.of("promoCode", promoCode));

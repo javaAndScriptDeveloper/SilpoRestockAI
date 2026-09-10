@@ -121,6 +121,9 @@ public final class McpResponses {
 
     public static final String[] PREMIUM_MOBILE = {"mobileLink", "shareMobileLink"};
 
+    /** Present only while a subscription is active — which is how the status is read, rather than off English prose. */
+    public static final String[] PREMIUM_SHARE = {"shareWebLink", "shareMobileLink"};
+
     public static final String[] LOYALTY_BALANCE = {"balance"};
     public static final String[] BALANCE_TOTAL = {"total"};
     public static final String[] SUMMARY = {"summary"};

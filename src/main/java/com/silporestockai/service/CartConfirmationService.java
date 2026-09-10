@@ -199,7 +199,7 @@ public class CartConfirmationService {
             boolean hasBaseline = cartBuildingService.hasBaseline(user.getId());
             telegramOutboundService.sendMessageWithButtons(
                     chatId,
-                    cartMessageService.belowMinimumText(summary, selectedSlot, type, hasBaseline),
+                    cartMessageService.belowMinimumText(summary, selectedSlot, type, hasBaseline, benefits),
                     cartMessageService.belowMinimumButtons(summary, hasBaseline));
             log.info(
                     "presented cart {} as draft order {} to user {}, {} short of the minimum order",
@@ -257,15 +257,15 @@ public class CartConfirmationService {
                 .filter(slot -> slot.id().equals(topped.deliverySlot()))
                 .findFirst()
                 .orElse(null);
+        CartBenefits benefits = benefitsOf(state);
         if (topped.belowMinimumOrder()) {
             // The whole baseline was not enough. Nothing more to offer from here; the Silpo app is.
             telegramOutboundService.sendMessageWithButtons(
                     chatId,
-                    cartMessageService.belowMinimumText(topped, selectedSlot, order.getType(), false),
+                    cartMessageService.belowMinimumText(topped, selectedSlot, order.getType(), false, benefits),
                     cartMessageService.belowMinimumButtons(topped, false));
             return;
         }
-        CartBenefits benefits = benefitsOf(state);
         telegramOutboundService.sendMessageWithButtons(
                 chatId,
                 cartMessageService.cartText(topped, selectedSlot, order.getType(), benefits),
@@ -370,7 +370,7 @@ public class CartConfirmationService {
             boolean hasBaseline = cartBuildingService.hasBaseline(user.getId());
             telegramOutboundService.sendMessageWithButtons(
                     chatId,
-                    cartMessageService.belowMinimumText(summary, null, order.getType(), hasBaseline),
+                    cartMessageService.belowMinimumText(summary, null, order.getType(), hasBaseline, benefitsOf(state)),
                     cartMessageService.belowMinimumButtons(summary, hasBaseline));
             return;
         }

@@ -125,6 +125,25 @@ class BenefitsOverviewTest {
             assertThat(coupon.canBeApplied()).isFalse();
         });
         assertThat(overview.premiumLinks()).contains("https://silpo.ua/subscription");
+        // Silpo words this status in English; the household is answered in Ukrainian, and the state is read off
+        // which links came back rather than off prose that could be reworded tomorrow.
+        assertThat(overview.premiumSummary()).isEqualTo("активної підписки немає — оформити можна тут");
+    }
+
+    @Test
+    void readsAnActivePremiumOffTheShareLinksRatherThanOffEnglishProse() {
+        answers("silpo_get_loyalty_info", "{\"loyalty\":{\"balance\":{\"total\":10}}}");
+        answers("silpo_get_my_certificates", "{\"certificates\":[]}");
+        answers("silpo_get_promo_codes", "{\"promoCodes\":[]}");
+        answers("silpo_get_my_coupons", "{\"coupons\":[]}");
+        answers("silpo_get_my_promos", "{\"promos\":[]}");
+        answers(
+                "silpo_get_my_premium_subscription",
+                "{\"success\":true,\"summary\":\"Your Плюхс subscription is active.\","
+                        + "\"shareWebLink\":\"https://silpo.ua/share\",\"shareMobileLink\":\"https://link.silpo.ua/x\"}");
+
+        assertThat(service.overview(USER_ID).premiumSummary()).isEqualTo("підписка активна, можеш поділитись нею");
+        assertThat(service.overview(USER_ID).premiumLinks()).contains("https://silpo.ua/share");
     }
 
     @Test
