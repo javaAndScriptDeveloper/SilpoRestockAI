@@ -63,6 +63,18 @@ if command -v dig >/dev/null 2>&1; then
     [[ -z "$RESOLVED" ]] && echo "WARNING: $DOMAIN does not resolve at all yet."
 fi
 
+# Alloy — the only thing that gets metrics off this host — sits behind the `observability` profile, because
+# with no endpoint to push to it does nothing but crash-loop. So the profile follows the credentials: turn it
+# on here when .env.prod has a Grafana Cloud URL, and `up -d --remove-orphans` below then starts Alloy with
+# the rest of the stack instead of silently leaving the dashboards empty until someone remembers it by hand.
+GRAFANA_PUSH_URL="$(grep -E '^GRAFANA_CLOUD_PROM_URL=' .env.prod | head -1 | cut -d= -f2- | tr -d '"'"'"' ')"
+if [[ -n "$GRAFANA_PUSH_URL" ]]; then
+    COMPOSE+=(--profile observability)
+    echo "metrics: Alloy enabled, pushing to ${GRAFANA_PUSH_URL}"
+else
+    echo "metrics: GRAFANA_CLOUD_PROM_URL is empty in .env.prod — Alloy stays off, nothing reaches Grafana Cloud"
+fi
+
 # `config` parses the compose file and substitutes .env.prod, so every ${VAR:?...} guard fires now,
 # before anything is torn down. This is what turns a missing secret into a message instead of an outage.
 "${COMPOSE[@]}" config -q
@@ -170,6 +182,22 @@ if [[ "$CODE" == "404" ]]; then
     echo "https://${DOMAIN}/actuator/health -> 404 (not public, as intended)"
 else
     echo "WARNING: /actuator answered ${CODE} publicly — MANAGEMENT_PORT is not taking effect." >&2
+fi
+
+# Metrics leave this host or they do not, and a rejected token is silent everywhere except Alloy's own log.
+# A running container is not proof — Alloy starts happily and then fails every remote-write — so grep the
+# recent log for the rejection too.
+if [[ -n "$GRAFANA_PUSH_URL" ]]; then
+    if [[ "$(docker inspect -f '{{.State.Running}}' komora-alloy 2>/dev/null || echo false)" == "true" ]]; then
+        if "${COMPOSE[@]}" logs --tail 200 alloy 2>/dev/null | grep -qiE 'remote_write.*(401|403|unauthorized|forbidden)'; then
+            echo "WARNING: Alloy is up but Grafana Cloud is rejecting it (401/403) — check the token's metrics:write scope" >&2
+            echo "         full log: make prod-alloy-logs" >&2
+        else
+            echo "metrics: komora-alloy is running with no rejection in its recent log"
+        fi
+    else
+        echo "WARNING: GRAFANA_CLOUD_PROM_URL is set but komora-alloy is not running — start it: make prod-alloy-up" >&2
+    fi
 fi
 
 # Which image is actually serving, so "did my fix deploy?" has an answer that is not a guess. With

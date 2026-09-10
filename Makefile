@@ -1,7 +1,8 @@
 .DEFAULT_GOAL := help
 .PHONY: help run dev demo mcp-log test build format check db-up db-down up down image clean metrics promotions \
 	alloy-up alloy-down alloy-logs dashboard dashboards-json observability-local-up observability-local-down \
-	deploy prod-up prod-down prod-logs prod-ps webhook webhook-info
+	deploy prod-up prod-down prod-logs prod-ps prod-alloy-up prod-alloy-down prod-alloy-logs \
+	webhook webhook-info
 
 # The production stack (task 59). Its own compose project name lives in docker-compose.prod.yml, so these
 # never touch the development containers above, and .env.prod never mixes with .env.
@@ -125,6 +126,19 @@ prod-logs: ## Follow the production app log
 
 prod-ps: ## Status and health of the production containers
 	$(PROD) ps
+
+# Alloy is the only thing that gets Комора's metrics off this host, and it lives behind a compose profile —
+# so `prod-up` alone starts the whole stack except the metrics. `deploy.sh` turns the profile on by itself
+# when .env.prod has a Grafana Cloud URL; these are for driving it by hand.
+prod-alloy-up: ## Start Alloy on the server, pushing /actuator/prometheus to Grafana Cloud (needs GRAFANA_CLOUD_* in .env.prod)
+	$(PROD) --profile observability up -d alloy
+	@echo "no published port by design — check it with: make prod-alloy-logs"
+
+prod-alloy-down: ## Stop the server's Alloy. Metrics stop reaching Grafana Cloud until it is started again
+	$(PROD) --profile observability rm -sf alloy
+
+prod-alloy-logs: ## Follow the server's Alloy log — where a rejected Grafana Cloud token shows up
+	$(PROD) --profile observability logs -f alloy
 
 webhook: ## Point Telegram at the DOMAIN in .env.prod (the app also does this itself at every boot)
 	./scripts/set-webhook.sh

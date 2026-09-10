@@ -982,8 +982,24 @@ answers a query badly, the fix is the curated list in `BlackoutModeService`, not
 ## 16. Metrics and the two Grafana dashboards (tasks 54, 75)
 
 The app publishes Prometheus metrics at `/actuator/prometheus`. Grafana Alloy scrapes that locally and
-pushes them outbound to Grafana Cloud — push, not pull, because a demo box behind a rotating tunnel has
-no address anyone can scrape.
+pushes them outbound — push, not pull, because a demo box behind a rotating tunnel has no address anyone
+can scrape.
+
+**Which Alloy pushes where.** There are three Alloys in this repo and they are not interchangeable:
+
+| Container | Started by | Scrapes | Pushes to |
+|---|---|---|---|
+| `komora-alloy-local` | `make observability-local-up` | the host app on `:8080` | the throwaway Prometheus at `:9090` |
+| `komora-alloy` | `make prod-alloy-up`, or `make deploy` on the server | `app:8081` inside the prod network | **Grafana Cloud** |
+| `app-alloy` | `make alloy-up` | the host app on `:8080` | Grafana Cloud |
+
+**Grafana Cloud is the server's stream.** A development box uses the local harness, which needs no token.
+`make alloy-up` exists for the deliberate case of pushing a laptop's numbers to the cloud — leave it off
+otherwise, or a rehearsal and the server sum into the same panels. That is exactly what happened once: the
+laptop's `app-alloy` ran for days while the server's Alloy had never been started, so the hosted dashboard
+was showing the laptop and looked identical to the local one. If the hosted dashboards ever look like the
+local ones, check `label_values(komora_users_registered, env)` first — if it answers `["local"]`, the
+server is not pushing at all.
 
 **The two live dashboards (task 75):**
 
@@ -1334,10 +1350,12 @@ ssh <host> 'cd komora && make prod-up'
    redirect URI in the Google Cloud console. The localhost one will not work here.
 8. **Walk §2 through §7 against the real URL** — onboarding, the WebApp form inside Telegram's webview
    (this is the part that cannot be tested on localhost), Silpo login, a plan, a cart, a confirmation.
-9. **Metrics** (§16), if you want them: `make prod-logs` aside,
-   `docker compose -f docker-compose.prod.yml --env-file .env.prod --profile observability up -d alloy`.
+9. **Metrics** (§16): fill the `GRAFANA_CLOUD_PROM_*` block in `.env.prod`, then `make prod-alloy-up`.
    Alloy scrapes the app's management port *inside* the compose network and pushes outbound, so this
-   opens no inbound port.
+   opens no inbound port. With that block filled, `make deploy` turns the `observability` profile on by
+   itself and reports Alloy's state at the end — the manual target is only for driving it out of band.
+   `make prod-alloy-logs` is where a rejected token shows itself (401 = the token lacks `metrics:write`,
+   403 = wrong instance id).
 10. **Put the link in "Selling Points та Пітч-аргументи"** — that is the acceptance criterion this whole
     task exists for.
 
@@ -1349,6 +1367,7 @@ ssh <host> 'cd komora && make prod-up'
 | `make prod-pull` | deploy the newest published image right now, without waiting for Watchtower (§20) |
 | `make prod-ps` | status + health of all four containers |
 | `make prod-logs` | follow the app log |
+| `make prod-alloy-logs` | are metrics actually reaching Grafana Cloud? (§16) |
 | `docker logs -f komora-watchtower` | is CD actually deploying? (§20) |
 | `make webhook-info` | why is the bot silent? |
 | `docker exec komora-app curl -s localhost:8081/actuator/health` | app health. It is on the **management** port, which is published nowhere — `localhost:8080` on the host is the app port and answers 404 for `/actuator/*`, which is the point |
