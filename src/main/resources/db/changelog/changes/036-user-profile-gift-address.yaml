@@ -1,0 +1,26 @@
+databaseChangeLog:
+  - changeSet:
+      id: 036-user-profile-gift-address
+      author: komora
+      comment: >-
+        Task 81: where a friend's gift may be delivered, and whether this household allows that at all. All
+        three default to "no" — null address, null phone, shareable false — and nothing backfills them: an
+        address is only ever stored by an explicit opt-in, in the Анкета or in a chat request. The phone sits
+        beside the address rather than being asked for at send time, which is what makes the by-nickname path
+        need no exchange with the recipient.
+      changes:
+        - addColumn:
+            tableName: user_profile
+            columns:
+              - column:
+                  name: gift_delivery_address
+                  type: VARCHAR(512)
+              - column:
+                  name: gift_delivery_phone
+                  type: VARCHAR(32)
+              - column:
+                  name: gift_address_shareable
+                  type: BOOLEAN
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false

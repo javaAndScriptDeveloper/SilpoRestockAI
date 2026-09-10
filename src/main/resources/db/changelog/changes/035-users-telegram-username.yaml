@@ -1,0 +1,21 @@
+databaseChangeLog:
+  - changeSet:
+      id: 035-users-telegram-username
+      author: komora
+      comment: >-
+        Task 81: the @nickname a gift is addressed to. Deliberately not unique — Telegram usernames can be
+        released and taken over by somebody else, and a unique constraint would reject the second, legitimate
+        owner. Lookups take the most recently created match instead.
+      changes:
+        - addColumn:
+            tableName: users
+            columns:
+              - column:
+                  name: telegram_username
+                  type: VARCHAR(64)
+        - createIndex:
+            indexName: ix_users_telegram_username
+            tableName: users
+            columns:
+              - column:
+                  name: telegram_username

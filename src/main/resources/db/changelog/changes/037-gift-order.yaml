@@ -1,0 +1,61 @@
+databaseChangeLog:
+  - changeSet:
+      id: 037-gift-order
+      author: komora
+      comment: >-
+        Task 81: one gift in flight. Shaped like task 68's group_event and for the same reason — the sender's
+        request and the recipient's answer happen in two different chats, and conversation_state is keyed by
+        exactly one. own_delivery_json is the household's own delivery block, snapshotted before the cart was
+        pointed at somebody else's door; the next ordinary order writes it back, and since the account has no
+        saved Silpo addresses to fall back on, this row is the only copy. The recipient's address, flat and
+        phone live here and reach nothing but an MCP argument map.
+      changes:
+        - createTable:
+            tableName: gift_order
+            columns:
+              - column: { name: id, type: UUID, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: sender_user_id, type: UUID, constraints: { nullable: false } }
+              - column: { name: recipient_username, type: VARCHAR(64) }
+              - column: { name: recipient_user_id, type: UUID }
+              - column: { name: recipient_chat_id, type: BIGINT }
+              - column: { name: status, type: VARCHAR(24), constraints: { nullable: false } }
+              - column: { name: resolution, type: VARCHAR(16), constraints: { nullable: false } }
+              - column: { name: theme, type: VARCHAR(512) }
+              - column: { name: gift_address_text, type: VARCHAR(512) }
+              - column: { name: gift_flat, type: VARCHAR(64) }
+              - column: { name: gift_phone, type: VARCHAR(32) }
+              - column: { name: own_delivery_json, type: JSONB }
+              - column: { name: silpo_cart_id, type: VARCHAR(64) }
+              - column: { name: created_at, type: TIMESTAMP WITH TIME ZONE, constraints: { nullable: false } }
+              - column: { name: updated_at, type: TIMESTAMP WITH TIME ZONE, constraints: { nullable: false } }
+              - column: { name: expires_at, type: TIMESTAMP WITH TIME ZONE }
+        - addForeignKeyConstraint:
+            constraintName: fk_gift_order_sender
+            baseTableName: gift_order
+            baseColumnNames: sender_user_id
+            referencedTableName: users
+            referencedColumnNames: id
+            onDelete: CASCADE
+        - addForeignKeyConstraint:
+            constraintName: fk_gift_order_recipient
+            baseTableName: gift_order
+            baseColumnNames: recipient_user_id
+            referencedTableName: users
+            referencedColumnNames: id
+            onDelete: SET NULL
+        - createIndex:
+            indexName: ix_gift_order_recipient_chat_status
+            tableName: gift_order
+            columns:
+              - column:
+                  name: recipient_chat_id
+              - column:
+                  name: status
+        - createIndex:
+            indexName: ix_gift_order_sender_status
+            tableName: gift_order
+            columns:
+              - column:
+                  name: sender_user_id
+              - column:
+                  name: status

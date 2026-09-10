@@ -18,6 +18,7 @@ import com.silporestockai.model.TelegramIncomingUpdate;
 import com.silporestockai.repository.UserProfileRepository;
 import com.silporestockai.repository.UserRepository;
 import com.silporestockai.service.ConversationStateService;
+import com.silporestockai.service.GiftOrderService;
 import com.silporestockai.service.MealPlanHandoffService;
 import com.silporestockai.service.SilpoAuthService;
 import com.silporestockai.service.telegram.TelegramOutboundService;
@@ -62,6 +63,11 @@ public class OnboardingFlowService {
     public static final String CALLBACK_SKIP = "onb:skip";
     public static final String CALLBACK_CONFIRM = "onb:confirm";
     public static final String CALLBACK_CORRECT = "onb:correct";
+
+    /** The optional gift-address section (task 81). Skipping is the default, and a complete answer. */
+    public static final String CALLBACK_GIFT_YES = "onb:gift:yes";
+
+    public static final String CALLBACK_GIFT_SKIP = "onb:gift:skip";
     /** Prefix of the manual-fallback cooking-time buttons; the suffix is a {@link CookingTimePreference} name. */
     public static final String CALLBACK_COOKING_PREFIX = "onb:cook:";
 
@@ -87,6 +93,9 @@ public class OnboardingFlowService {
     private static final String KEY_CHILDREN_BRACKETS = "childrenAgeBrackets";
     private static final String KEY_DIET_TYPE = "dietType";
     private static final String KEY_COOKING_TIME = "cookingTimePreference";
+    private static final String KEY_GIFT_ADDRESS = "giftAddress";
+    private static final String KEY_GIFT_FLAT = "giftFlat";
+    private static final String KEY_GIFT_PHONE = "giftPhone";
 
     private static final ObjectMapper MAPPER = new ObjectMapper().findAndRegisterModules();
 
@@ -404,6 +413,15 @@ public class OnboardingFlowService {
             presentWebAppForm(chatId, context, user);
             return;
         }
+        if (step == OnboardingStep.ASK_GIFT_OPT_IN && CALLBACK_GIFT_SKIP.equals(data)) {
+            // A complete answer, and the default one: the profile keeps its null address and its false flag.
+            finish(user, chatId, context);
+            return;
+        }
+        if (step == OnboardingStep.ASK_GIFT_OPT_IN && CALLBACK_GIFT_YES.equals(data)) {
+            askNext(chatId, OnboardingStep.ASK_GIFT_ADDRESS, context, user);
+            return;
+        }
         if (step == OnboardingStep.ASK_COOKING_TIME && data.startsWith(CALLBACK_COOKING_PREFIX)) {
             context.put(
                     KEY_COOKING_TIME, CookingTimePreference.valueOf(data.substring(CALLBACK_COOKING_PREFIX.length())));
@@ -557,6 +575,12 @@ public class OnboardingFlowService {
                     return;
                 }
                 context.put(KEY_BUDGET, budget.get().toPlainString());
+                askNext(chatId, OnboardingStep.ASK_GIFT_OPT_IN, context, user);
+            }
+            case ASK_GIFT_ADDRESS -> {
+                context.put(KEY_GIFT_ADDRESS, GiftOrderService.withoutContactDetails(answer));
+                context.put(KEY_GIFT_FLAT, GiftOrderService.flatIn(answer));
+                context.put(KEY_GIFT_PHONE, GiftOrderService.phoneIn(answer));
                 finish(user, chatId, context);
             }
             default -> telegramOutboundService.sendMessage(chatId, "Скористайся, будь ласка, кнопками вище.");
@@ -578,12 +602,38 @@ public class OnboardingFlowService {
             case ASK_DISLIKES ->
                 telegramOutboundService.sendMessage(chatId, "Що вдома точно не їдять? Якщо все їдять — напиши «нема».");
             case ASK_BUDGET -> telegramOutboundService.sendMessage(chatId, "Який бюджет на тиждень, у гривнях?");
+            case ASK_GIFT_OPT_IN -> askGiftOptIn(chatId);
+            case ASK_GIFT_ADDRESS ->
+                telegramOutboundService.sendMessage(
+                        chatId,
+                        "Напиши одним повідомленням адресу, квартиру й телефон — наприклад: "
+                                + "«Київ, вулиця Хрещатик 22, кв. 42, +380671234567».");
             default -> {
                 finish(user, chatId, context);
                 return;
             }
         }
         save(chatId, target, context);
+    }
+
+    /**
+     * The one optional section in the form (task 81).
+     *
+     * <p>Worded as an offer with a reason, because a bot asking for a home address at the end of a questionnaire
+     * has to say what it is for before it says what it wants. «Пропустити» leaves the profile exactly where every
+     * pre-existing profile already is: no address, no phone, sharing off.
+     */
+    private void askGiftOptIn(long chatId) {
+        telegramOutboundService.sendMessageWithButtons(
+                chatId,
+                """
+                🎁 Подарунки від друзів — за бажанням
+
+                Якщо залишиш адресу й телефон, друзі зможуть замовити тобі подарунок у «Сільпо» просто за твоїм \
+                ніком — і я привезу його сюди, не питаючи тебе щоразу. Твоєї адреси ніхто з них не побачить.""",
+                List.of(
+                        TelegramButton.callback("Залишити адресу", CALLBACK_GIFT_YES),
+                        TelegramButton.callback("Пропустити", CALLBACK_GIFT_SKIP)));
     }
 
     private void askCookingTime(long chatId) {
@@ -606,7 +656,8 @@ public class OnboardingFlowService {
             case ASK_COOKING_TIME -> OnboardingStep.ASK_HOUSEHOLD;
             case ASK_HOUSEHOLD -> OnboardingStep.ASK_RESTRICTIONS;
             case ASK_RESTRICTIONS -> OnboardingStep.ASK_DISLIKES;
-            case ASK_BUDGET -> OnboardingStep.DONE;
+            case ASK_BUDGET -> OnboardingStep.ASK_GIFT_OPT_IN;
+            case ASK_GIFT_OPT_IN -> OnboardingStep.DONE;
             default -> OnboardingStep.ASK_BUDGET;
         };
     }
@@ -656,6 +707,16 @@ public class OnboardingFlowService {
                 context.get(KEY_BUDGET) == null
                         ? null
                         : new BigDecimal(context.get(KEY_BUDGET).toString()));
+        // Task 81. Written only when the section was actually filled in — «Пропустити» reaches here with all
+        // three keys absent, and must leave a profile that shares nothing.
+        Object giftAddress = context.get(KEY_GIFT_ADDRESS);
+        if (giftAddress != null && !giftAddress.toString().isBlank()) {
+            Object flat = context.get(KEY_GIFT_FLAT);
+            profile.setGiftDeliveryAddress(flat == null ? giftAddress.toString() : giftAddress + ", кв. " + flat);
+            Object phone = context.get(KEY_GIFT_PHONE);
+            profile.setGiftDeliveryPhone(phone == null ? null : phone.toString());
+            profile.setGiftAddressShareable(true);
+        }
         userProfileRepository.save(profile);
 
         conversationStateService.save(chatId, ConversationFlow.NONE, null, Map.of());

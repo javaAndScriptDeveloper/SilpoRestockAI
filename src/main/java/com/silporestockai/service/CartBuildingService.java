@@ -10,11 +10,13 @@ import com.silporestockai.entity.ShoppingListItem;
 import com.silporestockai.entity.UserProfile;
 import com.silporestockai.exception.CartBuildException;
 import com.silporestockai.exception.DeliverySlotUnavailableException;
+import com.silporestockai.exception.GiftDeliveryUnavailableException;
 import com.silporestockai.exception.NoSilpoDeliveryAddressException;
 import com.silporestockai.exception.SilpoMcpException;
 import com.silporestockai.model.BasketItem;
 import com.silporestockai.model.CartContext;
 import com.silporestockai.model.CartSummary;
+import com.silporestockai.model.GiftAddress;
 import com.silporestockai.model.MatchingHints;
 import com.silporestockai.model.OfferedSlot;
 import com.silporestockai.model.ProductCandidate;
@@ -73,12 +75,23 @@ public class CartBuildingService {
     private static final String TOOL_LIST_BRANCHES = "silpo_list_branches";
     private static final String TOOL_CREATE_CART = "silpo_create_shopping_cart";
     private static final String TOOL_UPDATE_CART = "silpo_update_shopping_cart";
+    private static final String TOOL_FIND_ADDRESS = "silpo_find_address";
 
     private static final ObjectMapper MAPPER = new ObjectMapper().findAndRegisterModules();
 
     /** {@code silpo_get_available_delivery_types} hands back a branch directly for these; the rest need resolving. */
     private static final Set<String> DELIVERY_TYPES_WITH_A_BRANCH_ALREADY =
             Set.of("DeliveryHome", "WideAssortDelivery", "B2B");
+
+    /**
+     * The one delivery type a gift can use (task 81).
+     *
+     * <p>Not a simplification: nothing among the live server's forty tools names a recipient. {@code SelfPickup}
+     * builds its address out of branch data and {@code NovaPoshta} out of office data, and neither the create nor
+     * the update tool has a field for who may collect an order — so "your friend picks it up himself" cannot be
+     * expressed, and is not offered.
+     */
+    private static final String DELIVERY_HOME = "DeliveryHome";
 
     /** Slot times without a zone are the household's, and the household is in Kyiv. */
     private static final ZoneId KYIV = ZoneId.of("Europe/Kyiv");
@@ -865,6 +878,155 @@ public class CartBuildingService {
                             branchesResponse);
                     return new CartBuildException("Silpo offered no self-pickup branch for user " + userId);
                 });
+    }
+
+    /**
+     * Points this household's cart at somebody else's door (task 81), and hands back the delivery block it was
+     * using so it can be put back later.
+     *
+     * <p>Order matters and is not a preference: a branch comes with the address, and moving the cart to another
+     * branch invalidates every product already in it — probed live on 2026-09-10, three
+     * {@code product.offer.not_found} validations for a three-line cart. So this runs before any product is
+     * resolved, which also means the search that follows runs against the shelf the order is picked from.
+     *
+     * @return the cart that was moved and the household's own {@code deliveryType / timeslot / address /
+     *     shipments}, for {@link #restoreOwnDelivery} to write back. The only copy — this account has no saved
+     *     Silpo address to reconstruct one from — and the two travel together because a snapshot with no cart to
+     *     put it back on is not a restore, it is a leak that looks like one.
+     */
+    public RepointedCart repointCartTo(UUID userId, GiftAddress destination) {
+        CartContext context = getOrCreateCartContext(userId);
+        JsonNode cart = call(userId, TOOL_CART_BY_ID, Map.of("shoppingCartId", context.cartId()));
+        Map<String, Object> ownDelivery = deliveryBlockOf(cart);
+
+        JsonNode found = call(userId, TOOL_FIND_ADDRESS, Map.of("address", destination.addressText()));
+        JsonNode place = McpResponses.findArray(found, McpResponses.ADDRESSES).stream()
+                .findFirst()
+                .orElseThrow(() -> {
+                    log.warn("silpo_find_address matched nothing for a gift address of user {}", userId);
+                    return new GiftDeliveryUnavailableException(
+                            "Silpo could not place the gift address given by user " + userId);
+                });
+        BigDecimal latitude = requireNumber(place, McpResponses.LATITUDE, userId, "a gift address had no latitude");
+        BigDecimal longitude = requireNumber(place, McpResponses.LONGITUDE, userId, "a gift address had no longitude");
+
+        JsonNode types = call(userId, TOOL_DELIVERY_TYPES, Map.of("latitude", latitude, "longitude", longitude));
+        String branchId = McpResponses.findArray(types, McpResponses.DELIVERY_TYPE_OPTIONS).stream()
+                .filter(option -> McpResponses.findString(option, McpResponses.DELIVERY_TYPE)
+                        .map(DELIVERY_HOME::equals)
+                        .orElse(false))
+                .findFirst()
+                .flatMap(option -> McpResponses.findString(option, McpResponses.BRANCH_ID))
+                .orElseThrow(() -> {
+                    log.warn("no DeliveryHome option at {},{} for a gift from user {}", latitude, longitude, userId);
+                    return new GiftDeliveryUnavailableException(
+                            "Silpo offers no home delivery at the gift address for user " + userId);
+                });
+        String companyId = McpResponses.findArray(cart, McpResponses.SHIPMENTS).stream()
+                .findFirst()
+                .flatMap(shipment -> McpResponses.findString(shipment, McpResponses.COMPANY_ID))
+                .or(() -> McpResponses.findString(cart, McpResponses.COMPANY_ID))
+                .orElseThrow(() -> new CartBuildException("no companyId to ship a gift with for user " + userId));
+
+        // The gift's own branch, so the slot lookup asks about the shop that will actually pick this order.
+        CartContext giftContext = new CartContext(context.cartId(), branchId, companyId, DELIVERY_HOME, null, null);
+        OfferedSlot slot = firstDeliverableSlot(userId, giftContext);
+
+        Map<String, Object> changes = new LinkedHashMap<>();
+        changes.put("deliveryType", DELIVERY_HOME);
+        Map<String, Object> timeslot = new LinkedHashMap<>();
+        timeslot.put("start", slot.id());
+        timeslot.put("end", slot.end() == null ? slot.id() : slot.end());
+        changes.put("timeslot", timeslot);
+        changes.put("address", giftAddressArguments(place, destination));
+        changes.put("shipments", List.of(Map.of("companyId", companyId, "branchId", branchId)));
+        changes.put("branchId", branchId);
+        if (!updateCart(userId, context.cartId(), changes)) {
+            throw new CartBuildException("Silpo declined to point cart " + context.cartId() + " at a gift address");
+        }
+        log.info("pointed cart {} at a gift address on branch {} for user {}", context.cartId(), branchId, userId);
+        return new RepointedCart(context.cartId(), ownDelivery);
+    }
+
+    /**
+     * A cart that is currently pointed somewhere it does not belong, and what to put back on it.
+     *
+     * @param cartId the cart that was moved
+     * @param ownDelivery the delivery block it carried before
+     */
+    public record RepointedCart(String cartId, Map<String, Object> ownDelivery) {}
+
+    /**
+     * Puts the household's own delivery settings back.
+     *
+     * <p>Best effort, like every other {@code updateCart} caller: a refusal is worth a log line and another go on
+     * the next build, never a failed order.
+     */
+    public boolean restoreOwnDelivery(UUID userId, String cartId, Map<String, Object> ownDelivery) {
+        if (ownDelivery == null || ownDelivery.isEmpty()) {
+            return false;
+        }
+        boolean restored = updateCart(userId, cartId, ownDelivery);
+        log.info("restoring the household's own delivery on cart {} for user {}: {}", cartId, userId, restored);
+        return restored;
+    }
+
+    /** The four fields {@code silpo_update_shopping_cart} demands on every call, as the cart currently has them. */
+    private static Map<String, Object> deliveryBlockOf(JsonNode cart) {
+        Map<String, Object> block = new LinkedHashMap<>();
+        McpResponses.findString(cart, McpResponses.DELIVERY_TYPE).ifPresent(v -> block.put("deliveryType", v));
+        McpResponses.findNode(cart, McpResponses.TIMESLOT)
+                .filter(JsonNode::isObject)
+                .ifPresent(node -> block.put("timeslot", MAPPER.convertValue(node, Map.class)));
+        McpResponses.findNode(cart, McpResponses.ADDRESS)
+                .filter(JsonNode::isObject)
+                .ifPresent(node -> block.put("address", MAPPER.convertValue(node, Map.class)));
+        List<Map<String, Object>> shipments = new ArrayList<>();
+        for (JsonNode shipment : McpResponses.findArray(cart, McpResponses.SHIPMENTS)) {
+            Map<String, Object> reduced = new LinkedHashMap<>();
+            McpResponses.findString(shipment, McpResponses.COMPANY_ID).ifPresent(v -> reduced.put("companyId", v));
+            McpResponses.findString(shipment, McpResponses.BRANCH_ID).ifPresent(v -> reduced.put("branchId", v));
+            if (!reduced.isEmpty()) {
+                shipments.add(reduced);
+            }
+        }
+        if (!shipments.isEmpty()) {
+            block.put("shipments", shipments);
+        }
+        return block;
+    }
+
+    /**
+     * The address object for a gift.
+     *
+     * <p>Coordinates go as strings because that is how the live cart returns them, and {@code courrierComment}
+     * says out loud what this delivery is, so a courier at a stranger's door has some idea why.
+     */
+    static Map<String, Object> giftAddressArguments(JsonNode place, GiftAddress destination) {
+        Map<String, Object> address = new LinkedHashMap<>();
+        boolean hasFlat = destination.flat() != null && !destination.flat().isBlank();
+        address.put("addressType", hasFlat ? "flat" : "house");
+        McpResponses.findNumber(place, McpResponses.LATITUDE)
+                .ifPresent(v -> address.put("latitude", v.stripTrailingZeros().toPlainString()));
+        McpResponses.findNumber(place, McpResponses.LONGITUDE)
+                .ifPresent(v -> address.put("longitude", v.stripTrailingZeros().toPlainString()));
+        McpResponses.findString(place, McpResponses.CITY).ifPresent(v -> address.put("city", v));
+        McpResponses.findString(place, McpResponses.STREET).ifPresent(v -> address.put("street", v));
+        McpResponses.findString(place, McpResponses.HOUSE).ifPresent(v -> address.put("house", v));
+        McpResponses.findString(place, McpResponses.DISTRICT).ifPresent(v -> address.put("district", v));
+        address.put("locality", destination.addressText());
+        putIfFilled(address, "flat", destination.flat());
+        putIfFilled(address, "entrance", destination.entrance());
+        putIfFilled(address, "floor", destination.floor());
+        putIfFilled(address, "phone", destination.phone());
+        address.put("courrierComment", "Подарунок — телефонуйте отримувачу за номером у замовленні");
+        return address;
+    }
+
+    private static void putIfFilled(Map<String, Object> target, String key, String value) {
+        if (value != null && !value.isBlank()) {
+            target.put(key, value);
+        }
     }
 
     private BigDecimal requireNumber(JsonNode node, String[] keys, UUID userId, String problem) {

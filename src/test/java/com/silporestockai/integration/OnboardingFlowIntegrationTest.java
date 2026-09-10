@@ -241,9 +241,12 @@ class OnboardingFlowIntegrationTest extends AbstractIntegrationTest {
                 {"adultMale":2,"adultFemale":0,"childrenAgeBrackets":["AGE_4_7"],\
                 "restrictions":["nuts"],"restrictionsOther":"","dietType":"NONE",\
                 "cookingTimePreference":"COOKS_DAILY","weeklyBudget":2500}""");
-        // The form already carried the budget — onboarding finishes right there, no separate chat question.
-        assertThat(conversationStateService.load(CHAT_ID).getCurrentFlow()).isEqualTo(ConversationFlow.NONE);
+        // The form already carried the budget — no separate chat question for it.
         assertThat(lastMessageText()).doesNotContain("бюджет").doesNotContain("Бюджет");
+        // Task 81: the last thing the form asks is the optional gift address. Skipping is a complete
+        // answer, and only then is the profile written.
+        tapButton(5, "onb:gift:skip");
+        assertThat(conversationStateService.load(CHAT_ID).getCurrentFlow()).isEqualTo(ConversationFlow.NONE);
 
         UUID userId = userRepository.findByTelegramChatId(CHAT_ID).orElseThrow().getId();
         UserProfile profile = userProfileRepository.findByUserId(userId).orElseThrow();
@@ -283,6 +286,9 @@ class OnboardingFlowIntegrationTest extends AbstractIntegrationTest {
         sendText(7, "нема");
         sendText(8, "нема");
         sendText(9, "1500");
+        // Task 81: the last thing the form asks is the optional gift address. Skipping is a complete
+        // answer, and only then is the profile written.
+        tapButton(10, "onb:gift:skip");
 
         UUID userId = userRepository.findByTelegramChatId(CHAT_ID).orElseThrow().getId();
         UserProfile profile = userProfileRepository.findByUserId(userId).orElseThrow();
@@ -309,6 +315,9 @@ class OnboardingFlowIntegrationTest extends AbstractIntegrationTest {
         sendText(6, "алергія на горіхи");
         sendText(7, "броколі");
         sendText(8, "2000");
+        // Task 81: the last thing the form asks is the optional gift address. Skipping is a complete
+        // answer, and only then is the profile written.
+        tapButton(9, "onb:gift:skip");
 
         UUID userId = userRepository.findByTelegramChatId(CHAT_ID).orElseThrow().getId();
         UserProfile profile = userProfileRepository.findByUserId(userId).orElseThrow();
@@ -339,6 +348,9 @@ class OnboardingFlowIntegrationTest extends AbstractIntegrationTest {
                 {"adultMale":1,"adultFemale":1,"childrenAgeBrackets":["AGE_0_3","AGE_8_12"],\
                 "restrictions":[],"restrictionsOther":"","dietType":"NONE",\
                 "cookingTimePreference":"COOKS_DAILY","weeklyBudget":2500}""");
+        // Task 81: the last thing the form asks is the optional gift address. Skipping is a complete
+        // answer, and only then is the profile written.
+        tapButton(4, "onb:gift:skip");
 
         UUID userId = userRepository.findByTelegramChatId(CHAT_ID).orElseThrow().getId();
         UserProfile profile = userProfileRepository.findByUserId(userId).orElseThrow();
@@ -397,6 +409,9 @@ class OnboardingFlowIntegrationTest extends AbstractIntegrationTest {
         sendText(7, "нема");
         sendText(8, "нема");
         sendText(9, "1800");
+        // Task 81: the last thing the form asks is the optional gift address. Skipping is a complete
+        // answer, and only then is the profile written.
+        tapButton(10, "onb:gift:skip");
 
         UUID userId = userRepository.findByTelegramChatId(CHAT_ID).orElseThrow().getId();
         UserProfile profile = userProfileRepository.findByUserId(userId).orElseThrow();
@@ -414,11 +429,14 @@ class OnboardingFlowIntegrationTest extends AbstractIntegrationTest {
         sendText(6, "нема");
         sendText(7, "нема");
         sendText(8, "1500");
+        // Task 81: the last thing the form asks is the optional gift address. Skipping is a complete
+        // answer, and only then is the profile written.
+        tapButton(9, "onb:gift:skip");
         TELEGRAM.reset();
 
         // Onboarded users' free text goes through IntentRouterService (task 31); an un-stubbed Claude call
         // there fails classification and falls back to a clarifying question, not the old static message.
-        sendText(9, "а що далі?");
+        sendText(10, "а що далі?");
 
         assertThat(userProfileRepository.count()).isEqualTo(1);
         assertThat(lastMessageText()).contains("Не зовсім зрозумів");

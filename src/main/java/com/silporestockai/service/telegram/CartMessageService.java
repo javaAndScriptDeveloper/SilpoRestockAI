@@ -68,6 +68,29 @@ public class CartMessageService {
     }
 
     /**
+     * The gift variant (task 81): the friend, the window, and nothing about where they live.
+     *
+     * <p>The ordinary cart text already prints no address — there has never been a reason to show a household
+     * its own — so non-disclosure here is the existing behaviour rather than a new precaution. What this adds is
+     * saying so, because in two of the three ways a gift's destination is resolved the sender never gave the
+     * address and would otherwise have no idea whether the bot was about to read it out.
+     */
+    public String giftCartText(CartSummary summary, OfferedSlot slot, String recipientLabel, CartBenefits benefits) {
+        return giftWrapped(cartText(summary, slot, OrderType.GIFT, benefits), recipientLabel);
+    }
+
+    /**
+     * The gift framing around an already-composed cart text.
+     *
+     * <p>Its own method because a gift under the ₴799 minimum needs the same two lines around a quite different
+     * middle, and a second copy of this wording is how the two would start disagreeing.
+     */
+    public String giftWrapped(String cartText, String recipientLabel) {
+        return "🎁 Подарунок для " + recipientLabel + "\n\n" + cartText
+                + "\n\nАдресу не показую — вона належить отримувачу.";
+    }
+
+    /**
      * The same cart, with what the household's loyalty account can put against it (tasks 78 and 79).
      *
      * <p>Two blocks, deliberately worded differently. What Silpo has a tool for — bonuses, certificates, a promo
@@ -76,8 +99,12 @@ public class CartMessageService {
      * carries no promise this bot could break.
      */
     public String cartText(CartSummary summary, OfferedSlot slot, OrderType type, CartBenefits benefits) {
-        StringBuilder text =
-                new StringBuilder(type == OrderType.AD_HOC ? "Зібрав кошик:\n" : "Зібрав кошик на тиждень:\n");
+        StringBuilder text = new StringBuilder(
+                switch (type) {
+                    case AD_HOC -> "Зібрав кошик:\n";
+                    case GIFT -> "Зібрав подарунок:\n";
+                    default -> "Зібрав кошик на тиждень:\n";
+                });
         text.append(cartLinesText(summary));
         if (!summary.unresolved().isEmpty()) {
             text.append("\n\nНе знайшов: ")

@@ -1,0 +1,168 @@
+server: silpo-mcp-service 1.110.0
+{
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"success\":true,\"cart\":{\"id\":\"87c8e168-65cc-495b-90d5-3b9db6f0ed43\",\"deliveryType\":\"DeliveryHome\",\"timeslot\":{\"start\":\"2026-09-11T06:00:00+00:00\",\"end\":\"2026-09-11T07:30:00+00:00\"},\"address\":{\"addressType\":\"flat\",\"entrance\":null,\"floor\":null,\"flat\":null,\"latitude\":\"50.403186\",\"longitude\":\"30.6239378\",\"courrierComment\":null,\"phone\":null,\"country\":null,\"postCode\":null,\"region\":null,\"district\":null,\"city\":\"Київ\",\"street\":\"Урлівська вулиця\",\"house\":\"\",\"locality\":\"Київ, Урлівська вулиця, 4\",\"polygonId\":null},\"shipments\":[{\"id\":\"869d4b20-73f8-4e87-a978-c91c0afaf82e\",\"companyId\":\"1ec88c5d-a050-669c-8467-570a157f3e31\",\"branchId\":\"1edddb40-e664-609c-a1a7-f9004aa8afa6\",\"products\":[{\"productId\":\"1edb255f-eca5-6b84-8639-e990029622e2\",\"companyId\":\"1ec88c5d-a050-669c-8467-570a157f3e31\",\"branchId\":\"1edddb40-e664-609c-a1a7-f9004aa8afa6\",\"slug\":\"pitseta-po-italiisky-833440\",\"name\":\"Піцета «По-італійськи»\",\"image\":\"https://images.silpo.ua/v2/products/500x500/webp/408707c9-8660-4491-81a1-be943132bc78.png\",\"ratio\":\"100г\",\"quantity\":3,\"price\":29.99,\"oldPrice\":37.99,\"subTotal\":113.97,\"subDiscount\":24,\"total\":89.97,\"stock\":9,\"weighted\":false,\"addToBasketStep\":1,\"comment\":null},{\"productId\":\"1ee7f204-b354-66fe-9d30-4fe3a5ae14dc\",\"companyId\":\"1ec88c5d-a050-669c-8467-570a157f3e31\",\"branchId\":\"1edddb40-e664-609c-a1a7-f9004aa8afa6\",\"slug\":\"pyrizhok-z-gorokhom-i-zelenniu-940598\",\"name\":\"Пиріжок з горохом і зеленню\",\"image\":\"https://images.silpo.ua/v2/products/500x500/webp/eb7983b1-61a8-46b2-8fa5-e6a80f10655b.png\",\"ratio\":\"90г\",\"quantity\":7,\"price\":20.01,\"oldPrice\":25.99,\"subTotal\":181.93,\"subDiscount\":41.86,\"total\":140.07,\"stock\":9,\"weighted\":false,\"addToBasketStep\":1,\"comment\":null},{\"productId\":\"1f0c62a3-677f-67d6-acea-b558432d5f12\",\"companyId\":\"1ec88c5d-a050-669c-8467-570a157f3e31\",\"branchId\":\"1edddb40-e664-609c-a1a7-f9004aa8afa6\",\"slug\":\"olyvky-chervoni-bonta-di-puglia-italiia-apuliia-1011570\",\"name\":\"Оливки червоні Bonta' di Puglia Італія Апулія\",\"image\":\"https://images.silpo.ua/v2/products/500x500/webp/55825ebe-fed7-4be9-8dcf-b273c9f48f34.png\",\"ratio\":\"150г\",\"quantity\":2,\"price\":139,\"oldPrice\":null,\"subTotal\":278,\"subDiscount\":0,\"total\":278,\"stock\":4,\"weighted\":false,\"addToBasketStep\":1,\"comment\":null}]}],\"feedbackContacts\":\"call\",\"feedbackChanges\":\"disapprovedChanges\",\"promoCode\":null,\"packageType\":\"UseSilpoBags\",\"paymentType\":\"Unknown\",\"certificates\":[],\"isAdultConfirmed\":false,\"calculation\":{\"total\":607.04,\"totalAfterDiscounts\":607.04,\"certificatesTotal\":0,\"subTotal\":672.9,\"subDiscount\":65.86,\"productsTotal\":508.04,\"delivery\":{\"total\":99,\"totalWeight\":1.23,\"deliveryExpressByPromise\":{\"promiseTime\":3840,\"isAvailable\":true,\"isTemporarilyUnavailable\":false,\"price\":119,\"branchId\":\"1edddb40-e664-609c-a1a7-f9004aa8afa6\"}},\"promoCode\":null,\"payment\":{\"availableTypes\":[]},\"validations\":[{\"level\":\"error\",\"type\":\"order\",\"message\":\"order.cost.min\",\"context\":{\"orderCostMin\":799}},{\"level\":\"info\",\"type\":\"order\",\"message\":\"order.payment_types.disabled\",\"context\":{\"reason\":\"not_available_for_total\",\"paymentTypes\":[\"BNPL\"],\"total\":607.04,\"minTotal\":1000}}]}},\"loyalty\":{\"bonusAvailable\":0,\"bonusTotal\":0,\"bonusRequested\":null,\"isEnabled\":true}}"
+      }
+    ],
+    "structuredContent": {
+      "success": true,
+      "cart": {
+        "id": "87c8e168-65cc-495b-90d5-3b9db6f0ed43",
+        "deliveryType": "DeliveryHome",
+        "timeslot": {
+          "start": "2026-09-11T06:00:00+00:00",
+          "end": "2026-09-11T07:30:00+00:00"
+        },
+        "address": {
+          "addressType": "flat",
+          "entrance": null,
+          "floor": null,
+          "flat": null,
+          "latitude": "50.403186",
+          "longitude": "30.6239378",
+          "courrierComment": null,
+          "phone": null,
+          "country": null,
+          "postCode": null,
+          "region": null,
+          "district": null,
+          "city": "Київ",
+          "street": "Урлівська вулиця",
+          "house": "",
+          "locality": "Київ, Урлівська вулиця, 4",
+          "polygonId": null
+        },
+        "shipments": [
+          {
+            "id": "869d4b20-73f8-4e87-a978-c91c0afaf82e",
+            "companyId": "1ec88c5d-a050-669c-8467-570a157f3e31",
+            "branchId": "1edddb40-e664-609c-a1a7-f9004aa8afa6",
+            "products": [
+              {
+                "productId": "1edb255f-eca5-6b84-8639-e990029622e2",
+                "companyId": "1ec88c5d-a050-669c-8467-570a157f3e31",
+                "branchId": "1edddb40-e664-609c-a1a7-f9004aa8afa6",
+                "slug": "pitseta-po-italiisky-833440",
+                "name": "Піцета «По-італійськи»",
+                "image": "https://images.silpo.ua/v2/products/500x500/webp/408707c9-8660-4491-81a1-be943132bc78.png",
+                "ratio": "100г",
+                "quantity": 3,
+                "price": 29.99,
+                "oldPrice": 37.99,
+                "subTotal": 113.97,
+                "subDiscount": 24,
+                "total": 89.97,
+                "stock": 9,
+                "weighted": false,
+                "addToBasketStep": 1,
+                "comment": null
+              },
+              {
+                "productId": "1ee7f204-b354-66fe-9d30-4fe3a5ae14dc",
+                "companyId": "1ec88c5d-a050-669c-8467-570a157f3e31",
+                "branchId": "1edddb40-e664-609c-a1a7-f9004aa8afa6",
+                "slug": "pyrizhok-z-gorokhom-i-zelenniu-940598",
+                "name": "Пиріжок з горохом і зеленню",
+                "image": "https://images.silpo.ua/v2/products/500x500/webp/eb7983b1-61a8-46b2-8fa5-e6a80f10655b.png",
+                "ratio": "90г",
+                "quantity": 7,
+                "price": 20.01,
+                "oldPrice": 25.99,
+                "subTotal": 181.93,
+                "subDiscount": 41.86,
+                "total": 140.07,
+                "stock": 9,
+                "weighted": false,
+                "addToBasketStep": 1,
+                "comment": null
+              },
+              {
+                "productId": "1f0c62a3-677f-67d6-acea-b558432d5f12",
+                "companyId": "1ec88c5d-a050-669c-8467-570a157f3e31",
+                "branchId": "1edddb40-e664-609c-a1a7-f9004aa8afa6",
+                "slug": "olyvky-chervoni-bonta-di-puglia-italiia-apuliia-1011570",
+                "name": "Оливки червоні Bonta' di Puglia Італія Апулія",
+                "image": "https://images.silpo.ua/v2/products/500x500/webp/55825ebe-fed7-4be9-8dcf-b273c9f48f34.png",
+                "ratio": "150г",
+                "quantity": 2,
+                "price": 139,
+                "oldPrice": null,
+                "subTotal": 278,
+                "subDiscount": 0,
+                "total": 278,
+                "stock": 4,
+                "weighted": false,
+                "addToBasketStep": 1,
+                "comment": null
+              }
+            ]
+          }
+        ],
+        "feedbackContacts": "call",
+        "feedbackChanges": "disapprovedChanges",
+        "promoCode": null,
+        "packageType": "UseSilpoBags",
+        "paymentType": "Unknown",
+        "certificates": [],
+        "isAdultConfirmed": false,
+        "calculation": {
+          "total": 607.04,
+          "totalAfterDiscounts": 607.04,
+          "certificatesTotal": 0,
+          "subTotal": 672.9,
+          "subDiscount": 65.86,
+          "productsTotal": 508.04,
+          "delivery": {
+            "total": 99,
+            "totalWeight": 1.23,
+            "deliveryExpressByPromise": {
+              "promiseTime": 3840,
+              "isAvailable": true,
+              "isTemporarilyUnavailable": false,
+              "price": 119,
+              "branchId": "1edddb40-e664-609c-a1a7-f9004aa8afa6"
+            }
+          },
+          "promoCode": null,
+          "payment": {
+            "availableTypes": []
+          },
+          "validations": [
+            {
+              "level": "error",
+              "type": "order",
+              "message": "order.cost.min",
+              "context": {
+                "orderCostMin": 799
+              }
+            },
+            {
+              "level": "info",
+              "type": "order",
+              "message": "order.payment_types.disabled",
+              "context": {
+                "reason": "not_available_for_total",
+                "paymentTypes": [
+                  "BNPL"
+                ],
+                "total": 607.04,
+                "minTotal": 1000
+              }
+            }
+          ]
+        }
+      },
+      "loyalty": {
+        "bonusAvailable": 0,
+        "bonusTotal": 0,
+        "bonusRequested": null,
+        "isEnabled": true
+      }
+    }
+  },
+  "jsonrpc": "2.0",
+  "id": 2
+}

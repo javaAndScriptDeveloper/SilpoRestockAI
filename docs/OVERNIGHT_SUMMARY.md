@@ -1422,3 +1422,110 @@ hold cooked food, which Silpo only delivers between 10:00 and 22:00. On an early
 with `timeslot.cooked_food.limited` and **no checkout link at all**, and the chat says «Кошик зібрати не
 вдалось». Task 76 re-picks a window Silpo has withdrawn; it does not yet re-pick one this cart's contents
 are not allowed to use. Written up as its own backlog task.
+
+# Session 24 — send-as-gift, and what the API will and will not carry (task 81), 2026-09-10 (evening)
+
+A household orders a themed package and Silpo delivers it to somebody else's door. The sender pays, the
+friend receives, and in two of the three ways the destination is arrived at the sender never learns the
+address.
+
+## The probe came first, and rewrote the design twice
+
+Task 81 asked for the delivery limits to be checked live rather than assumed, so nothing was written until
+`tools/list` and six real calls had answered. Server `silpo-mcp-service 1.110.0`, 40 tools.
+
+`silpo_find_address` exists and geocodes «Київ, вулиця Хрещатик, 22» into coordinates, a district and a
+house number. `silpo_get_available_delivery_types` at those coordinates offers DeliveryHome with a branch
+attached. So far, so much as the task assumed.
+
+Two things it did not assume:
+
+**A cart can be repointed at a stranger's address — and doing so invalidates everything in it.** The live
+cart was moved from Урлівська 4 to Хрещатик 22 on branch `1edb6b38…`, read back, and restored. The read-back
+carried three `product.offer.not_found` validations for the three products that had been sitting in it: a
+branch travels with an address, and a product resolved against one shop is not a product in another. That
+fixed the order of every step that follows — the address goes on the cart *before* a single search, which
+has the second, better effect that the search runs against the shelf the order is actually picked from.
+
+**An account has exactly one cart.** `silpo_create_shopping_cart` is documented idempotent per user, so the
+gift borrows the same cart the weekly order uses and has to give it back. The obvious moment to give it back
+is when the sender confirms — and that is wrong, because checkout is a Silpo web link that reads the cart
+live, so restoring the household's address there would deliver the gift to the sender, discovered only after
+the money moved. The restore is lazy instead: every ordinary build passes through `CartConfirmationService.
+present`, which asks first whether a gift is still holding the cart. No timer, no window, and a gift nobody
+paid for is cleaned up by the same path.
+
+The account currently has **no saved Silpo delivery addresses at all** (`silpo_get_my_delivery_addresses`
+answered `[]`), which is why the restore target is a snapshot of the cart's own delivery block rather than
+anything re-derivable. That snapshot is the only copy.
+
+## The phone, which was a real gap
+
+The task said the sender never sees the friend's address. Which raises the question nobody had asked: the
+courier calls the number on the order, and that number is the sender's — someone who cannot see the address
+and so cannot tell a driver which entrance. Probed live: `silpo_update_shopping_cart` keeps `phone`, `flat`,
+`entrance`, `floor` and `courrierComment` on the address object verbatim. So the phone is collected wherever
+the address is, and passed with it.
+
+**Assumed rather than proved:** that Silpo's courier dials `address.phone` rather than the account's profile
+phone. The field is stored — written and read back — but only a paid delivery shows which number rings.
+Product owner's call to proceed on that basis.
+
+## The three paths, and the fourth answer
+
+Tried in order of how little of the recipient's privacy each spends. **(a)** an address the sender typed —
+nothing at stake, they already know it; the phone is asked for before anything is built. **(b)** a nickname
+whose owner opted in — address *and* phone were stored together at consent time, so nothing is asked at send
+time; the recipient is still told a gift is coming, because they agreed to store an address, not to this
+delivery, and somebody has to be home. **(c)** a nickname with no consent — asked in their own chat, answered
+there, and the sender told only that the address is in hand. **(d)** a nickname the bot has never seen —
+there is no chat to ask in, so the sender is told exactly that and offered path (a). Never silence.
+
+(b) and (c) span two chats and two webhook calls, so they need state `conversation_state` cannot hold: it is
+keyed by a single chat. `gift_order` is that state, shaped like task 68's `group_event` for the same reason.
+
+`users` also gained a `telegram_username`, because nothing in the schema knew what a person is called. The
+index is deliberately not unique — a released Telegram username can be taken over, and a unique constraint
+would reject the second, legitimate owner.
+
+## Consent is never inferred
+
+`gift_delivery_address`, `gift_delivery_phone` and `gift_address_shareable` default to null / null / false,
+nothing backfills them, and they change only through the optional last section of the Анкета or an explicit
+chat request. «Пропустити» is a complete answer and leaves a profile identical to every profile that existed
+before the column did. «Більше не хочу подарунки» clears all three.
+
+## Deliberately not built
+
+SelfPickup and NovaPoshta. All 40 live schemas were searched for a recipient identity and there is none:
+SelfPickup builds its address from branch data, NovaPoshta from office data, and neither the create nor the
+update tool has a field for who may collect an order — nor does any tool create an order at all, since
+checkout is a web link the sender pays through. "Your friend collects it himself" cannot be expressed, so it
+appears in no user-facing string and must not appear in the pitch. No split payment, same constraint as 68.
+
+## Five bugs the live run caught and the tests did not
+
+Driving it against the real Silpo MCP was not a formality. **The model spells «nothing» as a string** —
+`phone=".null"` on the first run, `address="-null"` on the second — and neither is blank, so the first wrote
+`.null` onto the live cart as a courier's phone and the second sent a plain «відправ подарунок @нік» down
+the typed-address path, straight past the nickname it had extracted correctly.
+
+Then three that all fell out of one refusal: a ₴423 gift is under Silpo's ₴799 minimum, and the build threw
+*after* the cart had already moved to the friend's branch. The row never left `RESOLVED`, which the custody
+check read as holding nothing; `silpo_cart_id` was only written at presentation, so even once that was fixed
+the restore had a snapshot and no cart to put it on; and the reorder path builds its cart straight through
+`CartBuildingService` rather than `CartConfirmationService.present`, where the release hook had been put — so
+«що треба докупити?» after a gift would have restocked to the friend's door. The custody check now keys off
+the snapshot, which exists only after a repoint; the cart id travels with it in the same save; and the
+release sits on both of the two paths that actually build a cart.
+
+The fifth was fixed on the way rather than caught: Telegram send failures throw, and an unreachable
+recipient would have taken the sender's order down with them.
+
+## What needs your eyes
+
+All three paths end to end in real Telegram, path (c) with a second real chat — that is the acceptance
+criterion, and it is the one thing a stub cannot stand in for. The copy is new and there is a lot of it:
+eleven strings in `GiftMessageService`, the onboarding section, and two help lines. And the check that
+matters most is the boring one — place an ordinary order after a gift and confirm the household's own
+address came back.

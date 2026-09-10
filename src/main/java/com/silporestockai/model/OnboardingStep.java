@@ -27,6 +27,13 @@ public enum OnboardingStep {
     ASK_DISLIKES,
     /** Asking the weekly budget — only reached on the manual-fallback path; the WebApp form asks it directly. */
     ASK_BUDGET,
+    /**
+     * Offering the optional gift-address section (task 81). Buttons only, and «Пропустити» is a complete answer —
+     * it is what every profile that existed before this step stays at.
+     */
+    ASK_GIFT_OPT_IN,
+    /** Collecting the address, apartment and phone a friend's gift would be delivered to. */
+    ASK_GIFT_ADDRESS,
     /** Profile saved; the conversation returns to {@link ConversationFlow#NONE}. */
     DONE
 }

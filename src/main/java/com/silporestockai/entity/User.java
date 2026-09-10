@@ -39,6 +39,13 @@ public class User {
     @Column(name = "silpo_guest_id")
     private String silpoGuestId;
 
+    /**
+     * The {@code @nickname} this person is known by in Telegram, without the {@code @}. Null when they have none
+     * — Telegram does not require one — and re-read on every update, so a rename follows them here.
+     */
+    @Column(name = "telegram_username", length = 64)
+    private String telegramUsername;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 

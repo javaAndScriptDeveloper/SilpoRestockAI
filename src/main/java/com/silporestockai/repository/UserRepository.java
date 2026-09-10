@@ -16,6 +16,12 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     Optional<User> findBySilpoGuestId(String silpoGuestId);
 
     /**
+     * The person behind an {@code @nickname} (task 81). Most recent first, because a released username can be
+     * taken over: the newest row is the one that answer belongs to now.
+     */
+    Optional<User> findFirstByTelegramUsernameIgnoreCaseOrderByCreatedAtDesc(String telegramUsername);
+
+    /**
      * Everyone the check-in cycle can address: a current baseline exists only once a cart was confirmed, so this one
      * condition covers both "finished onboarding" and "has a first order".
      */
