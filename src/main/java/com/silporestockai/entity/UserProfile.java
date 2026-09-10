@@ -111,4 +111,21 @@ public class UserProfile {
     /** When the one-time capability teaser (task 70) went out. Null means it has not. */
     @Column(name = "capability_reveal_sent_at")
     private Instant capabilityRevealSentAt;
+
+    /**
+     * How this household should be planned for right now, which is not always how they said they cook (task 67).
+     *
+     * <p>{@link SpecialMode#CRUNCH_WEEK} is a deadline, not a change of habit, so it must not leave a mark on the
+     * profile: a household that cooks daily and had one bad fortnight would otherwise come out of it recorded as
+     * ready-meals people, and nothing in the app would ever put that back. The override lives here, at the point
+     * of reading, and {@code cooking_time_preference} keeps whatever the Анкета stored — which is also what makes
+     * the revert free: end the mode and this method answers with the real preference again, with nothing to
+     * restore.
+     *
+     * <p>Every planner reads this rather than the column. The getter still exists for the one thing that legitimately
+     * wants the stored value: the Анкета prefill, which is editing the stored value.
+     */
+    public CookingTimePreference effectiveCookingTimePreference() {
+        return specialMode == SpecialMode.CRUNCH_WEEK ? CookingTimePreference.READY_MEALS_ONLY : cookingTimePreference;
+    }
 }

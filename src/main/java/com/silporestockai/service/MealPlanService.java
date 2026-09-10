@@ -141,8 +141,11 @@ public class MealPlanService {
                         "user %s has no profile yet; onboarding has to finish first".formatted(userId)));
 
         String specialPrompt = specialSystemPromptFor(profile.getSpecialMode());
-        boolean readyMealsOnly =
-                specialPrompt == null && profile.getCookingTimePreference() == CookingTimePreference.READY_MEALS_ONLY;
+        // The effective preference, not the stored one: a crunch week (task 67) plans as READY_MEALS_ONLY for as
+        // long as it lasts and writes nothing to the profile, so the week after it plans as whatever the household
+        // actually said in the Анкета — with nothing to restore.
+        boolean readyMealsOnly = specialPrompt == null
+                && profile.effectiveCookingTimePreference() == CookingTimePreference.READY_MEALS_ONLY;
         List<String> untouched = inventoryTrendService.getRemovalCandidates(userId);
 
         if (readyMealsOnly) {
@@ -485,7 +488,13 @@ public class MealPlanService {
         if (Boolean.TRUE.equals(profile.getOnlyUaProducer())) {
             text.append("Тільки продукти українського виробництва.\n");
         }
-        if (profile.getSpecialMode() != null && profile.getSpecialMode() != SpecialMode.NONE) {
+        // CRUNCH_WEEK is deliberately not named here (task 67): it says nothing about how this household should
+        // eat, only that they have no time to cook — which the ready-meals fork it selects already expresses in
+        // full. A bare «Особливий режим харчування: CRUNCH_WEEK» in the prompt is a phrase the model has to guess
+        // at, and guessing about a diet is the one thing the special modes exist to prevent.
+        if (profile.getSpecialMode() != null
+                && profile.getSpecialMode() != SpecialMode.NONE
+                && profile.getSpecialMode() != SpecialMode.CRUNCH_WEEK) {
             text.append("Особливий режим харчування: ")
                     .append(profile.getSpecialMode().name())
                     .append('\n');

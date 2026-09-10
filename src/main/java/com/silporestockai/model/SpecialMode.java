@@ -14,5 +14,11 @@ public enum SpecialMode {
     /** High-calorie, high-protein plan for deliberate weight gain. */
     MASS_GAIN,
     /** No cooking and no refrigeration — ready meals and preserves only. */
-    BLACKOUT
+    BLACKOUT,
+    /**
+     * A deadline week (task 67): ready-to-eat food for a fixed stretch, then back to how this household normally
+     * cooks. The only mode that overrides {@code cooking_time_preference} rather than the diet, and it overrides it
+     * at read time — see {@link com.silporestockai.entity.UserProfile#effectiveCookingTimePreference()}.
+     */
+    CRUNCH_WEEK
 }

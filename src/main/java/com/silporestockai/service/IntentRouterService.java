@@ -241,6 +241,9 @@ public class IntentRouterService {
             case SPECIAL_MODE_LEANER ->
                 adjustPlan(user, "Зроби раціон менш калорійним. Людина написала: «" + text + "».");
             case SPECIAL_MODE_END -> specialModeService.cancel(user);
+            // Task 67. Ends through SPECIAL_MODE_END like every other mode — «вже не запара, повертай як було»
+            // needs no intent of its own, and giving it one would be two ways to leave the same state.
+            case SPECIAL_MODE_CRUNCH_WEEK -> specialModeService.triggerCrunchWeek(user);
             case REORDER -> reorderConfirmationService.startNow(user, trigger);
             case SPECIAL_MODE_MASS_GAIN -> {
                 telegramOutboundService.sendMessage(
@@ -367,6 +370,7 @@ public class IntentRouterService {
         SPECIAL_MODE_LEANER,
         SPECIAL_MODE_MASS_GAIN,
         SPECIAL_MODE_END,
+        SPECIAL_MODE_CRUNCH_WEEK,
         FILTER_UA_PRODUCER_ONLY,
         HANGOVER_RELIEF,
         BLACKOUT,

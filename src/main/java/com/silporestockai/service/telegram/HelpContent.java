@@ -33,6 +33,10 @@ public final class HelpContent {
             "— «Я захворів, гастрит» — тимчасово щадне харчування, потім сам поверну звичайне.";
     public static final String EXAMPLE_LOWER_CALORIES = "— «Зроби менш калорійним» — той самий раціон, менше калорій.";
     public static final String EXAMPLE_BULK = "— «Хочу набрати масу» — план під набір маси.";
+    /** Task 67: the mode is only reachable by saying it, so the instruction has to be where a person looks. */
+    public static final String EXAMPLE_CRUNCH_WEEK = "— «Цей тиждень нема часу готувати» — на тиждень переходжу "
+            + "на готову їжу, потім сам повертаю як було. Анкету не чіпаю.";
+
     public static final String EXAMPLE_BACK_TO_NORMAL =
             "— «Повертаємось до звичайного раціону» — вимкнути будь-який спецрежим.";
     public static final String EXAMPLE_UA_ONLY =
@@ -72,6 +76,7 @@ public final class HelpContent {
                     EXAMPLE_SPECIAL_MODE,
                     EXAMPLE_LOWER_CALORIES,
                     EXAMPLE_BULK,
+                    EXAMPLE_CRUNCH_WEEK,
                     EXAMPLE_BACK_TO_NORMAL,
                     EXAMPLE_UA_ONLY,
                     EXAMPLE_HANGOVER,

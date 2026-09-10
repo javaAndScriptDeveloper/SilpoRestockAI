@@ -7,11 +7,13 @@ import com.silporestockai.entity.ShoppingListItem;
 import com.silporestockai.entity.User;
 import com.silporestockai.entity.UserProfile;
 import com.silporestockai.model.ConversationFlow;
+import com.silporestockai.model.CookingTimePreference;
 import com.silporestockai.model.SpecialMode;
 import com.silporestockai.model.TelegramIncomingUpdate;
 import com.silporestockai.repository.UserProfileRepository;
 import com.silporestockai.repository.UserRepository;
 import com.silporestockai.service.telegram.TelegramOutboundService;
+import com.silporestockai.utils.DayLabels;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -66,6 +68,59 @@ public class SpecialModeService {
                 "user {} entered MEDICAL_GASTRITIS_ACUTE, expires {}", user.getId(), profile.getSpecialModeExpiresAt());
         telegramOutboundService.sendMessage(
                 user.getTelegramChatId(), "Розумію, гастрит. Перемикаю на щадне харчування — складаю новий план.");
+        regenerateAndPresent(user);
+    }
+
+    /**
+     * A crunch week (task 67): ready-to-eat food until the deadline passes, then back to normal on its own.
+     *
+     * <p>Mechanically the gastritis flow with a different field overridden — one {@code special_mode} row carrying
+     * {@code started_at}/{@code expires_at}, swept by the same {@link #sweepExpired()} and endable early by the same
+     * {@code SPECIAL_MODE_END} intent. What it must never do is write to {@code cooking_time_preference}: see
+     * {@link UserProfile#effectiveCookingTimePreference()} for why the override lives at the read instead.
+     */
+    @Transactional
+    public void triggerCrunchWeek(User user) {
+        UserProfile profile = requireProfile(user);
+        if (profile.getSpecialMode() == SpecialMode.CRUNCH_WEEK) {
+            // Saying it twice is what a bad week sounds like. Neither an error nor a silent restart of the clock:
+            // the answer is when the one already running ends.
+            telegramOutboundService.sendMessage(
+                    user.getTelegramChatId(),
+                    "Режим запари вже увімкнений — тримаю готову їжу до "
+                            + DayLabels.dayAndMonth(profile.getSpecialModeExpiresAt())
+                            + ". Скажи «вже не запара», якщо повертаємось раніше.");
+            return;
+        }
+        if (isActive(profile)) {
+            telegramOutboundService.sendMessage(
+                    user.getTelegramChatId(),
+                    "У тебе вже активний інший режим харчування. Спершу заверши його — напиши «повертаємось до звичайного раціону».");
+            return;
+        }
+        if (profile.getCookingTimePreference() == CookingTimePreference.READY_MEALS_ONLY) {
+            // Nothing to override. Switching the mode on anyway would cost a plan regeneration and, a week later,
+            // an announcement that we are "going back to normal" — to a household that never left it.
+            telegramOutboundService.sendMessage(
+                    user.getTelegramChatId(),
+                    "Ти й так на готовій їжі — план уже без готування, нічого міняти не треба.");
+            return;
+        }
+        Instant now = clock.instant();
+        profile.setSpecialMode(SpecialMode.CRUNCH_WEEK);
+        profile.setSpecialModeStartedAt(now);
+        profile.setSpecialModeExpiresAt(now.plus(specialModeProperties.crunchWeekDuration()));
+        userProfileRepository.save(profile);
+        log.info(
+                "user {} entered CRUNCH_WEEK, expires {} (stored cooking preference {} untouched)",
+                user.getId(),
+                profile.getSpecialModeExpiresAt(),
+                profile.getCookingTimePreference());
+        telegramOutboundService.sendMessage(
+                user.getTelegramChatId(),
+                "Зрозумів, запара. До " + DayLabels.dayAndMonth(profile.getSpecialModeExpiresAt())
+                        + " беру тільки готову їжу — нічого готувати не доведеться. Потім поверну як було, "
+                        + "твої налаштування я не чіпаю.");
         regenerateAndPresent(user);
     }
 
@@ -144,10 +199,30 @@ public class SpecialModeService {
             telegramOutboundService.sendMessage(user.getTelegramChatId(), "Звичайний режим і так активний.");
             return;
         }
+        SpecialMode ending = profile.getSpecialMode();
         revertToNormal(user, profile);
-        telegramOutboundService.sendMessage(
-                user.getTelegramChatId(), "Повернув звичайний раціон — складаю новий план.");
+        telegramOutboundService.sendMessage(user.getTelegramChatId(), endedEarlyText(ending));
         regenerateAndPresent(user);
+    }
+
+    /**
+     * What ending a mode ahead of time is called, in the words of the mode being ended (task 67).
+     *
+     * <p>«Повернув звичайний раціон» is right for a diet and wrong for a crunch week: nobody changed their
+     * раціон, they ran out of time to cook. Saying it back the way it was said is how a person can tell the bot
+     * understood which thing just ended.
+     */
+    private static String endedEarlyText(SpecialMode ending) {
+        return ending == SpecialMode.CRUNCH_WEEK
+                ? "Добре, запара позаду — повертаю звичайний режим готування, як у твоїй анкеті."
+                : "Повернув звичайний раціон — складаю новий план.";
+    }
+
+    /** The same, for a mode that ran its full course and expired on its own. */
+    private static String expiredText(SpecialMode ended) {
+        return ended == SpecialMode.CRUNCH_WEEK
+                ? "Тиждень запари закінчився — повертаємось до звичайного режиму готування."
+                : "Два тижні дієтичного харчування завершено, повертаємось до звичайного раціону.";
     }
 
     @Transactional
@@ -195,10 +270,9 @@ public class SpecialModeService {
                     if (profile.getSpecialMode() == SpecialMode.MEDICAL_GASTRITIS_ACUTE) {
                         stepDownToDietTable5(user, profile);
                     } else {
+                        SpecialMode ended = profile.getSpecialMode();
                         revertToNormal(user, profile);
-                        telegramOutboundService.sendMessage(
-                                user.getTelegramChatId(),
-                                "Два тижні дієтичного харчування завершено, повертаємось до звичайного раціону.");
+                        telegramOutboundService.sendMessage(user.getTelegramChatId(), expiredText(ended));
                         regenerateAndPresent(user);
                     }
                 });
