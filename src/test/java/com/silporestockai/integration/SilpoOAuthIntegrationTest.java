@@ -231,10 +231,14 @@ class SilpoOAuthIntegrationTest extends AbstractIntegrationTest {
         String html = callback.getResponse().getContentAsString();
         assertThat(html).contains("#FF8200").contains("Комора").contains("«Сільпо» підключено");
 
-        assertThat(TELEGRAM.sentMessages()).hasSize(1);
-        assertThat(TELEGRAM.sentMessages().getFirst().path("chat_id").asLong())
-                .isEqualTo(userRepository.findById(userId).orElseThrow().getTelegramChatId());
-        assertThat(TELEGRAM.sentMessages().getFirst().path("text").asText()).contains("«Сільпо» підключено");
+        // The chat hears «підключено» without asking. A household with no profile is also carried on into
+        // onboarding by the same event (session 25); under test the async listener runs inline, so the order of
+        // the two is the executor's, not a promise — live, the confirmation lands first.
+        long chatId = userRepository.findById(userId).orElseThrow().getTelegramChatId();
+        assertThat(TELEGRAM.sentMessages()).anySatisfy(message -> {
+            assertThat(message.path("chat_id").asLong()).isEqualTo(chatId);
+            assertThat(message.path("text").asText()).contains("«Сільпо» підключено");
+        });
     }
 
     @Test
