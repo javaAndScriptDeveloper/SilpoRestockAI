@@ -20,4 +20,7 @@ public interface GroupEventParticipantRepository extends JpaRepository<GroupEven
             long telegramUserId, UUID groupEventId);
 
     long countByGroupEventIdAndCountedInDenominatorTrue(UUID groupEventId);
+
+    /** People whose reply was counted in any round ever — each one saw the agent work (task 80). */
+    long countByCountedInDenominatorTrue();
 }

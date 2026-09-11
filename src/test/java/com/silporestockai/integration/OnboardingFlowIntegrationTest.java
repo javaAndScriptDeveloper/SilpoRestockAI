@@ -23,6 +23,7 @@ import com.silporestockai.utils.TokenCipher;
 import java.io.IOException;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -193,13 +194,37 @@ class OnboardingFlowIntegrationTest extends AbstractIntegrationTest {
     @Test
     void connectingOutsideOnboardingResumesNothing() {
         User user = userAccountService.findOrCreate(CHAT_ID);
+        userProfileRepository.save(UserProfile.builder()
+                .id(UUID.randomUUID())
+                .userId(user.getId())
+                .householdSize(2)
+                .build());
         connectSilpo();
         TELEGRAM.reset();
 
         onboardingFlowService.resumeAfterSilpoConnect(user.getId());
 
-        // No conversation was waiting; reconnecting from settings must not start one.
+        // An onboarded household reconnecting from settings: no conversation was waiting, none must start.
         assertThat(TELEGRAM.sentMessages()).isEmpty();
+    }
+
+    @Test
+    void connectingWithNoProfileResumesOnboardingWhateverTheStepSays() throws Exception {
+        // Session 25, live: a check-in prompt landed between the greeting and the connect tap and overwrote
+        // AWAITING_CONNECT; the callback then said «підключено» and the person never got the form.
+        sendText(1, "привіт");
+        conversationStateService.save(CHAT_ID, ConversationFlow.CHECK_IN, "AWAITING_REPORT", Map.of());
+        connectSilpo();
+        CLAUDE.respondWithText("""
+                {"householdSize":4,"hasKids":true,"kidsAges":[3,7],\
+                "dietaryRestrictions":["без горіхів"],"frequentItems":["молоко"]}""");
+        UUID userId = userRepository.findByTelegramChatId(CHAT_ID).orElseThrow().getId();
+
+        onboardingFlowService.resumeAfterSilpoConnect(userId);
+
+        assertThat(lastMessageText()).contains("4");
+        assertThat(conversationStateService.load(CHAT_ID).getCurrentStep())
+                .isEqualTo(OnboardingStep.CONFIRM_PROFILE.name());
     }
 
     @Test

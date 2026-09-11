@@ -155,12 +155,16 @@ public class OnboardingFlowService {
         userRepository.findById(userId).ifPresent(user -> {
             long chatId = user.getTelegramChatId();
             ConversationState state = conversationStateService.load(chatId);
-            if (state.getCurrentFlow() != ConversationFlow.ONBOARDING
-                    || !OnboardingStep.AWAITING_CONNECT.name().equals(state.getCurrentStep())) {
+            boolean awaitingConnect = state.getCurrentFlow() == ConversationFlow.ONBOARDING
+                    && OnboardingStep.AWAITING_CONNECT.name().equals(state.getCurrentStep());
+            if (!awaitingConnect && isOnboarded(userId)) {
                 // Connected again later, from the settings rather than mid-onboarding. Nothing to resume.
                 log.debug("user {} connected Silpo outside onboarding; not resuming a conversation", userId);
                 return;
             }
+            // A household with no profile is onboarding whatever conversation_state says: live, a check-in prompt
+            // landed between the greeting and the connect tap and overwrote the step, and the callback then said
+            // «підключено» and stopped — the person never got the form. The profile is the fact; the step is a hint.
             enrichThenConfirm(user, chatId, new LinkedHashMap<>(state.getContext()));
         });
     }

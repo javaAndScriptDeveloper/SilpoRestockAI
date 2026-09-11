@@ -5,10 +5,12 @@ import com.silporestockai.entity.Checkin;
 import com.silporestockai.entity.ConversationState;
 import com.silporestockai.entity.CustomerOrder;
 import com.silporestockai.entity.User;
+import com.silporestockai.entity.UserProfile;
 import com.silporestockai.model.ConversationFlow;
 import com.silporestockai.model.OrderStatus;
 import com.silporestockai.repository.CheckinRepository;
 import com.silporestockai.repository.CustomerOrderRepository;
+import com.silporestockai.repository.UserProfileRepository;
 import com.silporestockai.repository.UserRepository;
 import com.silporestockai.service.telegram.CheckinMessageService;
 import com.silporestockai.service.telegram.TelegramOutboundService;
@@ -17,6 +19,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -41,6 +44,7 @@ public class CheckinPromptService {
     static final java.time.Duration QUIET_AFTER_ACTIVITY = java.time.Duration.ofMinutes(2);
 
     private final UserRepository userRepository;
+    private final UserProfileRepository userProfileRepository;
     private final CheckinRepository checkinRepository;
     private final CustomerOrderRepository customerOrderRepository;
     private final ConversationStateService conversationStateService;
@@ -62,7 +66,15 @@ public class CheckinPromptService {
         int prompted = 0;
         for (User user : candidates) {
             try {
-                if (isDue(user) && !isBusyElsewhere(user)) {
+                Optional<UserProfile> profile = userProfileRepository.findByUserId(user.getId());
+                if (profile.isEmpty()) {
+                    // A baseline with no profile is a household mid-onboarding (or one whose profile was reset for a
+                    // fresh run). Asking «що закінчилось?» before the greeting has even landed is the wrong first
+                    // frame, and the answer would be routed to onboarding anyway.
+                    log.debug("check-in skipped for user {}: no finished profile", user.getId());
+                    continue;
+                }
+                if (isDue(user, profile.get()) && !isBusyElsewhere(user)) {
                     prompt(user);
                     prompted++;
                 }
@@ -81,7 +93,7 @@ public class CheckinPromptService {
      * contact counts as contact: nobody is asked what is left in their fridge the day after they ordered it, and
      * somebody who ignored the last prompt is asked again after a full interval rather than never.
      */
-    public boolean isDue(User user) {
+    public boolean isDue(User user, UserProfile profile) {
         Instant lastCheckin = checkinRepository
                 .findFirstByUserIdOrderByReceivedAtDesc(user.getId())
                 .map(Checkin::getReceivedAt)
@@ -90,7 +102,11 @@ public class CheckinPromptService {
                 .findFirstByUserIdAndStatusOrderByConfirmedAtDesc(user.getId(), OrderStatus.CONFIRMED)
                 .map(CustomerOrder::getConfirmedAt)
                 .orElse(null);
-        Instant anchor = Stream.of(user.getLastCheckinPromptSentAt(), lastCheckin, lastOrder)
+        // Finishing onboarding is contact too: the household has just been handed a plan and a list, and «що
+        // закінчилось?» three minutes later (live, session 25) reads as the agent forgetting what it just did.
+        // capability_reveal_sent_at is stamped exactly when onboarding completes (task 70).
+        Instant anchor = Stream.of(
+                        user.getLastCheckinPromptSentAt(), lastCheckin, lastOrder, profile.getCapabilityRevealSentAt())
                 .filter(Objects::nonNull)
                 .max(Instant::compareTo)
                 // No anchor at all means a baseline exists but nothing is dated: ask rather than stay silent forever.

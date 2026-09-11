@@ -3,6 +3,8 @@ package com.silporestockai.service;
 import com.silporestockai.config.ObservabilityProperties;
 import com.silporestockai.entity.PartnerPromotion;
 import com.silporestockai.model.FirstOrderDelay;
+import com.silporestockai.model.GiftOrderStatus;
+import com.silporestockai.model.GroupEventStatus;
 import com.silporestockai.model.IntentOrderDelay;
 import com.silporestockai.model.IntentOrderStat;
 import com.silporestockai.model.ObservabilitySnapshot;
@@ -16,6 +18,9 @@ import com.silporestockai.model.PromotionRollup;
 import com.silporestockai.repository.CheckinRepository;
 import com.silporestockai.repository.ConversationStateRepository;
 import com.silporestockai.repository.CustomerOrderRepository;
+import com.silporestockai.repository.GiftOrderRepository;
+import com.silporestockai.repository.GroupEventParticipantRepository;
+import com.silporestockai.repository.GroupEventRepository;
 import com.silporestockai.repository.PartnerPromotionEventRepository;
 import com.silporestockai.repository.TrustLevelRepository;
 import com.silporestockai.repository.UserProfileRepository;
@@ -72,6 +77,9 @@ public class ObservabilityService {
     private final PartnerPromotionEventRepository partnerPromotionEventRepository;
     private final CheckinRepository checkinRepository;
     private final TrustLevelRepository trustLevelRepository;
+    private final GroupEventRepository groupEventRepository;
+    private final GroupEventParticipantRepository groupEventParticipantRepository;
+    private final GiftOrderRepository giftOrderRepository;
     private final PromotionMetricsService promotionMetricsService;
     private final Clock clock;
 
@@ -149,6 +157,19 @@ public class ObservabilityService {
                 "max",
                 s -> s.trustStreakMax());
 
+        // Task 80: the social primitive as numbers. Statuses are enums, so the rows are declared once, not
+        // re-registered.
+        for (GroupEventStatus status : GroupEventStatus.values()) {
+            statusGauge(MeterNames.GROUP_ROUNDS, "Group rounds in this state", status.name(), s -> s.groupRounds());
+        }
+        for (GiftOrderStatus status : GiftOrderStatus.values()) {
+            statusGauge(MeterNames.GIFT_ORDERS, "Gift orders in this state", status.name(), s -> s.giftOrders());
+        }
+        gauge(
+                MeterNames.GROUP_PARTICIPANTS,
+                "People whose reply was counted in a group round — each saw the agent work",
+                s -> s.groupParticipants());
+
         intentMedianGauge = MultiGauge.builder(MeterNames.INTENT_ORDER_MEDIAN)
                 .description("Median time from a routed sentence to the confirmed order it produced")
                 .baseUnit("seconds")
@@ -221,7 +242,10 @@ public class ObservabilityService {
                 checkinRepository.count(),
                 customerOrderRepository.countByStatusAndEditedBeforeConfirm(OrderStatus.CONFIRMED, false),
                 customerOrderRepository.countByStatusAndEditedBeforeConfirm(OrderStatus.CONFIRMED, true),
-                trustLevelRepository.longestUneditedStreak()));
+                trustLevelRepository.longestUneditedStreak(),
+                countByStatus(GroupEventStatus.values(), status -> groupEventRepository.countByStatus(status)),
+                groupEventParticipantRepository.countByCountedInDenominatorTrue(),
+                countByStatus(GiftOrderStatus.values(), status -> giftOrderRepository.countByStatus(status))));
 
         intentMedianGauge.register(
                 intentOrders.stream()
@@ -448,7 +472,23 @@ public class ObservabilityService {
                 .increment();
     }
 
+    private static <E extends Enum<E>> Map<String, Long> countByStatus(E[] statuses, Function<E, Long> count) {
+        Map<String, Long> counts = new LinkedHashMap<>();
+        for (E status : statuses) {
+            counts.put(status.name(), count.apply(status));
+        }
+        return counts;
+    }
+
     // --- Registration helpers ---
+
+    private void statusGauge(
+            String name, String description, String status, Function<ObservabilitySnapshot, Map<String, Long>> read) {
+        Gauge.builder(name, snapshot, holder -> read.apply(holder.get()).getOrDefault(status, 0L))
+                .description(description)
+                .tag(MeterNames.TAG_STATUS, status)
+                .register(meterRegistry);
+    }
 
     private void gauge(String name, String description, ToDoubleFunction<ObservabilitySnapshot> read) {
         Gauge.builder(name, snapshot, holder -> read.applyAsDouble(holder.get()))

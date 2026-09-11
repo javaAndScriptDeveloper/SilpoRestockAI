@@ -140,6 +140,7 @@ class CheckinPromptIntegrationTest extends AbstractIntegrationTest {
                 .confirmedAt(confirmedAt)
                 .isCurrent(true)
                 .build());
+        withProfile(user);
         return user;
     }
 
@@ -178,7 +179,6 @@ class CheckinPromptIntegrationTest extends AbstractIntegrationTest {
     void aVoiceCheckinAsksForTextWhenNoTranscriptionIsConfigured() throws Exception {
         // This context leaves stt.api-key blank, which is a supported configuration: voice degrades to typing.
         User user = household(4);
-        withProfile(user);
         checkinPromptService.sweep();
         TELEGRAM.reset();
 
@@ -213,6 +213,29 @@ class CheckinPromptIntegrationTest extends AbstractIntegrationTest {
 
         assertThat(secondSweep).isZero();
         assertThat(promptsSent()).hasSize(1);
+    }
+
+    @Test
+    void finishingOnboardingCountsAsContact() {
+        // Session 25, live: the plan and the list landed at 00:12, the sweep asked «що закінчилось?» at 00:15.
+        User user = household(4);
+        UserProfile profile = userProfileRepository.findByUserId(user.getId()).orElseThrow();
+        profile.setCapabilityRevealSentAt(Instant.now());
+        userProfileRepository.save(profile);
+
+        assertThat(checkinPromptService.sweep()).isZero();
+        assertThat(TELEGRAM.sentMessages()).isEmpty();
+    }
+
+    @Test
+    void neverPromptsAHouseholdWhoseProfileIsGone() {
+        // Session 25: the sweep landed «Як справи з їжею?» one line above the /start greeting of a household whose
+        // profile had been reset for a fresh run. A baseline alone is not a finished household.
+        household(4);
+        userProfileRepository.deleteAll();
+
+        assertThat(checkinPromptService.sweep()).isZero();
+        assertThat(TELEGRAM.sentMessages()).isEmpty();
     }
 
     @Test

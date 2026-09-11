@@ -1529,3 +1529,70 @@ criterion, and it is the one thing a stub cannot stand in for. The copy is new a
 eleven strings in `GiftMessageService`, the onboarding section, and two help lines. And the check that
 matters most is the boring one — place an ordinary order after a gift and confirm the household's own
 address came back.
+
+# Session 25 — the recording pass: every beat live, in the order it will be recorded (task 80), 2026-09-10/11 (night)
+
+**Method.** Task 80 as written: the hackathon page fetched fresh (six equal criteria, deadline 14.09 23:59, no
+change), the whole Notion space read, then the recording order fixed first and walked *in that order* against the
+local dev stack — test bot, local Postgres, local Grafana — with `scripts/restart-app.sh` after every fix. Spec:
+`docs/superpowers/specs/2026-09-10-e2e-recording-pass-design.md`; plan:
+`docs/superpowers/plans/2026-09-10-e2e-recording-pass.md`. Taps and texts were driven through synthetic webhooks
+(`tap.sh` / `say.sh` / `group.sh` in the session scratchpad) once the Chrome extension started dropping every few
+minutes; every reply was read back from the outbound log, the database and the cart read-back JSON, and the chat
+was screenshotted whenever the extension held.
+
+## Thirteen fixes, one commit each
+
+| # | What a jury would have seen | Fix |
+|---|---|---|
+| 1 | «Як справи з їжею?» one line **above** the `/start` greeting of a re-onboarded household | the sweep skips households with no profile |
+| 2 | after the Silpo login: «підключено» and silence — no enrichment, no form | the callback resumes onboarding whenever no profile exists, whatever step the check-in overwrote |
+| 3 | the same check-in question twice in three minutes | `@DynamicUpdate` on `users` — a handler storing the Telegram username no longer writes the sweep's stamp back |
+| 4 | «Як справи з їжею?» three minutes after the first plan | the end of onboarding counts as contact |
+| 5 | «Орієнтовно ~4902.72 грн» for a week for two, and a budget warning built on it | the estimate read Silpo's per-kg price as a line cost; unit price × quantity now, counts answer with last time's line |
+| 6 | «Капуста Kyivkraut квашена — 159 грн» for a head of cabbage | a bare «капуста» never means the jar |
+| 7 | every Friday delivery window twice in the picker | identical labels are one button |
+| 8 | «Не зрозумів, що купувати для «гречана каша на молоці»» | one more ask before the honest failure |
+| 9 | a ₴742 cart with nothing under it but «Скасувати» after a top-up | the second top-up round selects around what the branch just ran out of |
+| 10 | «Звичайний режим і так активний» to «вже не запара» typed within a minute of entering the mode | the mode commits before the plan regeneration, not after |
+| 11 | a gift under ₴799 offering «Докласти з мого набору» — the family's milk to a friend's door | a gift asks for a bigger present instead |
+| 12 | «Подарунків підтверджено: 0» after a confirmed gift | handing the cart back keeps a CONFIRMED gift confirmed |
+| 13 | primitive (4) had no number | `komora_group_rounds{status}`, `komora_group_participants`, `komora_gift_orders{status}` |
+
+## Grafana
+
+Business gained row **A2 «Люди, яких бот привів сам»** (rounds ordered, rounds total, people who replied, gifts
+confirmed, gifts by state) between the guest section and the money; «Нових анкет за період» went — a process
+counter next to absolute funnel bars read as a contradiction. Regenerated with `make dashboards-json`, verified
+through the Grafana API locally, then pushed once with `make dashboard`; the hosted copy carries the same four rows.
+`DashboardJsonTest` guards the names.
+
+## Live numbers after the pass (local DB, `make metrics` / `make promotions`)
+
+23 of 40 tools, 2041 calls (16 errors — all handshake timeouts on this laptop's DNS); 96 % of list lines resolved
+(821 / 38 over 80 carts); reorders unedited 4 of 4; 4 group rounds ORDERED, 11 counted participants; 1 gift
+CONFIRMED; FSR «Премія»/молоко 96 % (+91 pp, ₴1 116), «Ситий двір»/гречка 83 % (+53 pp, ₴1 744), Attributed
+Revenue ₴3 099.96; GMV moved from ₴20 520.42 to ₴30 311.03 over the pass. Intent→order medians of this pass carry
+the driver's pauses (REORDER 37 s, HANGOVER 61 s, DISH 89 s, BLACKOUT 173 s); the session-18 numbers without pauses
+(13 / 17 / 28 s) stay the reference.
+
+## What the environment did, and is not a product bug
+
+This box's DNS dropped `api.telegram.org` and `mcp.silpo.ua` several times; every first MCP session after a
+restart timed out on the handshake («Client failed to initialize», 20 s) — `SILPO_MCP_INITIALIZATION_TIMEOUT=45s`
+in `.env` cut that. A Telegram send failure mid-flow makes the recovery path clear `conversation_state`, so the
+next tap is a stale one — by design. None of this was seen on prod.
+
+## Documents
+
+«Сценарій демо-запису» updated in place (jury structure, step 13.9, changelog). New «🎬 Операційний сценарій
+запису» (`3d77227d-ef1c-81aa-830d-fbe8dab9ef1c`): timecodes 0:00–9:00, literal inputs, voiceover in two registers,
+what to show, DB-proof sub-steps, [Акаунт A]/[Акаунт B] on every social step, animated intro/close with tools and a
+Claude Design prompt, prod names only. Parking lot appended to «Selling Points». Task 80 → In review.
+
+## Honestly not done
+
+The payment click; gift path (c) with two live accounts in one run (the extension would not hold long enough to
+switch accounts — B in the group round was synthetic against the real group, as in session 16); coupons/promo codes
+(nothing on the account); the ten-second visual test of the dashboards (the local Grafana renders nothing in a
+background tab — look at the hosted one).

@@ -271,4 +271,18 @@ class CartMessageServiceTest {
         assertThat(service.checkoutButtons(summary(List.of(), BigDecimal.ZERO, BigDecimal.ZERO, false, List.of())))
                 .isNotNull();
     }
+
+    @Test
+    void offersAWindowSilpoListsTwiceOnlyOnceAndKeepsTheFirstId() {
+        // Live, session 25: every Friday window came back under two slot ids, so the picker showed each twice.
+        OfferedSlot twin = new OfferedSlot("slot-twin", SLOT.label(), SLOT.startsAt(), SLOT.end());
+        OfferedSlot later =
+                new OfferedSlot("slot-later", "19:30–21:00", SLOT.startsAt().plusSeconds(5400), "21:00");
+
+        List<TelegramButton> buttons = service.slotButtons(List.of(SLOT, twin, later));
+
+        assertThat(buttons).hasSize(2);
+        assertThat(buttons.getFirst().callbackData()).isEqualTo(CartMessageService.CALLBACK_SLOT_PREFIX + "0");
+        assertThat(buttons.getLast().callbackData()).isEqualTo(CartMessageService.CALLBACK_SLOT_PREFIX + "2");
+    }
 }

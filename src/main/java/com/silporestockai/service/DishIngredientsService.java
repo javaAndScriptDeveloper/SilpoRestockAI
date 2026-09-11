@@ -71,25 +71,31 @@ public class DishIngredientsService {
     public void orderIngredients(User user, String dishName, OrderTrigger trigger) {
         long chatId = user.getTelegramChatId();
         int servings = servingsFor(user.getId());
-        DishIngredients dish;
+        List<PlannedIngredient> lines;
         try {
-            dish = claudeApiClient.completeStructured(
+            lines = usableLines(claudeApiClient.completeStructured(
                     ingredientsSystemPrompt,
                     "Страва: %s.\nПорцій: %d.".formatted(dishName, servings),
-                    DishIngredients.class);
+                    DishIngredients.class));
+            if (lines.isEmpty()) {
+                // The model answers a perfectly ordinary dish with items=[] now and then — «карбонара» once in
+                // session 18, «гречана каша на молоці» in session 25 — a flake, not a judgement about the dish.
+                // One more ask, saying so, before the household is told the agent did not understand.
+                log.info("empty ingredient list for «{}»; asking once more", dishName);
+                lines = usableLines(claudeApiClient.completeStructured(
+                        ingredientsSystemPrompt,
+                        ("Страва: %s.\nПорцій: %d.\nПопередня відповідь мала порожній items. Це відома страва: "
+                                        + "перелічи ВСІ її основні інгредієнти, навіть найпростіші (крупа, молоко, "
+                                        + "масло, цукор) — людина не знає, що з цього є вдома.")
+                                .formatted(dishName, servings),
+                        DishIngredients.class));
+            }
         } catch (RuntimeException e) {
             log.error("could not list ingredients for «{}» for user {}", dishName, user.getId(), e);
             telegramOutboundService.sendMessage(
                     chatId, "Не зміг скласти інгредієнти для «%s». Спробуй ще раз трохи пізніше.".formatted(dishName));
             return;
         }
-        List<PlannedIngredient> lines = dish == null || dish.items() == null
-                ? List.of()
-                : dish.items().stream()
-                        .filter(line -> line != null
-                                && line.name() != null
-                                && !line.name().isBlank())
-                        .toList();
         if (lines.isEmpty()) {
             telegramOutboundService.sendMessage(
                     chatId, "Не зрозумів, що купувати для «%s». Напиши назву страви інакше.".formatted(dishName));
@@ -145,6 +151,16 @@ public class DishIngredientsService {
             log.warn("dish identification answer was not JSON: {}", e.getMessage());
             return Optional.empty();
         }
+    }
+
+    private static List<PlannedIngredient> usableLines(DishIngredients dish) {
+        return dish == null || dish.items() == null
+                ? List.of()
+                : dish.items().stream()
+                        .filter(line -> line != null
+                                && line.name() != null
+                                && !line.name().isBlank())
+                        .toList();
     }
 
     private int servingsFor(UUID userId) {

@@ -234,17 +234,11 @@ def business():
         0, 1, 8, 6, color=GUEST, decimals=0,
     ))
     p.append(stat(
-        "Нових анкет за період",
-        "Зростання: завершених онбордингів у вибраному часовому вікні (лічильник процесу, тому після перезапуску "
-        "рахує з нуля — абсолютні цифри ліворуч).",
-        [(f"sum(increase(komora_onboarding_completed_total{{{ENV}}}[$__range]))", "")],
-        8, 1, 4, 3, color=GUEST, decimals=0,
-    ))
-    p.append(stat(
         "Активних за 7 днів",
-        "«Цикл живий, не разова новинка»: домогосподарства, які писали боту за останній тиждень.",
+        "«Цикл живий, не разова новинка»: домогосподарства, які писали боту за останній тиждень. Абсолютна цифра з "
+        "бази, не лічильник процесу — переживає перезапуск.",
         [(f"max(komora_users_active{{{ENV}, window=\"7d\"}})", "")],
-        12, 1, 4, 3, color=GUEST, decimals=0,
+        8, 1, 8, 3, color=GUEST, decimals=0,
     ))
     p.append(stat(
         "Онбординг → перше замовлення (медіана)",
@@ -309,60 +303,98 @@ def business():
         20, 7, 4, 6, unit="percent", color=GUEST, decimals=0, max_value=100,
     ))
 
+    # ---- A2 · the social primitive (task 80) ----------------------------------------------------------------
+    p.append(row("🤝  A2 · Люди, яких бот привів сам — групові збори і подарунки", 13))
+    p.append(stat(
+        "Групових зборів → замовлено",
+        "Примітив 4 «людина → агент → людина» (#68): раунди в груповому чаті, які дійшли до підтвердженого "
+        "замовлення організатора. Кожен такий раунд — компанія, яка побачила агента в роботі.",
+        [(f"sum(komora_group_rounds{{{ENV}, status=\"ORDERED\"}})", "")],
+        0, 14, 6, 5, color=GUEST, decimals=0, big=True,
+    ))
+    p.append(stat(
+        "Групових зборів усього",
+        "Усі раунди в усіх станах — відкриті, з пропозицією на столі, погоджені, замовлені.",
+        [(f"sum(komora_group_rounds{{{ENV}}})", "")],
+        6, 14, 4, 5, color=GUEST, decimals=0,
+    ))
+    p.append(stat(
+        "Людей відповіли у зборах",
+        "Вірусна нотка з пітчу: кожна людина, чию відповідь порахували в раунді, щойно побачила бота в роботі — "
+        "органічний канал залучення, вбудований у продукт, а не в рекламу.",
+        [(f"sum(komora_group_participants{{{ENV}}})", "")],
+        10, 14, 5, 5, color=GUEST, decimals=0, big=True,
+    ))
+    p.append(stat(
+        "Подарунків підтверджено",
+        "Той самий примітив (#81): замовлення, доставлене на адресу друга. Відправник адреси не бачить; "
+        "отримувач бачить бота — ще один канал росту.",
+        [(f"sum(komora_gift_orders{{{ENV}, status=\"CONFIRMED\"}})", "")],
+        15, 14, 4, 5, color=GUEST, decimals=0, big=True,
+    ))
+    p.append(bargauge(
+        "Подарунки за станом",
+        "AWAITING_ADDRESS — у друга спитали адресу; RESOLVED — адреса є; CART_PRESENTED — кошик перед "
+        "відправником; CONFIRMED — підтверджено; UNREACHABLE — друг ще не писав боту, відправника попросили "
+        "назвати адресу; EXPIRED — ніхто не відповів за добу.",
+        [(f"sum by (status) (komora_gift_orders{{{ENV}}})", "{{status}}")],
+        19, 14, 5, 5, color=GUEST, decimals=0,
+    ))
+
     # ---- B · Silpo value -------------------------------------------------------------------------------------
-    p.append(row("💰  B · Цінність і revenue для «Сільпо» — гроші", 13))
+    p.append(row("💰  B · Цінність і revenue для «Сільпо» — гроші", 20))
     p.append(stat(
         "GMV — підтверджені замовлення",
         "Критерій «Цінність для бізнесу», крок 13.7 сценарію: «підтвердити замовлення в Telegram — і через 30 с "
         "GMV на дашборді змінюється». Сума збережених total підтверджених замовлень (доставка включно). Чесна межа: "
         "замовлення без збереженої суми не входять — їх кількість праворуч.",
         [(f"sum(komora_orders_gmv_uah{{{ENV}}})", "")],
-        0, 14, 8, 6, unit="currencyUAH", color=SILPO, decimals=0, big=True,
+        0, 21, 8, 6, unit="currencyUAH", color=SILPO, decimals=0, big=True,
     ))
     p.append(stat(
         "Середній чек",
         "GMV / кількість підтверджених замовлень зі збереженою сумою. Selling Points, розділ «Grafana-дашборд»: "
         "«гості/GMV/середній чек наживо».",
         [(f"sum(komora_orders_gmv_uah{{{ENV}}}) / sum(komora_orders_confirmed{{{ENV}}})", "")],
-        8, 14, 4, 6, unit="currencyUAH", color=SILPO, decimals=0,
+        8, 21, 4, 6, unit="currencyUAH", color=SILPO, decimals=0,
     ))
     p.append(stat(
         "Підтверджених замовлень",
         "«Чи це реальні гроші»: кількість підтверджених замовлень у базі, усіх типів.",
         [(f"sum(komora_orders_confirmed{{{ENV}}})", "")],
-        12, 14, 4, 6, color=SILPO, decimals=0,
+        12, 21, 4, 6, color=SILPO, decimals=0,
     ))
     p.append(stat(
         "Знижок «Сільпо» у кошиках",
         "«Економія — цифра самого «Сільпо»»: сума subDiscount підтверджених кошиків — перевага акційних позицій "
         "при виборі, не власний каталог знижок.",
         [(f"sum(komora_orders_savings_uah{{{ENV}}})", "")],
-        16, 14, 4, 6, unit="currencyUAH", color=SILPO, decimals=0,
+        16, 21, 4, 6, unit="currencyUAH", color=SILPO, decimals=0,
     ))
     p.append(stat(
         "Замовлень без збереженої суми",
         "Покриття GMV: підтверджені замовлення, у яких сума не збережена (до задачі #54). Має бути 0 на свіжому "
         "прогоні; якщо ні — GMV занижений рівно на них, і ця панель каже про це вголос.",
         [(f"sum(komora_orders_value_missing{{{ENV}}})", "")],
-        20, 14, 4, 6, color=SILPO, decimals=0,
+        20, 21, 4, 6, color=SILPO, decimals=0,
     ))
     p.append(timeseries(
         "Підтверджено замовлень за типом, за годину",
         "Кадр «воно рухається»: перше замовлення (INITIAL), дозамовлення (SCHEDULED_REORDER) і разові (AD_HOC) — "
         "стовпчик на годину, коли їх підтвердили. Це лічильник процесу: після перезапуску починає з нуля.",
         [(f"sum by (type) (increase(komora_orders_confirmations_total{{{ENV}}}[1h]))", "{{type}}")],
-        0, 20, 24, 6, bars=True, stacked=True,
+        0, 27, 24, 6, bars=True, stacked=True,
     ))
 
     # ---- B · featuring ---------------------------------------------------------------------------------------
-    p.append(row("💰  B · Фічеринг: Featured Share Rate і Attributed Revenue — скільки грошей робить розміщення", 26))
+    p.append(row("💰  B · Фічеринг: Featured Share Rate і Attributed Revenue — скільки грошей робить розміщення", 33))
     p.append(stat(
         "Attributed Revenue — усі розміщення",
         "Головна цифра монетизації (#63/#64): реальні гривні рядків саме промотованого товару в підтверджених "
         "замовленнях (ціна × кількість), не вартість усього кошика і не оцінка. Те, що retail media називає "
         "Attributed Sales. Платні розміщення і власні марки разом; нижче — окремо.",
         [(f"max(komora_promotion_revenue_overall_uah{{{ENV}, type=\"ALL\"}})", "")],
-        0, 27, 8, 7, unit="currencyUAH", color=SILPO, decimals=0, big=True,
+        0, 34, 8, 7, unit="currencyUAH", color=SILPO, decimals=0, big=True,
     ))
     p.append(stat(
         "Featured Share Rate — усі розміщення",
@@ -371,7 +403,7 @@ def business():
         "господарства — тобто чесна, занижена частка). «Власна марка «Сільпо» отримує 94 % категорії молока — і "
         "це порахована частка, не покази».",
         [(f"100 * max(komora_promotion_share_overall{{{ENV}, type=\"ALL\"}})", "")],
-        8, 27, 6, 7, unit="percent", color=SILPO, decimals=0, max_value=100,
+        8, 34, 6, 7, unit="percent", color=SILPO, decimals=0, max_value=100,
     ))
     p.append(bargauge(
         "Attributed Revenue за пулом",
@@ -379,13 +411,13 @@ def business():
         "для власних high-margin брендів «Сільпо», без зовнішнього партнера. Два бізнеси, ніколи не одна змішана "
         "цифра.",
         [(f"max by (type) (komora_promotion_revenue_overall_uah{{{ENV}, type!=\"ALL\"}})", "{{type}}")],
-        14, 27, 5, 7, unit="currencyUAH", color=SILPO, decimals=0,
+        14, 34, 5, 7, unit="currencyUAH", color=SILPO, decimals=0,
     ))
     p.append(bargauge(
         "Featured Share Rate за пулом",
         "Частка категорій окремо для платних розміщень і для власних марок.",
         [(f"100 * max by (type) (komora_promotion_share_overall{{{ENV}, type!=\"ALL\"}})", "{{type}}")],
-        19, 27, 5, 7, unit="percent", color=SILPO, decimals=0, max_value=100,
+        19, 34, 5, 7, unit="percent", color=SILPO, decimals=0, max_value=100,
     ))
     for x, pool, owner in ((0, "PAID_PARTNER", "партнер"), (12, "OWN_BRAND_MARGIN_BOOST", "бренд")):
         p.append(bargauge(
@@ -399,7 +431,7 @@ def business():
                 (f"100 * max by (partner, category) (komora_promotion_lift{{{ENV}, type=\"{pool}\"}})",
                  "lift, п.п. · {{partner}} / {{category}}"),
             ],
-            x, 34, 12, 7, unit="percent", color=SILPO, decimals=0, max_value=100,
+            x, 41, 12, 7, unit="percent", color=SILPO, decimals=0, max_value=100,
         ))
         p.append(bargauge(
             f"{pool} · Attributed Revenue за брендом",
@@ -407,7 +439,7 @@ def business():
             "як нуль — він порахований окремо у звіті make promotions.",
             [(f"max by (partner, product) (komora_promotion_revenue_uah{{{ENV}, type=\"{pool}\"}})",
               "{{partner}} · {{product}}")],
-            x, 41, 12, 5, unit="currencyUAH", color=SILPO, decimals=0,
+            x, 48, 12, 5, unit="currencyUAH", color=SILPO, decimals=0,
         ))
         events = f"komora_promotion_events{{{ENV}, type=\"{pool}\""
         p.append(bargauge(
@@ -423,7 +455,7 @@ def business():
                 (f"100 * sum by (partner) ({events}, event=\"CONFIRMED_ORDER\"}}) / "
                  f"sum by (partner) ({events}, event=\"ADDED_TO_CART\"}})", "кошик → замовлення · {{partner}}"),
             ],
-            x, 46, 12, 6, unit="percent", color=SILPO, decimals=0, max_value=100,
+            x, 53, 12, 6, unit="percent", color=SILPO, decimals=0, max_value=100,
         ))
     return dashboard(
         "komora-business",

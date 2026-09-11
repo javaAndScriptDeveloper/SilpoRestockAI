@@ -50,7 +50,11 @@ public class SpecialModeService {
     private final Clock clock;
     private final ConversationStateService conversationStateService;
 
-    @Transactional
+    // Not @Transactional on purpose (session 25). These entry points save the mode and then regenerate the plan,
+    // and the plan is a minute of Claude. With one transaction around both, the mode row committed only after the
+    // plan — so «вже не запара, повертай як було» typed in that minute was answered with «Звичайний режим і так
+    // активний», and a second mode asked for right after was refused because the first one had by then landed.
+    // The repository save commits on its own; the plan runs in whatever transaction MealPlanService opens.
     public void triggerGastritis(User user) {
         UserProfile profile = requireProfile(user);
         if (isActive(profile)) {
@@ -79,7 +83,6 @@ public class SpecialModeService {
      * {@code SPECIAL_MODE_END} intent. What it must never do is write to {@code cooking_time_preference}: see
      * {@link UserProfile#effectiveCookingTimePreference()} for why the override lives at the read instead.
      */
-    @Transactional
     public void triggerCrunchWeek(User user) {
         UserProfile profile = requireProfile(user);
         if (profile.getSpecialMode() == SpecialMode.CRUNCH_WEEK) {
@@ -192,7 +195,6 @@ public class SpecialModeService {
         regenerateAndPresent(user);
     }
 
-    @Transactional
     public void cancel(User user) {
         UserProfile profile = requireProfile(user);
         if (!isActive(profile)) {

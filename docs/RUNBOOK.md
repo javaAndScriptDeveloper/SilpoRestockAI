@@ -2360,3 +2360,25 @@ test drives; what has not happened in one continuous run is two real people.
 
 A fifth was fixed on the way rather than caught: Telegram send failures throw, and an unreachable recipient
 would have taken the sender's order down with them.
+
+### Session 25: the recording pass, and what to re-check on prod before the take
+
+The order below is the recording order («🎬 Операційний сценарій запису» in Notion). Each line is what the pass saw
+locally on 2026-09-11 and what to expect on prod.
+
+| Do this | Expect |
+|---|---|
+| Reset the profile (`DELETE FROM user_profile …`, `conversation_state → NONE`), `/start` | Greeting only. No «Як справи з їжею?» above it, ever again |
+| «Під'єднати Сільпо» → consent → back | «✅ Акаунт «Сільпо» підключено.», then «Зазирнув у твій акаунт…», then the form button — even if a check-in landed in between |
+| Form with budget 2000 → «Готово» → «Пропустити» on the gift question | «Записав. Готую перший план…» ~30 s, list with «Орієнтовно ~X грн за N з 25» and, if over, «⚠️ Це на … більше за твій тижневий бюджет (2000 грн)». The estimate is now unit price × quantity — a week for two reads ~₴2 000–2 500, not ₴4 900 |
+| «Замовити» → «Інший час» | Each window once; Friday no longer twice |
+| «замов усе для гречаної каші на молоці» | Ingredients on the first or second ask, never «Не зрозумів» for an ordinary dish; `partner_promotion_event` gets IMPRESSION → ADDED_TO_CART for «Премія» and «Ситий двір» |
+| Any cart under ₴799 → «Докласти з мого набору» | Clears the line even when the branch is out of the cheapest baseline lines (a second round picks the next ones) |
+| «цей тиждень нема часу готувати, запара» → immediately «вже не запара, повертай як було» | «Добре, запара позаду» within seconds; `special_mode` is set before the plan arrives |
+| Gift under ₴799 | «Це подарунок, тож зі свого звичайного набору я нічого не докладаю…» — no top-up button |
+| Ordinary order after a confirmed gift | `restoring the household's own delivery … : true` in the log; the gift row stays CONFIRMED and «Подарунків підтверджено» keeps counting it |
+| Grafana Business | Row A2 with rounds/participants/gifts; no «Нових анкет за період» tile |
+
+Timers for a take: `CHECKIN_INTERVAL=4m`, `CHECKIN_SWEEP_CRON="0 * * * * *"`, `AD_HOC_SCHEDULE_SWEEP_CRON="0 * * * * *"`;
+put them back afterwards. `SILPO_MCP_INITIALIZATION_TIMEOUT=45s` if the first MCP session after a restart keeps
+timing out.

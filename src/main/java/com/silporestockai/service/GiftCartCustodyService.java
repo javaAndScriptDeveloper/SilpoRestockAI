@@ -71,7 +71,16 @@ public class GiftCartCustodyService {
         }
         // Closed either way. A Silpo refusal here would otherwise be retried on every build forever, and the
         // build that follows reads the cart's real state regardless of what this row believes about it.
-        order.setStatus(GiftOrderStatus.CANCELLED);
+        //
+        // A gift the sender confirmed stays CONFIRMED: the order was placed and the friend is getting it, this is
+        // only the household taking its cart back. Marking it CANCELLED (session 25) made every confirmed gift
+        // vanish from «Подарунків підтверджено» the moment the household ordered again. The snapshot is what says
+        // «holding the cart», so it is cleared once it has been given back.
+        if (order.getStatus() == GiftOrderStatus.CONFIRMED) {
+            order.setOwnDelivery(null);
+        } else {
+            order.setStatus(GiftOrderStatus.CANCELLED);
+        }
         order.setUpdatedAt(Instant.now());
         giftOrderRepository.save(order);
         log.info("released the cart held by gift {} for user {}", order.getId(), userId);

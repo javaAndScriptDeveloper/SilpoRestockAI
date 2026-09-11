@@ -120,7 +120,8 @@ public class ShoppingListPriceEstimateService {
 
     /**
      * A baseline line and whether it is this list line's own product ({@code exact}) or a name that merely reads
-     * like it. Only the first kind can have its quantity scaled by a count — see {@link #linePrice}.
+     * like it. The pairing decides which line answers; the price is read the same way either way — see
+     * {@link #linePrice}.
      */
     private record Match(BasketItem line, boolean exact) {}
 
@@ -146,24 +147,25 @@ public class ShoppingListPriceEstimateService {
             return null;
         }
         BasketItem baseline = match.line();
-        // A baseline line holds a line price for the quantity that was ordered. Scale it only when the two are
-        // genuinely comparable; «2 шт» against «200 г» is a different question, and the old line price as-is is
-        // closer to right than a made-up conversion.
+        // A baseline line carries Silpo's *unit* price — per kilogram for a weighed product, per package for a
+        // counted one — exactly as the cart message multiplies it (CartMessageService). Reading it as a line price
+        // for the ordered quantity, as this once did, inflated every weighed line by 1/quantity: live on
+        // 2026-09-11 a 0.4 kg salmon line at ₴1399/kg priced «Філе риби — 0.6 кг» at ₴2098, and the whole week
+        // came out at ₴4902 for two adults.
         //
-        // A shared «шт» is not enough on its own. Live on 2026-09-08 a list asking «Яйця — 20 шт» met a baseline
-        // pack of eggs at ₴129.80 for «1 шт» and came out at ₴2596 — the household counts eggs, the catalog counts
-        // packs, and the word for both is «шт». A count is only scaled when the match is this line's own product;
-        // a weight or a volume divides honestly however the name was found.
-        boolean sameThingCounted = match.exact() || MEASURES.contains(normalise(item.getUnit()));
-        boolean comparable = sameThingCounted
+        // A weight or a volume in the same unit multiplies honestly. A count never does: «Яйця — 20 шт» against a
+        // pack of eggs at ₴129.80 «1 шт» would be ₴2596 — the household counts eggs, the catalog counts packs, and
+        // the word for both is «шт». So a count, and any other unit mismatch, answers with what the household paid
+        // for that line last time, which is the honest nearest number.
+        BigDecimal ordered = baseline.quantity() == null ? BigDecimal.ONE : baseline.quantity();
+        boolean measured = MEASURES.contains(normalise(item.getUnit()));
+        boolean comparable = measured
                 && item.getQuantity() != null
-                && baseline.quantity() != null
-                && baseline.quantity().signum() > 0
                 && normalise(item.getUnit()).equals(normalise(baseline.unit()));
         if (!comparable) {
-            return baseline.price();
+            return baseline.price().multiply(ordered).setScale(2, RoundingMode.HALF_UP);
         }
-        return baseline.price().multiply(item.getQuantity()).divide(baseline.quantity(), 2, RoundingMode.HALF_UP);
+        return baseline.price().multiply(item.getQuantity()).setScale(2, RoundingMode.HALF_UP);
     }
 
     /** Units that measure the thing itself, so a quantity in them divides a price honestly. */

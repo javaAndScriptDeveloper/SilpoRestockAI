@@ -172,74 +172,12 @@
     {
       "id": 4,
       "type": "stat",
-      "title": "Нових анкет за період",
-      "description": "Зростання: завершених онбордингів у вибраному часовому вікні (лічильник процесу, тому після перезапуску рахує з нуля — абсолютні цифри ліворуч).",
+      "title": "Активних за 7 днів",
+      "description": "«Цикл живий, не разова новинка»: домогосподарства, які писали боту за останній тиждень. Абсолютна цифра з бази, не лічильник процесу — переживає перезапуск.",
       "gridPos": {
         "x": 8,
         "y": 1,
-        "w": 4,
-        "h": 3
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS}"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "sum(increase(komora_onboarding_completed_total{env=~\"$env\"}[$__range]))",
-          "legendFormat": "",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS}"
-          }
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "blue"
-          },
-          "decimals": 0,
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "colorMode": "background",
-        "graphMode": "none",
-        "textMode": "value",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "wideLayout": true,
-        "text": {}
-      }
-    },
-    {
-      "id": 5,
-      "type": "stat",
-      "title": "Активних за 7 днів",
-      "description": "«Цикл живий, не разова новинка»: домогосподарства, які писали боту за останній тиждень.",
-      "gridPos": {
-        "x": 12,
-        "y": 1,
-        "w": 4,
+        "w": 8,
         "h": 3
       },
       "datasource": {
@@ -294,7 +232,7 @@
       }
     },
     {
-      "id": 6,
+      "id": 5,
       "type": "stat",
       "title": "Онбординг → перше замовлення (медіана)",
       "description": "Selling Points, таблиця #37, рядок 1: «від першого «привіт» до реального замовлення — N хвилин, не днів». Один раз на домогосподарство; повторювана швидкість — панель праворуч.",
@@ -357,7 +295,7 @@
       }
     },
     {
-      "id": 7,
+      "id": 6,
       "type": "stat",
       "title": "Намір → замовлення (медіана)",
       "description": "НОВА метрика (#75) для «мінімум часу на їжу»: від речення в чаті («голова після вчорашнього», «замов усе для карбонари», «що треба докупити?», «світло вимкнули») до підтвердженого замовлення. Повторювана — одна цифра на кожне замовлення, — а не одноразова, як онбординг→перше замовлення. Годинник стартує до виклику класифікатора, тож «думання» агента входить у число.",
@@ -422,7 +360,7 @@
       }
     },
     {
-      "id": 8,
+      "id": 7,
       "type": "bargauge",
       "title": "Намір → замовлення за типом наміру (медіана)",
       "description": "Той самий годинник, розкладений за наміром із #31: «гастрит, похмілля, п'ятничні знижки — жоден із цих сценаріїв не проєктувався окремо. Один агент, один роутер намірів». AD_HOC_SCHEDULED_PURCHASE рахується від свіпу, що запустив покупку, а не від речення «до п'ятниці» — дедлайн обирає людина.",
@@ -488,7 +426,7 @@
       }
     },
     {
-      "id": 9,
+      "id": 8,
       "type": "stat",
       "title": "Дозамовлень підтверджено без правок",
       "description": "Точність = довіра: «K з N дозамовлень підтверджено як запропоновано — агент вчиться» (Selling Points, рядок 3). Частка дозамовлень, які людина підтвердила, не змінивши жодного рядка.",
@@ -552,7 +490,7 @@
       }
     },
     {
-      "id": 10,
+      "id": 9,
       "type": "stat",
       "title": "Найдовша серія без правок",
       "description": "Друге число за історією точності: найдовший ланцюжок поспіль підтверджених без правок замовлень у одного домогосподарства (trust_level.consecutive_unedited_confirmations).",
@@ -614,7 +552,7 @@
       }
     },
     {
-      "id": 11,
+      "id": 10,
       "type": "stat",
       "title": "Чек-іни: відповіли",
       "description": "Залученість: «на K з N запитів «що лишилось» люди відповіли — цикл живий» (Selling Points, рядок 2). Чесна примітка: на тестовому 2-хвилинному інтервалі запитів багато, відповідей — скільки є; для пітчу цитуй вибірку поруч, не лише відсоток.",
@@ -678,7 +616,7 @@
       }
     },
     {
-      "id": 12,
+      "id": 11,
       "type": "stat",
       "title": "Чек-іни: відповідей / запитів",
       "description": "Вибірка за відсотком ліворуч — «K з N», бо «75 %» без «з чого» не доказ.",
@@ -749,7 +687,7 @@
       }
     },
     {
-      "id": 13,
+      "id": 12,
       "type": "stat",
       "title": "Позицій списку знайдено в каталозі",
       "description": "«94 % рядків списку стають реальним SKU, а решта — чесне «не знайшов», не чужий товар» (Selling Points, рядок 4). Частка рядків усіх зібраних кошиків, для яких «Сільпо» знайшло товар.",
@@ -813,9 +751,9 @@
       }
     },
     {
-      "id": 14,
+      "id": 13,
       "type": "row",
-      "title": "💰  B · Цінність і revenue для «Сільпо» — гроші",
+      "title": "🤝  A2 · Люди, яких бот привів сам — групові збори і подарунки",
       "collapsed": false,
       "gridPos": {
         "x": 0,
@@ -826,13 +764,345 @@
       "panels": []
     },
     {
+      "id": 14,
+      "type": "stat",
+      "title": "Групових зборів → замовлено",
+      "description": "Примітив 4 «людина → агент → людина» (#68): раунди в груповому чаті, які дійшли до підтвердженого замовлення організатора. Кожен такий раунд — компанія, яка побачила агента в роботі.",
+      "gridPos": {
+        "x": 0,
+        "y": 14,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(komora_group_rounds{env=~\"$env\", status=\"ORDERED\"})",
+          "legendFormat": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "wideLayout": true,
+        "text": {
+          "valueSize": 64
+        }
+      }
+    },
+    {
       "id": 15,
+      "type": "stat",
+      "title": "Групових зборів усього",
+      "description": "Усі раунди в усіх станах — відкриті, з пропозицією на столі, погоджені, замовлені.",
+      "gridPos": {
+        "x": 6,
+        "y": 14,
+        "w": 4,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(komora_group_rounds{env=~\"$env\"})",
+          "legendFormat": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "wideLayout": true,
+        "text": {}
+      }
+    },
+    {
+      "id": 16,
+      "type": "stat",
+      "title": "Людей відповіли у зборах",
+      "description": "Вірусна нотка з пітчу: кожна людина, чию відповідь порахували в раунді, щойно побачила бота в роботі — органічний канал залучення, вбудований у продукт, а не в рекламу.",
+      "gridPos": {
+        "x": 10,
+        "y": 14,
+        "w": 5,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(komora_group_participants{env=~\"$env\"})",
+          "legendFormat": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "wideLayout": true,
+        "text": {
+          "valueSize": 64
+        }
+      }
+    },
+    {
+      "id": 17,
+      "type": "stat",
+      "title": "Подарунків підтверджено",
+      "description": "Той самий примітив (#81): замовлення, доставлене на адресу друга. Відправник адреси не бачить; отримувач бачить бота — ще один канал росту.",
+      "gridPos": {
+        "x": 15,
+        "y": 14,
+        "w": 4,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(komora_gift_orders{env=~\"$env\", status=\"CONFIRMED\"})",
+          "legendFormat": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "wideLayout": true,
+        "text": {
+          "valueSize": 64
+        }
+      }
+    },
+    {
+      "id": 18,
+      "type": "bargauge",
+      "title": "Подарунки за станом",
+      "description": "AWAITING_ADDRESS — у друга спитали адресу; RESOLVED — адреса є; CART_PRESENTED — кошик перед відправником; CONFIRMED — підтверджено; UNREACHABLE — друг ще не писав боту, відправника попросили назвати адресу; EXPIRED — ніхто не відповів за добу.",
+      "gridPos": {
+        "x": 19,
+        "y": 14,
+        "w": 5,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (status) (komora_gift_orders{env=~\"$env\"})",
+          "legendFormat": "{{status}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "valueMode": "color",
+        "showUnfilled": true,
+        "namePlacement": "top",
+        "sizing": "auto",
+        "minVizWidth": 8,
+        "minVizHeight": 16,
+        "text": {}
+      }
+    },
+    {
+      "id": 19,
+      "type": "row",
+      "title": "💰  B · Цінність і revenue для «Сільпо» — гроші",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 20,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 20,
       "type": "stat",
       "title": "GMV — підтверджені замовлення",
       "description": "Критерій «Цінність для бізнесу», крок 13.7 сценарію: «підтвердити замовлення в Telegram — і через 30 с GMV на дашборді змінюється». Сума збережених total підтверджених замовлень (доставка включно). Чесна межа: замовлення без збереженої суми не входять — їх кількість праворуч.",
       "gridPos": {
         "x": 0,
-        "y": 14,
+        "y": 21,
         "w": 8,
         "h": 6
       },
@@ -891,13 +1161,13 @@
       }
     },
     {
-      "id": 16,
+      "id": 21,
       "type": "stat",
       "title": "Середній чек",
       "description": "GMV / кількість підтверджених замовлень зі збереженою сумою. Selling Points, розділ «Grafana-дашборд»: «гості/GMV/середній чек наживо».",
       "gridPos": {
         "x": 8,
-        "y": 14,
+        "y": 21,
         "w": 4,
         "h": 6
       },
@@ -954,13 +1224,13 @@
       }
     },
     {
-      "id": 17,
+      "id": 22,
       "type": "stat",
       "title": "Підтверджених замовлень",
       "description": "«Чи це реальні гроші»: кількість підтверджених замовлень у базі, усіх типів.",
       "gridPos": {
         "x": 12,
-        "y": 14,
+        "y": 21,
         "w": 4,
         "h": 6
       },
@@ -1016,13 +1286,13 @@
       }
     },
     {
-      "id": 18,
+      "id": 23,
       "type": "stat",
       "title": "Знижок «Сільпо» у кошиках",
       "description": "«Економія — цифра самого «Сільпо»»: сума subDiscount підтверджених кошиків — перевага акційних позицій при виборі, не власний каталог знижок.",
       "gridPos": {
         "x": 16,
-        "y": 14,
+        "y": 21,
         "w": 4,
         "h": 6
       },
@@ -1079,13 +1349,13 @@
       }
     },
     {
-      "id": 19,
+      "id": 24,
       "type": "stat",
       "title": "Замовлень без збереженої суми",
       "description": "Покриття GMV: підтверджені замовлення, у яких сума не збережена (до задачі #54). Має бути 0 на свіжому прогоні; якщо ні — GMV занижений рівно на них, і ця панель каже про це вголос.",
       "gridPos": {
         "x": 20,
-        "y": 14,
+        "y": 21,
         "w": 4,
         "h": 6
       },
@@ -1141,13 +1411,13 @@
       }
     },
     {
-      "id": 20,
+      "id": 25,
       "type": "timeseries",
       "title": "Підтверджено замовлень за типом, за годину",
       "description": "Кадр «воно рухається»: перше замовлення (INITIAL), дозамовлення (SCHEDULED_REORDER) і разові (AD_HOC) — стовпчик на годину, коли їх підтвердили. Це лічильник процесу: після перезапуску починає з нуля.",
       "gridPos": {
         "x": 0,
-        "y": 20,
+        "y": 27,
         "w": 24,
         "h": 6
       },
@@ -1203,26 +1473,26 @@
       }
     },
     {
-      "id": 21,
+      "id": 26,
       "type": "row",
       "title": "💰  B · Фічеринг: Featured Share Rate і Attributed Revenue — скільки грошей робить розміщення",
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 26,
+        "y": 33,
         "w": 24,
         "h": 1
       },
       "panels": []
     },
     {
-      "id": 22,
+      "id": 27,
       "type": "stat",
       "title": "Attributed Revenue — усі розміщення",
       "description": "Головна цифра монетизації (#63/#64): реальні гривні рядків саме промотованого товару в підтверджених замовленнях (ціна × кількість), не вартість усього кошика і не оцінка. Те, що retail media називає Attributed Sales. Платні розміщення і власні марки разом; нижче — окремо.",
       "gridPos": {
         "x": 0,
-        "y": 27,
+        "y": 34,
         "w": 8,
         "h": 7
       },
@@ -1281,13 +1551,13 @@
       }
     },
     {
-      "id": 23,
+      "id": 28,
       "type": "stat",
       "title": "Featured Share Rate — усі розміщення",
       "description": "Аналог Share of Shelf у retail media: частка розв'язань категорії, яку виграв промотований товар, від усіх розв'язань цієї категорії (включно з рядками, де розміщення не мало права виграти через обмеження господарства — тобто чесна, занижена частка). «Власна марка «Сільпо» отримує 94 % категорії молока — і це порахована частка, не покази».",
       "gridPos": {
         "x": 8,
-        "y": 27,
+        "y": 34,
         "w": 6,
         "h": 7
       },
@@ -1345,13 +1615,13 @@
       }
     },
     {
-      "id": 24,
+      "id": 29,
       "type": "bargauge",
       "title": "Attributed Revenue за пулом",
       "description": "PAID_PARTNER — зовнішній партнер платить за частку категорії; OWN_BRAND_MARGIN_BOOST — той самий двигун для власних high-margin брендів «Сільпо», без зовнішнього партнера. Два бізнеси, ніколи не одна змішана цифра.",
       "gridPos": {
         "x": 14,
-        "y": 27,
+        "y": 34,
         "w": 5,
         "h": 7
       },
@@ -1411,13 +1681,13 @@
       }
     },
     {
-      "id": 25,
+      "id": 30,
       "type": "bargauge",
       "title": "Featured Share Rate за пулом",
       "description": "Частка категорій окремо для платних розміщень і для власних марок.",
       "gridPos": {
         "x": 19,
-        "y": 27,
+        "y": 34,
         "w": 5,
         "h": 7
       },
@@ -1478,13 +1748,13 @@
       }
     },
     {
-      "id": 26,
+      "id": 31,
       "type": "bargauge",
       "title": "PAID_PARTNER · Featured Share Rate і lift за брендом",
       "description": "Кожен партнер: його частка категорії (FSR) і lift — на скільки пунктів частка вища за органічний базлайн (виміряний, коли органічних розв'язань ≥ 5, інакше апроксимований як 1/кандидатів; метод підписаний у komora_promotion_baseline). Немає базлайну — немає смуги lift, а не нуль.",
       "gridPos": {
         "x": 0,
-        "y": 34,
+        "y": 41,
         "w": 12,
         "h": 7
       },
@@ -1554,13 +1824,13 @@
       }
     },
     {
-      "id": 27,
+      "id": 32,
       "type": "bargauge",
       "title": "PAID_PARTNER · Attributed Revenue за брендом",
       "description": "Гривні рядків саме цього товару в підтверджених замовленнях. Рядок без збереженої ціни не рахується як нуль — він порахований окремо у звіті make promotions.",
       "gridPos": {
         "x": 0,
-        "y": 41,
+        "y": 48,
         "w": 12,
         "h": 5
       },
@@ -1620,13 +1890,13 @@
       }
     },
     {
-      "id": 28,
+      "id": 33,
       "type": "bargauge",
       "title": "PAID_PARTNER · Conversion Rate між стадіями",
       "description": "Conversion Rate — універсальний термін воронки: показ → у кошику, у кошику → підтверджене замовлення, по кожному бренду. Воронка не суворо вкладена: підтверджене замовлення записується для кожного активного розміщення, товар якого був у замовленні, навіть якщо той кошик не дав події «у кошику» (дозамовлення, минуле замовлення) — тому «кошик → замовлення» може перевищити 100 %. Смуга впирається в 100, число поруч справжнє.",
       "gridPos": {
         "x": 0,
-        "y": 46,
+        "y": 53,
         "w": 12,
         "h": 6
       },
@@ -1696,13 +1966,13 @@
       }
     },
     {
-      "id": 29,
+      "id": 34,
       "type": "bargauge",
       "title": "OWN_BRAND_MARGIN_BOOST · Featured Share Rate і lift за брендом",
       "description": "Кожен бренд: його частка категорії (FSR) і lift — на скільки пунктів частка вища за органічний базлайн (виміряний, коли органічних розв'язань ≥ 5, інакше апроксимований як 1/кандидатів; метод підписаний у komora_promotion_baseline). Немає базлайну — немає смуги lift, а не нуль.",
       "gridPos": {
         "x": 12,
-        "y": 34,
+        "y": 41,
         "w": 12,
         "h": 7
       },
@@ -1772,13 +2042,13 @@
       }
     },
     {
-      "id": 30,
+      "id": 35,
       "type": "bargauge",
       "title": "OWN_BRAND_MARGIN_BOOST · Attributed Revenue за брендом",
       "description": "Гривні рядків саме цього товару в підтверджених замовленнях. Рядок без збереженої ціни не рахується як нуль — він порахований окремо у звіті make promotions.",
       "gridPos": {
         "x": 12,
-        "y": 41,
+        "y": 48,
         "w": 12,
         "h": 5
       },
@@ -1838,13 +2108,13 @@
       }
     },
     {
-      "id": 31,
+      "id": 36,
       "type": "bargauge",
       "title": "OWN_BRAND_MARGIN_BOOST · Conversion Rate між стадіями",
       "description": "Conversion Rate — універсальний термін воронки: показ → у кошику, у кошику → підтверджене замовлення, по кожному бренду. Воронка не суворо вкладена: підтверджене замовлення записується для кожного активного розміщення, товар якого був у замовленні, навіть якщо той кошик не дав події «у кошику» (дозамовлення, минуле замовлення) — тому «кошик → замовлення» може перевищити 100 %. Смуга впирається в 100, число поруч справжнє.",
       "gridPos": {
         "x": 12,
-        "y": 46,
+        "y": 53,
         "w": 12,
         "h": 6
       },

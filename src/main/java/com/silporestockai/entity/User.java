@@ -12,6 +12,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
+import org.hibernate.annotations.DynamicUpdate;
 
 /**
  * One person using the bot.
@@ -21,6 +22,11 @@ import lombok.ToString;
  */
 @Entity
 @Table(name = "users")
+// Only dirty columns go into an UPDATE. Live (session 25), the /start handler saved this row to store a Telegram
+// username it had loaded seconds earlier, and the full-row write put last_checkin_prompt_sent_at back to its old
+// value — the sweep had stamped it in between — so the same household was asked «що закінчилось?» twice in three
+// minutes. Several threads write different columns of this row; none of them should write the others'.
+@DynamicUpdate
 @Getter
 @Setter
 @Builder
